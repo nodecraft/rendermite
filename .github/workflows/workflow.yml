@@ -1,0 +1,67 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        node: [24]
+    name: Node ${{ matrix.node }} Test
+    if: (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: "npm"
+      - run: npm ci
+      # Vanilla jars (Mojang) and mod jars (Modrinth) download at test time into
+      # .work/fixtures; they are immutable per version, so cache them keyed on
+      # the fixture definitions that decide what gets fetched.
+      - name: Cache test fixtures
+        uses: actions/cache@v6
+        with:
+          path: .work/fixtures
+          key: fixtures-${{ hashFiles('test/global-setup.ts', 'test/fixtures/*.ts') }}
+          restore-keys: fixtures-
+      - run: npm run lint:ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm run test
+        env:
+          NODE_OPTIONS: --max_old_space_size=6144
+
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    name: Release
+    needs: test
+    if: github.ref == 'refs/heads/main' && (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
+    steps:
+      - uses: actions/checkout@v6
+        # options required to enable us to push back to the repo
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm ci
+
+      - run: npm run build
+      - name: Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release

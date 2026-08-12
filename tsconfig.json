@@ -1,0 +1,34 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"resolveJsonModule": true,
+		"lib": [
+			"ESNext"
+		],
+		"types": [
+			"node"
+		],
+		"strict": true,
+		"noImplicitThis": true,
+		"strictNullChecks": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"allowImportingTsExtensions": true,
+		"rewriteRelativeImportExtensions": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"noEmit": true
+	},
+	"include": [
+		"src/**/*.ts",
+		"test/**/*.ts",
+		"scripts/**/*.ts",
+		"*.ts"
+	],
+	"exclude": [
+		"dist/**"
+	]
+}

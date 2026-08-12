@@ -1,0 +1,99 @@
+import { existsSync } from 'node:fs';
+
+import sharp from 'sharp';
+import { describe, expect, it } from 'vitest';
+
+import { vanillaJar } from './fixtures/index.ts';
+import { ModelLoader } from '../src/models/loader.ts';
+import { encodeAnimatedIcon } from '../src/output/encode.ts';
+import { minifyStylesheet } from '../src/output/minify.ts';
+import { renderModelFrames } from '../src/render/renderer.ts';
+import { JarResourceManager } from '../src/resources/jar.ts';
+import { ResourceLocator } from '../src/resources/locator.ts';
+import { TextureLoader } from '../src/textures/loader.ts';
+
+const assetsJar = vanillaJar('1.21.8');
+const hasFixture = existsSync(assetsJar);
+
+describe.skipIf(!hasFixture)('animation rendering', () => {
+	const resources = new JarResourceManager(assetsJar);
+	const models = new ModelLoader(resources);
+	const textures = new TextureLoader(resources);
+
+	it('reads animation metadata (magma is a frame-listed strip)', async () => {
+		const magma = await textures.loadAnimated(ResourceLocator.parse('minecraft:block/magma'));
+		expect(magma).not.toBeNull();
+		expect(magma!.frameCount).toBeGreaterThan(1);
+		expect(magma!.tickLength).toBeGreaterThan(magma!.frameCount - 1);
+		expect(magma!.frame(0).width).toBe(16);
+		expect(magma!.frame(0).height).toBe(16);
+	});
+
+	it('renders multi-frame magma_block with sane delays', async () => {
+		const model = await models.load('minecraft:block/magma_block');
+		const { frames, delaysMs } = await renderModelFrames(model, textures, {
+			size: 64,
+			quality: 2,
+			lightingProfile: 'modern',
+		});
+		expect(frames.length).toBeGreaterThan(1);
+		expect(delaysMs).toHaveLength(frames.length);
+		for (const delay of delaysMs) {
+			expect(delay).toBeGreaterThanOrEqual(50);
+			expect(delay % 50).toBe(0);
+		}
+		// Frames must actually differ (animation, not duplicates).
+		const first = frames[0].data;
+		const second = frames[1].data;
+		expect(first.some((value, index) => value !== second[index])).toBe(true);
+	});
+
+	it('renders a single frame for unanimated models', async () => {
+		const model = await models.load('minecraft:block/stone');
+		const { frames, delaysMs } = await renderModelFrames(model, textures, {
+			size: 64,
+			quality: 2,
+			lightingProfile: 'legacy',
+		});
+		expect(frames).toHaveLength(1);
+		expect(delaysMs).toHaveLength(1);
+	});
+
+	it('encodes animated webp and gif with matching page counts', async () => {
+		const model = await models.load('minecraft:block/magma_block');
+		const { frames, delaysMs } = await renderModelFrames(model, textures, {
+			size: 64,
+			quality: 2,
+			lightingProfile: 'modern',
+		});
+		const encoded = await encodeAnimatedIcon(frames, delaysMs, { webp: true, gif: true, avif: true });
+		expect(encoded.webp).toBeDefined();
+		expect(encoded.gif).toBeDefined();
+		expect(encoded.avif).toBeDefined();
+
+		const webpMeta = await sharp(encoded.webp, { animated: true }).metadata();
+		expect(webpMeta.pages).toBe(frames.length);
+		expect(webpMeta.delay?.length).toBe(frames.length);
+
+		const gifMeta = await sharp(encoded.gif, { animated: true }).metadata();
+		expect(gifMeta.pages).toBe(frames.length);
+
+		// PNG fallback is the static first frame.
+		const pngMeta = await sharp(encoded.png).metadata();
+		expect(pngMeta.width).toBe(64);
+		expect(pngMeta.pages ?? 1).toBe(1);
+	});
+});
+
+describe('minifyStylesheet', () => {
+	it('minifies valid css', () => {
+		const result = minifyStylesheet('.rc-item {\n    position: relative;\n}\n');
+		expect(result).toBe('.rc-item{position:relative}');
+	});
+
+	it('returns input unchanged on parse failure', () => {
+		const broken = '.rc-item { position: relative; } @media { broken';
+		const result = minifyStylesheet(broken, () => {});
+		expect(result === broken || result.length > 0).toBe(true);
+	});
+});

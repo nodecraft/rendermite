@@ -1,0 +1,11 @@
+* text=auto
+* text eol=lf
+
+# (binary is a macro for -text -diff)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.avif binary
+*.webp binary
+*.jar binary

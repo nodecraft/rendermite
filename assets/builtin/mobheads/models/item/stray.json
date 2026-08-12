@@ -1,0 +1,8 @@
+{
+	"credit": "Made with Blockbench",
+	"parent": "mobheads:item/base/head_64_32",
+	"textures": {
+		"texture": "entity/skeleton/stray",
+		"overlay": "entity/skeleton/stray_overlay"
+	}
+}
