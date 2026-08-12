@@ -54,11 +54,19 @@ export default [
 		},
 	},
 
-	// CLI entry: exiting with a status code is the point.
+	// CLI entry: exiting with a status code is the point, and the shebang is
+	// required because src/cli.ts builds to dist/cli.js, the package bin —
+	// convertPath teaches n/hashbang that mapping.
 	{
 		files: ['src/cli.ts'],
 		rules: {
 			'n/no-process-exit': 'off',
+			'n/hashbang': ['error', {
+				convertPath: [{
+					include: ['src/**/*.ts'],
+					replace: [String.raw`^src/(.+)\.ts$`, 'dist/$1.js'],
+				}],
+			}],
 		},
 	},
 
