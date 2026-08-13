@@ -23,6 +23,7 @@ import { TextureLoader } from '../src/textures/loader.ts';
 
 import type { ModrinthSpec } from './fixtures/index.ts';
 import type { FloatTexture } from '../src/render/blend.ts';
+import type { ResourceManager } from '../src/resources/manager.ts';
 import type { Texture } from '../src/textures/loader.ts';
 
 interface ModrinthCase {
@@ -90,6 +91,81 @@ function hasContent(texture: Texture): boolean {
 }
 
 const online = process.env.RENDERMITE_SKIP_ONLINE !== '1';
+
+function dominantColor(texture: Texture): [number, number, number] {
+	let red = 0;
+	let green = 0;
+	let blue = 0;
+	let count = 0;
+	for (let offset = 0; offset < texture.data.length; offset += 4) {
+		if (texture.data[offset + 3] <= 128) {
+			continue;
+		}
+		red += texture.data[offset];
+		green += texture.data[offset + 1];
+		blue += texture.data[offset + 2];
+		count++;
+	}
+	return count === 0 ? [0, 0, 0] : [red / count, green / count, blue / count];
+}
+
+async function renderSingle(resources: ResourceManager, id: string): Promise<Texture> {
+	const textures = new TextureLoader(resources);
+	textures.setAtlasResolver(await loadAtlasResolver(resources, locator => textures.load(locator)));
+	const models = new ModelLoader(resources);
+	const instructions = await resolveItem(resources, id, defaultProperties());
+	expect(instructions).toHaveLength(1);
+	const model = await models.load(instructions[0].model);
+	return toByteTexture(await renderModel(model, textures, {
+		size: 64,
+		quality: 2,
+		lightingProfile: 'modern',
+		itemTransform: instructions[0].transform,
+		tints: await resolveTints(instructions[0].tints, { textures }),
+		resources,
+	}));
+}
+
+describe.skipIf(!online)('tint sourcing over real releases', () => {
+	it('harvests tints a mod states as data in its 1.21.4+ release', async () => {
+		const preparation = await prepareModResources({
+			jars: [await ensureModrinthJar({ slug: 'ae2', gameVersion: '1.21.1', loader: 'neoforge' })],
+			vanilla: new JarResourceManager(await ensureVanillaJar('1.21.1')),
+			tintDonors: [await ensureModrinthJar({ slug: 'ae2', gameVersion: '26.1.2', loader: 'neoforge' })],
+		});
+		// AE2's modern release states 30+ resolvable tints its 1.21.1 release cannot;
+		// the rest of its tints need runtime state (ae2:color) and are left alone.
+		expect(preparation.tintOverrides).toBeGreaterThanOrEqual(20);
+
+		// A harvested override must resolve to a real color through the normal path.
+		let painted = 0;
+		for (const item of await discoverItems(preparation.resources, 'ae2')) {
+			const instructions = await resolveItem(preparation.resources, item.id, defaultProperties()).catch(() => []);
+			for (const instruction of instructions) {
+				const tints = await resolveTints(instruction.tints, { textures: new TextureLoader(preparation.resources) }).catch(() => []);
+				if (tints.some(tint => tint !== null)) {
+					painted++;
+				}
+			}
+		}
+		expect(painted).toBeGreaterThanOrEqual(20);
+	}, 300000);
+
+	it('curated overrides tint code-colored mod items in both eras', async () => {
+		for (const [gameVersion, vanillaVersion] of [['1.21.1', '1.21.1'], ['26.1.2', '26.1.2']]) {
+			const preparation = await prepareModResources({
+				jars: [await ensureModrinthJar({ slug: 'advancedae', gameVersion, loader: 'neoforge' })],
+				vanilla: new JarResourceManager(await ensureVanillaJar(vanillaVersion)),
+			});
+			// Both quantum armor texture layers are grayscale, so the purple can only
+			// come from the curated override, and the 26.x jar's own definition is a
+			// code-driven model type the override has to outrank.
+			const [red, green, blue] = dominantColor(await renderSingle(preparation.resources, 'advanced_ae:quantum_helmet'));
+			expect(blue, `${gameVersion} blue vs red`).toBeGreaterThan(red);
+			expect(red, `${gameVersion} red vs green`).toBeGreaterThan(green);
+		}
+	}, 300000);
+});
 
 describe.skipIf(!online).each(CASES)('modrinth mod: $label', (entry) => {
 	it('renders with acceptable coverage', async () => {

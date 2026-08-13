@@ -15,3 +15,8 @@ export function builtinPackPath(era: 'modern' | 'legacy'): string {
 export function bedCompatPath(): string {
 	return path.join(assetsRoot, 'builtin-bed-compat');
 }
+
+/** Curated tint overrides for mod items that register their colors in code. */
+export function modTintPackPath(): string {
+	return path.join(assetsRoot, 'mod-tints');
+}

@@ -15,3 +15,6 @@ generators).
 
 Layout is `<namespace>/<models|textures|items|atlases>/…` (no `assets/` nesting) — mount with
 `FolderResourceManager` above the version's own assets.
+
+`mod-tints/` is ours rather than vendored: curated item definitions for mod items that
+register their tint colors in client code. See `mod-tints/README.md`.

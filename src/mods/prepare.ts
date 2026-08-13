@@ -6,6 +6,7 @@
  */
 
 import { synthesizeItemModels } from './synthesize.ts';
+import { curatedTintOverrides, harvestTintOverrides } from './tints.ts';
 import { JarResourceManager, UnsafeJarError } from '../resources/jar.ts';
 import { LayeredResourceManager } from '../resources/manager.ts';
 
@@ -20,6 +21,8 @@ export interface ModPreparation {
 	namespaces: string[];
 	/** Models synthesized for texture-only namespaces. */
 	synthesized: number;
+	/** Items given a tint harvested from a donor jar. */
+	tintOverrides: number;
 	/** Jars rejected (unsafe entries) or unreadable, with reasons. */
 	rejected: Array<{ jar: string; reason: string; }>;
 }
@@ -28,6 +31,11 @@ export interface PrepareModsOptions {
 	jars: string[];
 	/** Vanilla assets for the target version (wins the minecraft namespace). */
 	vanilla: ResourceManager;
+	/**
+	 * Jars from 1.21.4+ releases of the same mods, read only for the tints their
+	 * item definitions state as data (see src/mods/tints.ts).
+	 */
+	tintDonors?: string[];
 	onProgress?: (message: string) => void;
 }
 
@@ -73,8 +81,9 @@ export async function prepareModResources(options: PrepareModsOptions): Promise<
 	}
 
 	// Vanilla wins minecraft:, jars win their own namespaces and backfill
-	// mod-added vanilla paths.
-	const base = new LayeredResourceManager([options.vanilla, ...jarLayers]);
+	// mod-added vanilla paths. Curated tints sit above the jars on purpose —
+	// see src/mods/tints.ts.
+	const base = new LayeredResourceManager([options.vanilla, curatedTintOverrides(), ...jarLayers]);
 
 	const namespaces: string[] = [];
 	let synthesized = 0;
@@ -92,11 +101,33 @@ export async function prepareModResources(options: PrepareModsOptions): Promise<
 		}
 	}
 
+	let tintOverrides = 0;
+	const tintLayers: ResourceManager[] = [];
+	if (options.tintDonors?.length) {
+		const donorJars = options.tintDonors.map(jar => new JarResourceManager(jar));
+		try {
+			const harvest = await harvestTintOverrides({
+				donors: new LayeredResourceManager(donorJars),
+				target: base,
+			});
+			if (harvest.harvested > 0) {
+				tintLayers.push(harvest.overrides);
+				tintOverrides = harvest.harvested;
+				options.onProgress?.(`Harvested tints for ${harvest.harvested} items from ${donorJars.length} donor jars`);
+			}
+		} finally {
+			// Donors are read once here and never rendered from.
+			await Promise.all(donorJars.map(jar => jar.close().catch(() => {})));
+		}
+	}
+
 	return {
-		// Synthesized models sit BELOW the real tree: a mod's own model always wins.
-		resources: new LayeredResourceManager([base, ...synthLayers]),
+		// Synthesized models and harvested tints sit BELOW the real tree: a mod's
+		// own model or definition always wins.
+		resources: new LayeredResourceManager([base, ...synthLayers, ...tintLayers]),
 		namespaces,
 		synthesized,
+		tintOverrides,
 		rejected,
 	};
 }

@@ -11,6 +11,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { bedCompatPath, builtinPackPath } from './builtin.ts';
+import { curatedTintOverrides, harvestTintOverrides } from './mods/tints.ts';
 import { JarResourceManager } from './resources/jar.ts';
 import { FolderResourceManager, LayeredResourceManager } from './resources/manager.ts';
 import { run } from './run.ts';
@@ -29,6 +30,7 @@ const { values } = parseArgs({
 		'assets': { type: 'string', short: 'a', multiple: true },
 		'version': { type: 'string', short: 'v' },
 		'mod': { type: 'string', short: 'm', multiple: true },
+		'tint-donor': { type: 'string', multiple: true },
 		'namespace': { type: 'string', short: 'n', multiple: true },
 		'output': { type: 'string', short: 'o' },
 		'size': { type: 'string', short: 's', default: '64' },
@@ -59,6 +61,7 @@ Input:
   -v, --version <ver>      download + prepare a vanilla version (1.2.5 … latest)
   -a, --assets <dir>       asset root (repeatable, first wins), <namespace>/ children
   -m, --mod <jar>          mod jar layered under vanilla (repeatable)
+      --tint-donor <jar>   1.21.4+ jar of a loaded mod, read for its tints (repeatable)
 
 Options:
   -n, --namespace <ns>     namespace to render (repeatable, default: minecraft)
@@ -111,10 +114,30 @@ if (values.version) {
 	builtin ??= builtinPackPath('modern');
 }
 
+if (values['tint-donor']?.length && !values.mod?.length) {
+	console.error('--tint-donor needs --mod: donors are read for the tints of loaded mods.');
+	process.exit(1);
+}
+
 if (values.mod?.length) {
 	// Mods layer under vanilla: vanilla wins minecraft:, jars provide their own
-	// namespaces and backfill mod-added vanilla paths.
-	resources = new LayeredResourceManager([resources, ...values.mod.map(jar => new JarResourceManager(jar))]);
+	// namespaces and backfill mod-added vanilla paths. Tint layers bracket them —
+	// curated above, harvested below (see src/mods/tints.ts).
+	const base = new LayeredResourceManager([
+		resources,
+		curatedTintOverrides(),
+		...values.mod.map(jar => new JarResourceManager(jar)),
+	]);
+	resources = base;
+	if (values['tint-donor']?.length) {
+		const donorJars = values['tint-donor'].map(jar => new JarResourceManager(jar));
+		const harvest = await harvestTintOverrides({ donors: new LayeredResourceManager(donorJars), target: base });
+		await Promise.all(donorJars.map(jar => jar.close().catch(() => {})));
+		console.log(`Harvested tints for ${harvest.harvested} items from ${donorJars.length} donor jars`);
+		if (harvest.harvested > 0) {
+			resources = new LayeredResourceManager([base, harvest.overrides]);
+		}
+	}
 }
 
 const result = await run({

@@ -105,6 +105,11 @@ Plus per-era shims from the ui pipeline: synthesized `atlases/blocks.json` below
   and UV-atlas skips, cube_bottom_top/cube_all fallbacks.
 - Per-namespace synthesized atlases; loader namespaces excluded; jar safety (reject archives
   with traversal entries).
+- Tint sourcing for code-registered colors (`src/mods/tints.ts`): a mod's 1.21.4+ release
+  states its tints as data, so a newer jar of the same mod is an authoritative donor for its
+  older jars, the same trick donor geometry plays for pre-1.8 versions. Harvested overrides
+  are ordinary item definitions layered below the real tree; the residue no release ever
+  turned into data is curated in `assets/mod-tints/` and layered above the jars.
 - HD/non-square textures: generated path point-resizes to square (upstream-compatible);
   animation strips detected by mcmeta or aspect.
 
