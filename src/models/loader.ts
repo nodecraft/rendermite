@@ -300,12 +300,23 @@ export function salvageJson(text: string): unknown | null {
 export class ModelLoader {
 	private readonly resources: ResourceManager;
 	private readonly cache = new Map<string, Promise<ResolvedModel>>();
+	private readonly jsonCache = new Map<string, Promise<ModelJson>>();
 
 	constructor(resources: ResourceManager) {
 		this.resources = resources;
 	}
 
-	private async readModelJson(locator: ResourceLocator): Promise<ModelJson> {
+	private readModelJson(locator: ResourceLocator): Promise<ModelJson> {
+		const key = locator.toString();
+		let pending = this.jsonCache.get(key);
+		if (!pending) {
+			pending = this.loadModelJson(locator);
+			this.jsonCache.set(key, pending);
+		}
+		return pending;
+	}
+
+	private async loadModelJson(locator: ResourceLocator): Promise<ModelJson> {
 		const raw = await this.resources.getResource('model', locator);
 		if (raw === null) {
 			throw new ModelResolutionError(`Model not found: ${locator}`);

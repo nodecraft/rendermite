@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
+import { combineFaceBuffers } from '../src/render/compose.ts';
 import { buildElementFaces } from '../src/render/geometry.ts';
 import { guiSideLight, legacyFrontLight, legacySideLight } from '../src/render/lighting.ts';
-import { phpRound } from '../src/render/rasterizer.ts';
+import { compactFaceBuffer, createFaceBuffer, phpRound } from '../src/render/rasterizer.ts';
 import { parseTintValue, resolveTint } from '../src/render/tints.ts';
 import {
 	displayMatrix,
@@ -17,6 +18,46 @@ describe('phpRound', () => {
 		expect(phpRound(-0.5)).toBe(-1);
 		expect(phpRound(1.4)).toBe(1);
 		expect(phpRound(-1.4)).toBe(-1);
+	});
+});
+
+describe('compactFaceBuffer', () => {
+	it('retains visible colors and depths in their original image position', () => {
+		const full = createFaceBuffer(5, 4);
+		const first = full.width + 2;
+		const second = 2 * full.width + 3;
+		full.colors.set([0.1, 0.2, 0.3, 0.4], first * 4);
+		full.colors.set([0.5, 0.6, 0.7, 0.8], second * 4);
+		full.depths[first] = 0.25;
+		full.depths[second] = 0.75;
+
+		const compact = compactFaceBuffer(full);
+		expect(compact).not.toBeNull();
+		expect(compact && { x: compact.x, y: compact.y, width: compact.width, height: compact.height })
+			.toEqual({ x: 2, y: 1, width: 2, height: 2 });
+		expect(compact?.colors[3]).toBeCloseTo(0.4);
+		expect(compact?.colors[15]).toBeCloseTo(0.8);
+		expect(compact?.depths[0]).toBe(0.25);
+		expect(compact?.depths[3]).toBe(0.75);
+	});
+
+	it('composes identically to the full-size buffers', () => {
+		const back = createFaceBuffer(4, 3);
+		const front = createFaceBuffer(4, 3);
+		for (const [buffer, x, y, depth, color] of [
+			[back, 1, 1, 0.25, [1, 0, 0, 0.5]],
+			[front, 1, 1, 0.75, [0, 0, 1, 0.5]],
+			[front, 2, 1, 0.75, [0, 1, 0, 1]],
+		] as const) {
+			const pixel = y * buffer.width + x;
+			buffer.depths[pixel] = depth;
+			buffer.colors.set(color, pixel * 4);
+		}
+		const expected = combineFaceBuffers(4, 3, [back, front]);
+		const compact = [compactFaceBuffer(back), compactFaceBuffer(front)]
+			.filter(buffer => buffer !== null);
+		const actual = combineFaceBuffers(4, 3, compact);
+		expect([...actual.data]).toEqual([...expected.data]);
 	});
 });
 

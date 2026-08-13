@@ -14,13 +14,31 @@ export function combineFaceBuffers(width: number, height: number, faces: FaceBuf
 	const out = new Float64Array(width * height * 4);
 	const order = [...faces];
 	for (let pixel = 0; pixel < width * height; pixel++) {
+		const x = pixel % width;
+		const y = Math.floor(pixel / width);
+		const localPixel = (face: FaceBuffer): number | null => {
+			const localX = x - face.x;
+			const localY = y - face.y;
+			return localX >= 0 && localX < face.width && localY >= 0 && localY < face.height
+				? localY * face.width + localX
+				: null;
+		};
 		// Stable insertion-friendly sort per pixel, matching upstream's usort semantics.
-		order.sort((a, b) => a.depths[pixel] - b.depths[pixel]);
+		order.sort((a, b) => {
+			const aPixel = localPixel(a);
+			const bPixel = localPixel(b);
+			return (aPixel === null ? 0 : a.depths[aPixel]) - (bPixel === null ? 0 : b.depths[bPixel]);
+		});
 		const offset = pixel * 4;
 		for (const face of order) {
-			const alpha = face.colors[offset + 3];
+			const facePixel = localPixel(face);
+			if (facePixel === null) {
+				continue;
+			}
+			const faceOffset = facePixel * 4;
+			const alpha = face.colors[faceOffset + 3];
 			if (alpha > 0) {
-				blendPixel(out, offset, face.colors[offset], face.colors[offset + 1], face.colors[offset + 2], alpha);
+				blendPixel(out, offset, face.colors[faceOffset], face.colors[faceOffset + 1], face.colors[faceOffset + 2], alpha);
 			}
 		}
 	}

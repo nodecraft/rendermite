@@ -8,6 +8,8 @@ import { JarResourceManager } from '../src/resources/jar.ts';
 import { LayeredResourceManager } from '../src/resources/manager.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 
+import type { ResourceManager } from '../src/resources/manager.ts';
+
 // Real 1.21.8 client assets, staged by `.work` setup (see DESIGN.md testing section).
 const assetsJar = vanillaJar('1.21.8');
 const hasFixture = existsSync(assetsJar);
@@ -83,5 +85,37 @@ describe('salvageJson', () => {
 	it('returns null for truncated JSON', () => {
 		expect(salvageJson('{"a": {"b": 1}')).toBeNull();
 		expect(salvageJson('no json here')).toBeNull();
+	});
+});
+
+describe('shared model parents', () => {
+	it('parses and retains shared parent geometry only once', async () => {
+		const resources = new MapResourceManager()
+			.set('model', 'example:item/first', JSON.stringify({ parent: 'example:item/shared' }))
+			.set('model', 'example:item/second', JSON.stringify({ parent: 'example:item/shared' }))
+			.set('model', 'example:item/shared', JSON.stringify({
+				parent: 'builtin/generated',
+				textures: { layer0: 'example:item/shared' },
+				elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: {} }],
+			}));
+		let sharedReads = 0;
+		const counting: ResourceManager = {
+			getResource: async (kind, locator) => {
+				if (kind === 'model' && locator.toString() === 'example:item/shared') {
+					sharedReads++;
+				}
+				return resources.getResource(kind, locator);
+			},
+			hasResource: (kind, locator) => resources.hasResource(kind, locator),
+			getAllResources: (kind, locator) => resources.getAllResources(kind, locator),
+			listResources: (kind, namespace) => resources.listResources(kind, namespace),
+			listNamespaces: () => resources.listNamespaces(),
+		};
+		const loader = new ModelLoader(counting);
+		const first = await loader.load('example:item/first');
+		const second = await loader.load('example:item/second');
+
+		expect(sharedReads).toBe(1);
+		expect(first.elements).toBe(second.elements);
 	});
 });

@@ -6,6 +6,7 @@
 import { cloneFloatTexture, darkenTexture, tintTexture } from './blend.ts';
 import {
 	RowCursor,
+	compactFaceBuffer,
 	createFaceBuffer,
 	drawTexturedTriangle,
 	phpRound,
@@ -146,5 +147,5 @@ export function renderFace(
 	const cursor = new RowCursor();
 	drawTexturedTriangle(point(0), point(2), point(3), buffer, texture, cursor);
 	drawTexturedTriangle(point(0), point(1), point(2), buffer, texture, cursor);
-	return buffer;
+	return compactFaceBuffer(buffer);
 }

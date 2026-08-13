@@ -5,19 +5,99 @@
  * warning rather than failing the run (mods ship experimental types).
  */
 
-import { createAtlasResolver, parseAtlasSources } from './sources.ts';
+import { PalettedPermutationsSource, createAtlasResolver, parseAtlasSources } from './sources.ts';
+import { ResourceLocator } from '../resources/locator.ts';
 
 import type { AtlasResolver, AtlasSource } from './sources.ts';
-import type { ResourceLocator } from '../resources/locator.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 import type { Texture } from '../textures/loader.ts';
+
+/**
+ * Some mods generate flat item-trim permutations in code rather than declaring
+ * them in an atlas. Infer only the exact Minecraft convention when all three
+ * inputs exist: `<type>_trim.png`, `trim_palette.png`, and the requested color
+ * palette. Direct files and authored atlas sources still take precedence.
+ */
+class InferredItemTrimSource implements AtlasSource {
+	private readonly cache = new Map<string, Promise<PalettedPermutationsSource | null>>();
+	private readonly resources: ResourceManager;
+	private readonly loadTexture: (locator: ResourceLocator) => Promise<Texture | null>;
+
+	constructor(
+		resources: ResourceManager,
+		loadTexture: (locator: ResourceLocator) => Promise<Texture | null>,
+	) {
+		this.resources = resources;
+		this.loadTexture = loadTexture;
+	}
+
+	private async firstTexture(candidates: ResourceLocator[]): Promise<ResourceLocator | null> {
+		for (const candidate of candidates) {
+			if (await this.resources.hasResource('texture', candidate)) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+
+	private create(locator: ResourceLocator): Promise<PalettedPermutationsSource | null> {
+		const match = /^(trims\/items\/.+_trim)_(.+)$/.exec(locator.path);
+		if (!match) {
+			return Promise.resolve(null);
+		}
+		const [, basePath, variant] = match;
+		return (async () => {
+			const base = new ResourceLocator(locator.namespace, basePath);
+			if (!(await this.resources.hasResource('texture', base))) {
+				return null;
+			}
+			const key = await this.firstTexture([
+				new ResourceLocator(locator.namespace, 'trims/color_palettes/trim_palette'),
+				ResourceLocator.parse('minecraft:trims/color_palettes/trim_palette'),
+			]);
+			const palette = await this.firstTexture([
+				new ResourceLocator(locator.namespace, `trims/color_palettes/${variant}`),
+				ResourceLocator.parse(`minecraft:trims/color_palettes/${variant}`),
+			]);
+			if (!key || !palette) {
+				return null;
+			}
+			return new PalettedPermutationsSource({
+				textures: [base.toString()],
+				palette_key: key.toString(),
+				permutations: { [variant]: palette.toString() },
+			}, this.loadTexture);
+		})();
+	}
+
+	private source(locator: ResourceLocator): Promise<PalettedPermutationsSource | null> {
+		const key = locator.toString();
+		let pending = this.cache.get(key);
+		if (!pending) {
+			pending = this.create(locator);
+			this.cache.set(key, pending);
+		}
+		return pending;
+	}
+
+	async has(locator: ResourceLocator): Promise<boolean> {
+		return (await this.source(locator)) !== null;
+	}
+
+	async resolve(locator: ResourceLocator) {
+		const source = await this.source(locator);
+		return source?.resolve(locator) ?? null;
+	}
+}
 
 export async function loadAtlasResolver(
 	resources: ResourceManager,
 	loadTexture: (locator: ResourceLocator) => Promise<Texture | null>,
 	onWarning?: (message: string) => void,
 ): Promise<AtlasResolver> {
-	const sources: AtlasSource[] = [];
+	// Added first so reverse resolution gives every authored atlas source higher
+	// priority. This is strictly a fallback for otherwise-missing generated sprites.
+	const sources: AtlasSource[] = [new InferredItemTrimSource(resources, loadTexture)];
 	for (const namespace of await resources.listNamespaces()) {
 		const atlasFiles = await resources.listResources('atlas', namespace);
 		atlasFiles.sort((a, b) => a.path.localeCompare(b.path));

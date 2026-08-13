@@ -8,6 +8,9 @@ import type { FloatTexture } from './blend.ts';
 
 /** Per-face private color + depth buffers, image sized. */
 export interface FaceBuffer {
+	/** Position within the final image (full-size scratch buffers start at 0,0). */
+	x: number;
+	y: number;
 	width: number;
 	height: number;
 	/** RGBA float, overwritten (not blended) by the rasterizer. */
@@ -18,11 +21,54 @@ export interface FaceBuffer {
 
 export function createFaceBuffer(width: number, height: number): FaceBuffer {
 	return {
+		x: 0,
+		y: 0,
 		width,
 		height,
 		colors: new Float64Array(width * height * 4),
 		depths: new Float64Array(width * height),
 	};
+}
+
+/**
+ * Retain only the rectangle containing visible pixels. Complex block models can
+ * contain thousands of tiny faces; keeping a full icon-sized color/depth buffer
+ * for each one turns a 64px render into gigabytes of transient memory.
+ */
+export function compactFaceBuffer(buffer: FaceBuffer): FaceBuffer | null {
+	let minX = buffer.width;
+	let minY = buffer.height;
+	let maxX = -1;
+	let maxY = -1;
+	for (let y = 0; y < buffer.height; y++) {
+		for (let x = 0; x < buffer.width; x++) {
+			if (buffer.colors[(y * buffer.width + x) * 4 + 3] <= 0) {
+				continue;
+			}
+			minX = Math.min(minX, x);
+			minY = Math.min(minY, y);
+			maxX = Math.max(maxX, x);
+			maxY = Math.max(maxY, y);
+		}
+	}
+	if (maxX < minX || maxY < minY) {
+		return null;
+	}
+
+	const width = maxX - minX + 1;
+	const height = maxY - minY + 1;
+	const colors = new Float64Array(width * height * 4);
+	const depths = new Float64Array(width * height);
+	for (let y = 0; y < height; y++) {
+		const sourcePixel = (minY + y) * buffer.width + minX;
+		const targetPixel = y * width;
+		colors.set(
+			buffer.colors.subarray(sourcePixel * 4, (sourcePixel + width) * 4),
+			targetPixel * 4,
+		);
+		depths.set(buffer.depths.subarray(sourcePixel, sourcePixel + width), targetPixel);
+	}
+	return { x: buffer.x + minX, y: buffer.y + minY, width, height, colors, depths };
 }
 
 export interface RasterPoint {

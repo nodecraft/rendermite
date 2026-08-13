@@ -349,19 +349,34 @@ async function renderElementModelWith(
 ): Promise<FloatTexture> {
 	const lights = lightsForProfile(options.lightingProfile);
 	const light = model.elementsGuiLight === 'side' ? lights.side : lights.front;
+	const loadedTextures = new Map<string, Promise<Texture | null>>();
+	const floatTextures = new Map<Texture, FloatTexture>();
+	const load = (reference: string): Promise<Texture | null> => {
+		let pending = loadedTextures.get(reference);
+		if (!pending) {
+			pending = supplier(reference);
+			loadedTextures.set(reference, pending);
+		}
+		return pending;
+	};
 
 	const faces: RenderableFace[] = [];
 	let skippedFaces = 0;
 	for (const element of model.elements) {
 		for (const geometry of buildElementFaces(element)) {
-			const texture = await supplier(geometry.textureRef);
+			const texture = await load(geometry.textureRef);
 			if (!texture) {
 				skippedFaces++;
 				continue;
 			}
+			let float = floatTextures.get(texture);
+			if (!float) {
+				float = toFloatTexture(texture);
+				floatTextures.set(texture, float);
+			}
 			faces.push({
 				geometry,
-				texture: toFloatTexture(texture),
+				texture: float,
 				light,
 				tint: geometry.tintIndex !== null ? options.tints?.[geometry.tintIndex] ?? null : null,
 				maxZ: faceMaxZ(geometry),
