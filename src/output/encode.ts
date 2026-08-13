@@ -33,6 +33,28 @@ export interface AnimatedEncodeOptions extends EncodeOptions {
 	gif?: boolean;
 }
 
+export type RasterAssetFormat = 'png' | 'webp' | 'avif';
+
+/** Losslessly transcode an existing PNG resource into the formats referenced by generated CSS. */
+export async function encodeRasterAsset(source: Buffer, formats: readonly RasterAssetFormat[]): Promise<Map<RasterAssetFormat, Buffer>> {
+	const image = sharp(source);
+	const unique = [...new Set(formats)];
+	const encoded = await Promise.all(unique.map(async (format): Promise<[RasterAssetFormat, Buffer]> => {
+		switch (format) {
+			case 'png': {
+				return [format, await image.clone().png({ compressionLevel: 9, effort: 10 }).toBuffer()];
+			}
+			case 'webp': {
+				return [format, await image.clone().webp({ lossless: true, effort: 6 }).toBuffer()];
+			}
+			case 'avif': {
+				return [format, await image.clone().avif({ lossless: true, effort: 6 }).toBuffer()];
+			}
+		}
+	}));
+	return new Map(encoded);
+}
+
 /**
  * Encode a multi-frame icon: animated WebP (universal), optional GIF for
  * legacy browsers, PNG as the static first frame (matching upstream's

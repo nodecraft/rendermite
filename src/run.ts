@@ -12,7 +12,7 @@ import { builtinDynamicResources } from './dynamic/generators.ts';
 import { defaultProperties, evaluateItemModel } from './items/definition.ts';
 import { discoverItems, resolveItem } from './items/discovery.ts';
 import { ModelLoader } from './models/loader.ts';
-import { encodeAnimatedIcon } from './output/encode.ts';
+import { encodeAnimatedIcon, encodeRasterAsset } from './output/encode.ts';
 import { classifyItemStyle } from './output/item-styles.ts';
 import { minifyStylesheet } from './output/minify.ts';
 import { generateStylesheet } from './output/stylesheet.ts';
@@ -83,7 +83,7 @@ export interface RunResult {
 	 * from genuine misses.
 	 */
 	skippedTemplates: string[];
-	/** Files actually written, the only trustworthy success signal. */
+	/** Image files actually written, the only trustworthy success signal. */
 	writtenFiles: number;
 }
 
@@ -92,6 +92,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
 	const size = options.size ?? 64;
 	const quality = options.quality ?? 2;
 	const prefix = options.prefix ?? 'rc-';
+	const format = options.format ?? 'webp';
+	const fallback = options.fallback ?? true;
 	const lightingProfile = options.lightingProfile ?? 'modern';
 
 	// Dynamic resources (pot variants, leather trim layers, charged crossbows)
@@ -102,6 +104,12 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		: options.resources;
 	const models = new ModelLoader(resources);
 	const textures = new TextureLoader(resources);
+	const glint = await resolveEnchantmentGlint(resources);
+	if (!glint) {
+		throw new Error('Missing enchantment glint texture (minecraft:misc/enchanted_glint_item or enchanted_item_glint)');
+	}
+	const glintFormats = fallback ? ['png', format] as const : [format] as const;
+	const encodedGlint = await encodeRasterAsset(glint, glintFormats);
 	// Atlas sources synthesize sprites with no file behind them (armor trims via
 	// paletted_permutations, unstitch regions) — the class renderchest v2.5.2
 	// resolved nothing for.
@@ -161,6 +169,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
 	const skippedTemplates: string[] = [];
 	const styles: ItemStyle[] = [];
 	let writtenFiles = 0;
+	await mkdir(options.output, { recursive: true });
+	for (const [extension, buffer] of encodedGlint) {
+		await writeFile(path.join(options.output, `${prefix}enchantment.${extension}`), buffer);
+		writtenFiles++;
+	}
 
 	// Locators (as strings) used as a parent by another item model in the run's
 	// namespaces — failing ids that are really templates, built only if needed.
@@ -336,7 +349,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 			const encoded = await encodeAnimatedIcon(frames, delaysMs, {
 				webp: true,
 				gif: options.gif,
-				avif: options.avif,
+				avif: options.avif || format === 'avif',
 			});
 			const [namespace, itemPath] = id.split(':', 2);
 			const imageBase = path.join(options.output, 'items', namespace, `${itemPath}`);
@@ -386,8 +399,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
 
 	const stylesheet = generateStylesheet(styles, {
 		prefix,
-		format: options.format ?? 'webp',
-		fallback: options.fallback ?? true,
+		format,
+		fallback,
 	});
 	const finalStylesheet = options.minify === false
 		? stylesheet
@@ -409,6 +422,17 @@ async function itemExistsIn(resources: ResourceManager, id: string): Promise<boo
 		return true;
 	}
 	return resources.hasResource('model', new ResourceLocator(locator.namespace, `item/${locator.path}`));
+}
+
+/** Resolve both names used on either side of Minecraft 1.19.3. */
+async function resolveEnchantmentGlint(resources: ResourceManager): Promise<Buffer | null> {
+	for (const path of ['misc/enchanted_glint_item', 'misc/enchanted_item_glint']) {
+		const texture = await resources.getResource('texture', new ResourceLocator('minecraft', path));
+		if (texture) {
+			return texture;
+		}
+	}
+	return null;
 }
 
 function blendOver(base: FloatTexture, layer: FloatTexture): FloatTexture {

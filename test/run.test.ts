@@ -27,6 +27,10 @@ import type { RunResult } from '../src/run.ts';
 
 const builtin = builtinPackPath('modern');
 
+function cssTargets(css: string): string[] {
+	return new Set(css.matchAll(/url\(["']?([^"')]+)["']?\)/g).map(match => match[1])).values().toArray();
+}
+
 describe('run() end to end', () => {
 	let output: string;
 	let result: RunResult;
@@ -95,10 +99,50 @@ describe('run() end to end', () => {
 		expect(css).not.toContain('\n    ');
 	});
 
+	it('writes every image referenced by the stylesheet, including both glint formats', async () => {
+		const css = await readFile(path.join(output, 'rc-modernmod-64.css'), 'utf8');
+		const targets = cssTargets(css);
+		expect(targets).toContain('rc-enchantment.png');
+		expect(targets).toContain('rc-enchantment.webp');
+		for (const target of targets) {
+			await expect(readFile(path.join(output, target)), target).resolves.toBeInstanceOf(Buffer);
+		}
+		for (const target of ['rc-enchantment.png', 'rc-enchantment.webp']) {
+			const metadata = await sharp(await readFile(path.join(output, target))).metadata();
+			expect(metadata.width, target).toBeGreaterThan(0);
+			expect(metadata.height, target).toBeGreaterThan(0);
+		}
+	});
+
 	it('writes the item list and the failure sidecar', async () => {
 		const list = JSON.parse(await readFile(path.join(output, 'rc-modernmod.json'), 'utf8')) as string[];
 		expect(list).toEqual(result.rendered);
 		const failures = JSON.parse(await readFile(path.join(output, 'rc-modernmod-failures.json'), 'utf8')) as unknown[];
 		expect(failures).toEqual([]);
 	});
+
+	it('emits AVIF targets when AVIF is the primary format without a separate --avif flag', async () => {
+		const avifOutput = await mkdtemp(path.join(tmpdir(), 'rendermite-avif-'));
+		try {
+			const avifResult = await run({
+				resources: new JarResourceManager(await ensureVanillaJar('1.21.8')),
+				builtin,
+				output: avifOutput,
+				namespaces: ['empty_fixture'],
+				format: 'avif',
+				fallback: false,
+				itemList: false,
+			});
+			expect(avifResult.failed).toEqual([]);
+			const css = await readFile(path.join(avifOutput, 'rc-empty_fixture-64.css'), 'utf8');
+			const targets = cssTargets(css);
+			expect(targets).toContain('rc-enchantment.avif');
+			expect(targets.every(target => target.endsWith('.avif'))).toBe(true);
+			for (const target of targets) {
+				await expect(readFile(path.join(avifOutput, target)), target).resolves.toBeInstanceOf(Buffer);
+			}
+		} finally {
+			await rm(avifOutput, { recursive: true, force: true });
+		}
+	}, 240000);
 });

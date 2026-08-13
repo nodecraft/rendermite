@@ -52,6 +52,7 @@ Useful flags: `--size <px>` (default 64), `--format webp|avif`, `--gif` for lega
 icons/
   items/<namespace>/<item>.png     # always written
   items/<namespace>/<item>.webp    # lossless, animated where the item animates
+  rc-enchantment.<format>          # each lossless glint format referenced by the CSS
   rc-<namespace>-64.css            # spritesheet CSS (class per item, enchant glint, tint layers)
   rc-<namespace>.json              # rendered item id list
   rc-<namespace>-failures.json     # per-item failures with reasons, never silent

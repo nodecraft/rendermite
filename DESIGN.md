@@ -111,6 +111,7 @@ Plus per-era shims from the ui pipeline: synthesized `atlases/blocks.json` below
 ## Output contract
 
 - `items/<ns>/<item>.png|webp` at 64px (size/quality configurable like upstream).
+- `<prefix>enchantment.png|webp|avif` for every glint format referenced by the stylesheet.
 - `rc-minecraft-64.css` per `docs/research/css-contract.md` (compound selectors, tint custom
   properties, glint `:after`, `@media (min-resolution: 1dpi)` WebP upgrade block), with a
   configurable URL prefix so published sheets need no rebasing, and sanitized selectors so
