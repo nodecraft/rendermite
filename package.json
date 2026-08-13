@@ -4,7 +4,7 @@
 	"description": "Minecraft item icon renderer: renders inventory-identical item icons from vanilla and modded assets across game versions, outputting optimized PNG/WebP/AVIF plus CSS and a JSON item library.",
 	"type": "module",
 	"license": "MIT",
-	"author": "James Ross <james@jross.me> (https://jross.me/)",
+	"author": "Nodecraft",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/nodecraft/rendermite.git"
