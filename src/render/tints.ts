@@ -99,7 +99,11 @@ export async function resolveTint(definition: TintDefinition, context: TintConte
 			return hexColor(DYE_COLORS[index % DYE_COLORS.length]);
 		}
 		default: {
-			if (DEFAULT_READING_TYPES.has(type)) {
+			// Data-driven/modded tint sources use `default` as the static value to
+			// show when their runtime property cannot be resolved. The namespace is
+			// intentionally open-ended: loaders can register their own tint types,
+			// and a supplied default is still enough to render an accurate icon.
+			if (DEFAULT_READING_TYPES.has(type) || Object.hasOwn(definition, 'default')) {
 				return parseTintValue(definition.default);
 			}
 			throw new InvalidTinterDefinitionError(`Unknown tint type: ${definition.type}`);

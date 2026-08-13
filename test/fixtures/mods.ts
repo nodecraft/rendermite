@@ -368,6 +368,20 @@ const MODS: FixtureMod[] = [
 		},
 	},
 	{
+		// Modern code-rendered bed whose entity sheet is supplied by the mod.
+		name: 'modernentitymod',
+		entries: {
+			'assets/modernentitymod/models/item/azure_bed.json': { parent: 'builtin/entity' },
+			'assets/modernentitymod/textures/entity/bed/azure.png': png([30, 90, 220, 255], 64),
+			'assets/modernentitymod/models/item/azure_crate.json': { parent: 'minecraft:item/template_chest' },
+			'assets/modernentitymod/textures/entity/azure_crate/single/azure_crate_0.png': png([30, 90, 220, 255], 64),
+			'assets/modernentitymod/lang/en_us.json': {
+				'item.modernentitymod.azure_bed': 'Azure Bed',
+				'item.modernentitymod.azure_crate': 'Azure Crate',
+			},
+		},
+	},
+	{
 		// 1.7.10-era: no JSON models at all; plural texture dirs; camelCase names.
 		name: 'legacymod',
 		entries: {

@@ -19,7 +19,7 @@ import type { ResourceManager } from '../resources/manager.ts';
 import type { TextureLoader } from '../textures/loader.ts';
 
 /** Tokens too generic to identify a texture on their own. */
-const FILLER_TOKENS = new Set(['chest', 'chests', 'trapped', 'big', 'small', 'the', 'of']);
+const FILLER_TOKENS = new Set(['chest', 'chests', 'crate', 'crates', 'trapped', 'big', 'small', 'the', 'of']);
 
 /** Double-chest halves, lid states, boat sheets, seasonal skins — never icon textures. */
 const SKIP_TOKENS = new Set(['left', 'right', 'open', 'opened', 'christmas', 'boat', 'raft', 'minecart']);
@@ -44,7 +44,7 @@ async function findChestTexture(
 	let bestScore = 0;
 	let bestNoise = Infinity;
 	for (const locator of await resources.listResources('texture', namespace)) {
-		if (!locator.path.includes('chest')) {
+		if (!locator.path.includes('chest') && !locator.path.includes('crate')) {
 			continue;
 		}
 		const candidate = tokens(locator.path);
@@ -61,6 +61,9 @@ async function findChestTexture(
 			if (candidate.includes(token)) {
 				score++;
 			}
+		}
+		if (locator.path.endsWith(`/${itemName}`) || locator.path.endsWith(`/${itemName}_0`)) {
+			score++;
 		}
 		// A texture matching no distinguishing token is only acceptable when the
 		// item name has none to offer (a mod's single plain "chest").
@@ -106,6 +109,40 @@ const DYE_COLORS: Record<string, number> = {
 };
 
 const DYE_PREFIX = new RegExp(`^(${Object.keys(DYE_COLORS).join('|')})_(.+)$`);
+
+/** Find a full modded bed entity sheet, preferring every distinguishing item-name token. */
+async function findBedTexture(
+	resources: ResourceManager,
+	namespace: string,
+	itemName: string,
+): Promise<ResourceLocator | null> {
+	const wanted = tokens(itemName).filter(token => token !== 'bed');
+	const hasDye = wanted.some(token => Object.hasOwn(DYE_COLORS, token));
+	let best: ResourceLocator | null = null;
+	let bestScore = 0;
+	let bestNoise = Infinity;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		if (!locator.path.startsWith('entity/') || !locator.path.includes('bed')) {
+			continue;
+		}
+		const candidate = tokens(locator.path);
+		let score = hasDye ? 0 : (candidate.includes('undyed') ? 1 : 0);
+		for (const token of wanted) {
+			if (candidate.includes(token)) {
+				score++;
+			}
+		}
+		if (score === 0) {
+			continue;
+		}
+		if (best === null || score > bestScore || (score === bestScore && candidate.length < bestNoise)) {
+			best = locator;
+			bestScore = score;
+			bestNoise = candidate.length;
+		}
+	}
+	return best;
+}
 
 /**
  * Dyed variants of vanilla items whose models mods generate at runtime (quark's
@@ -272,7 +309,7 @@ export async function renderEntityFallback(
 	}
 
 	// Chests — but never chestplates.
-	if (name.includes('chest') && !name.includes('chestplate')) {
+	if ((name.includes('chest') && !name.includes('chestplate')) || name.endsWith('_crate')) {
 		const variant = name.includes('ender') ? 'ender' : (name.includes('trapped') ? 'trapped' : 'normal');
 		// The modern builtin nests per-variant wrappers; the legacy one has a
 		// single geometry expecting a #texture binding.
@@ -296,6 +333,18 @@ export async function renderEntityFallback(
 			}
 		}
 		return null;
+	}
+
+	if (name === 'bed' || name.endsWith('_bed')) {
+		const modTexture = await findBedTexture(resources, locator.namespace, name);
+		if (modTexture) {
+			try {
+				const model = await models.load('renderchest:item/bed');
+				return await renderModel(withTexture(model, 'texture', modTexture), textures, options);
+			} catch {
+				return null;
+			}
+		}
 	}
 
 	if (name.includes('shulker_box')) {

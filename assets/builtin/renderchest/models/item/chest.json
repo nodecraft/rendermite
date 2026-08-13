@@ -1,6 +1,5 @@
 {
 	"credit": "Made with Blockbench",
-	"parent": "minecraft:item/template_chest",
 	"texture_size": [64, 64],
 	"gui_light": "side",
 	"elements": [
@@ -43,5 +42,11 @@
 				"down": {"uv": [0.75, 0, 1.25, 0.25], "texture": "#texture"}
 			}
 		}
-	]
+	],
+	"display": {
+		"gui": {
+			"rotation": [30, 45, 0],
+			"scale": [0.625, 0.625, 0.625]
+		}
+	}
 }

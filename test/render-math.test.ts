@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildElementFaces } from '../src/render/geometry.ts';
 import { guiSideLight, legacyFrontLight, legacySideLight } from '../src/render/lighting.ts';
 import { phpRound } from '../src/render/rasterizer.ts';
-import { parseTintValue } from '../src/render/tints.ts';
+import { parseTintValue, resolveTint } from '../src/render/tints.ts';
 import {
 	displayMatrix,
 	identity,
@@ -78,6 +78,16 @@ describe('parseTintValue', () => {
 
 	it('accepts float triples', () => {
 		expect(parseTintValue([0.5, 0.25, 1])).toEqual({ r: 0.5, g: 0.25, b: 1 });
+	});
+});
+
+describe('resolveTint', () => {
+	it('uses the default value of custom namespaced tint types', async () => {
+		const color = await resolveTint(
+			{ type: 'modernmod:effect_buildup', default: 0x00_CC_40 },
+			{ textures: null as never },
+		);
+		expect(color).toEqual({ r: 0, g: 0xCC / 255, b: 0x40 / 255 });
 	});
 });
 

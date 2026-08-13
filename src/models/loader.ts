@@ -41,6 +41,12 @@ export class ModelResolutionError extends Error {}
 const MAX_PARENT_DEPTH = 64;
 const MAX_TEXTURE_REF_DEPTH = 16;
 
+/** Forge's generated-item aliases are injected by the loader, not shipped as resources. */
+const MODEL_PARENT_ALIASES: Readonly<Record<string, string>> = {
+	'forge:item/default': 'minecraft:item/generated',
+	'forge:item/default-tool': 'minecraft:item/handheld',
+};
+
 /**
  * Per-mod synthesizers for loaders whose geometry lives entirely in Java but
  * whose icon shape is simple and stable enough to rebuild from the model json.
@@ -343,7 +349,7 @@ export class ModelLoader {
 				builtinParent = normalizeBuiltin(json.parent);
 				current = null;
 			} else {
-				current = ResourceLocator.parse(json.parent);
+				current = ResourceLocator.parse(MODEL_PARENT_ALIASES[json.parent] ?? json.parent);
 			}
 		}
 
@@ -442,4 +448,3 @@ export function resolveTexture(model: ResolvedModel, reference: string): Resourc
 	}
 	return null;
 }
-

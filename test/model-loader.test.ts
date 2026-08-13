@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { vanillaJar } from './fixtures/index.ts';
 import { ModelLoader, resolveTexture, salvageJson } from '../src/models/loader.ts';
 import { JarResourceManager } from '../src/resources/jar.ts';
+import { LayeredResourceManager } from '../src/resources/manager.ts';
+import { MapResourceManager } from '../src/resources/synthetic.ts';
 
 // Real 1.21.8 client assets, staged by `.work` setup (see DESIGN.md testing section).
 const assetsJar = vanillaJar('1.21.8');
@@ -41,6 +43,27 @@ describe.skipIf(!hasFixture)('ModelLoader against 1.21.8 assets', () => {
 		expect(resolveTexture(model, '#north')).toBeNull();
 		const stone = await loader.load('minecraft:block/stone');
 		expect(resolveTexture(stone, '#north')?.toString()).toBe('minecraft:block/stone');
+	});
+
+	it('resolves Forge generated-item parent aliases', async () => {
+		const mod = new MapResourceManager()
+			.set('model', 'example:item/layered', JSON.stringify({
+				parent: 'forge:item/default',
+				textures: { layer0: 'example:item/layered' },
+			}))
+			.set('model', 'example:item/tool', JSON.stringify({
+				parent: 'forge:item/default-tool',
+				textures: { layer0: 'example:item/tool' },
+			}));
+		const aliased = new ModelLoader(new LayeredResourceManager([mod, new JarResourceManager(assetsJar)]));
+
+		const layered = await aliased.load('example:item/layered');
+		expect(layered.builtinParent).toBe('builtin/generated');
+		expect(layered.chain).toContain('minecraft:item/generated');
+
+		const tool = await aliased.load('example:item/tool');
+		expect(tool.builtinParent).toBe('builtin/generated');
+		expect(tool.chain).toContain('minecraft:item/handheld');
 	});
 });
 

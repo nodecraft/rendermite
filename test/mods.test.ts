@@ -374,6 +374,41 @@ describe('code-rendered items (geckomod) via run() fallbacks', () => {
 	}, 120000);
 });
 
+describe('modern code-rendered entity fallbacks', () => {
+	it('renders a modded bed from its entity sheet', async () => {
+		const { mkdtemp, rm } = await import('node:fs/promises');
+		const { tmpdir } = await import('node:os');
+		const { default: pathModule } = await import('node:path');
+		const { builtinPackPath } = await import('../src/builtin.ts');
+		const { run } = await import('../src/run.ts');
+		const { LayeredResourceManager } = await import('../src/resources/manager.ts');
+
+		const output = await mkdtemp(pathModule.join(tmpdir(), 'rc-modern-entity-'));
+		try {
+			const result = await run({
+				resources: new LayeredResourceManager([
+					new JarResourceManager(fixtureModJar('modernentitymod')),
+					new JarResourceManager(await ensureVanillaJar('1.21.8')),
+				]),
+				builtin: builtinPackPath('modern'),
+				output,
+				namespaces: ['modernentitymod'],
+			});
+			expect(result.rendered).toContain('modernentitymod:azure_bed');
+			const bed = await sharpDecode(pathModule.join(output, 'items', 'modernentitymod', 'azure_bed.png'));
+			expect(hasContent(bed)).toBe(true);
+			const [red, green, blue] = dominantColor(bed);
+			expect(blue).toBeGreaterThan(red);
+			expect(blue).toBeGreaterThan(green);
+			expect(result.rendered).toContain('modernentitymod:azure_crate');
+			const crate = await sharpDecode(pathModule.join(output, 'items', 'modernentitymod', 'azure_crate.png'));
+			expect(hasContent(crate)).toBe(true);
+		} finally {
+			await rm(output, { recursive: true, force: true });
+		}
+	}, 120000);
+});
+
 describe('run() fallback chain (loadermod)', () => {
 	it('block-model fallback, dyed variants, and template skipping', async () => {
 		const { mkdtemp, rm } = await import('node:fs/promises');
