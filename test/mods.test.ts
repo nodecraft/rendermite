@@ -451,6 +451,39 @@ describe('run() fallback chain (loadermod)', () => {
 			await rm(output, { recursive: true, force: true });
 		}
 	}, 120000);
+
+	it('can preserve every real model in a prepared resource tree', async () => {
+		const { mkdtemp, rm } = await import('node:fs/promises');
+		const { tmpdir } = await import('node:os');
+		const { default: pathModule } = await import('node:path');
+		const { run } = await import('../src/run.ts');
+		const { LayeredResourceManager } = await import('../src/resources/manager.ts');
+		const { builtinPackPath } = await import('../src/builtin.ts');
+
+		const output = await mkdtemp(pathModule.join(tmpdir(), 'rc-loader-all-models-'));
+		try {
+			const result = await run({
+				resources: new LayeredResourceManager([
+					new JarResourceManager(fixtureModJar('loadermod')),
+					new JarResourceManager(await ensureVanillaJar('1.20.4')),
+				]),
+				builtin: builtinPackPath('legacy'),
+				output,
+				namespaces: ['loadermod'],
+				filterUntranslatedModels: false,
+				itemList: false,
+			});
+			// Prepared callers own model filtering, so a key-less state model is
+			// rendered just like renderchest's complete models/item scan.
+			expect(result.rendered).toContain('loadermod:obj_item_pulling_0');
+			// Template classification still prevents an inherited parent model
+			// from becoming a misleading icon.
+			expect(result.rendered).not.toContain('loadermod:oversized_template');
+			expect(result.skippedTemplates).toContain('loadermod:oversized_template');
+		} finally {
+			await rm(output, { recursive: true, force: true });
+		}
+	}, 120000);
 });
 
 async function sharpDecode(file: string): Promise<Texture> {

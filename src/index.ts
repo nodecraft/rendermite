@@ -14,7 +14,7 @@ export type { FloatTexture } from './render/blend.ts';
 export { evaluateItemModel, defaultProperties, InvalidItemDefinitionError, UNKNOWN_MODEL } from './items/definition.ts';
 export type { ItemRenderInstruction, ItemProperties, TintDefinition } from './items/definition.ts';
 export { discoverItems, resolveItem, ItemResolutionError } from './items/discovery.ts';
-export type { DiscoveredItem } from './items/discovery.ts';
+export type { DiscoveredItem, ItemDiscoveryOptions } from './items/discovery.ts';
 export { resolveTint, resolveTints, parseTintValue, DYE_COLORS, InvalidTinterDefinitionError } from './render/tints.ts';
 export { encodeIcon, encodeAnimatedIcon } from './output/encode.ts';
 export type { EncodedIcon, EncodeOptions, EncodedAnimatedIcon, AnimatedEncodeOptions } from './output/encode.ts';

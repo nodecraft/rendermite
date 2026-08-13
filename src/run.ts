@@ -59,6 +59,12 @@ export interface RunOptions {
 	minify?: boolean;
 	/** In-flight items (encode overlaps on libvips' threadpool; default 8). */
 	concurrency?: number;
+	/**
+	 * Drop classic item models with no matching translation (default true).
+	 * Disable for a prepared asset tree whose own preprocessing has already
+	 * filtered synthesized models and where every real model must be retained.
+	 */
+	filterUntranslatedModels?: boolean;
 	lightingProfile?: LightingProfileName;
 	itemList?: boolean;
 	onProgress?: (done: number, total: number, id: string, error?: string) => void;
@@ -126,7 +132,9 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		}
 	}
 	for (const namespace of namespaces) {
-		for (const item of await discoverItems(resources, namespace)) {
+		for (const item of await discoverItems(resources, namespace, {
+			filterUntranslatedModels: options.filterUntranslatedModels,
+		})) {
 			if (seen.has(item.id)) {
 				continue;
 			}

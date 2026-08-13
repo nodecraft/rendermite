@@ -20,7 +20,21 @@ export interface DiscoveredItem {
 	source: 'definition' | 'model';
 }
 
-export async function discoverItems(resources: ResourceManager, namespace: string): Promise<DiscoveredItem[]> {
+export interface ItemDiscoveryOptions {
+	/**
+	 * Drop classic item models that have no matching item/block translation.
+	 * Enabled by default to avoid publishing state and template models from a
+	 * raw mod jar. Prepared resource packs can disable it after applying their
+	 * own registry-aware filtering, preserving renderchest's complete model scan.
+	 */
+	filterUntranslatedModels?: boolean;
+}
+
+export async function discoverItems(
+	resources: ResourceManager,
+	namespace: string,
+	options: ItemDiscoveryOptions = {},
+): Promise<DiscoveredItem[]> {
 	const seen = new Set<string>();
 	const items: DiscoveredItem[] = [];
 
@@ -35,7 +49,8 @@ export async function discoverItems(resources: ResourceManager, namespace: strin
 	// Namespaces predating item definitions (or mods shipping both eras): scan
 	// models/item — a definition for the same name wins, matching how a v5-era
 	// jar would behave.
-	const registered = namespace === 'minecraft' ? null : await langRegistry(resources, namespace);
+	const filterUntranslated = options.filterUntranslatedModels ?? true;
+	const registered = namespace === 'minecraft' || !filterUntranslated ? null : await langRegistry(resources, namespace);
 	for (const locator of await resources.listResources('model', namespace)) {
 		if (!locator.path.startsWith('item/')) {
 			continue;
