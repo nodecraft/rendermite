@@ -16,32 +16,18 @@ export default [
 
 	// General overrides
 	{
-		linterOptions: {
-			reportUnusedDisableDirectives: true,
-		},
 		rules: {
+			// The node config is spread last, so eslint-plugin-n's recommended set
+			// re-enables these after the TypeScript config already turned them off.
 			'n/no-unsupported-features/es-syntax': 'off',
-			'n/no-unsupported-features/node-builtins': 'off',
+			'n/no-missing-import': 'off',
+
+			// Render math is dense arithmetic ported from upstream; the parens this
+			// rule wants obscure more than they clarify.
 			'@stylistic/no-mixed-operators': 'off',
 
-			// TS rule overrides
-			'no-unused-vars': 'off',
-			'@typescript-eslint/no-unused-vars': ['warn', {
-				ignoreRestSiblings: true,
-			}],
-			'no-use-before-define': 'off',
 			// Hoisted function declarations are safe; variables/classes stay strict.
 			'@typescript-eslint/no-use-before-define': ['error', { functions: false }],
-			'n/no-missing-import': 'off',
-			'no-duplicate-imports': 'off',
-			'no-undef': 'off',
-			'unicorn/custom-error-definition': 'off',
-			'no-restricted-syntax': ['error', {
-				selector: 'TSEnumDeclaration',
-				message: 'Don\'t declare enums - they\'re difficult to transpile. Use object literals instead.',
-			}],
-			'@typescript-eslint/no-explicit-any': 'warn',
-			'@typescript-eslint/no-non-null-assertion': 'error',
 		},
 	},
 
