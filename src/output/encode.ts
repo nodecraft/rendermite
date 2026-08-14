@@ -100,14 +100,23 @@ export async function encodeAnimatedIcon(
 	}
 	const animated = () => sharp(pages, { join: { animated: true } });
 
-	// PNG fallback stays single-frame, like upstream's --fallback output.
-	const firstFrame = await encodeIcon(frames[0], { webp: false });
+	// PNG fallback and animated WebP are independent native encodes — overlap
+	// them so the single-frame PNG (usually the smaller job) runs alongside.
+	const webpPromise = options.webp !== false
+		? animated().webp({ lossless: true, effort: ANIMATED_WEBP_EFFORT, loop: 0, delay: delaysMs }).toBuffer()
+		: Promise.resolve(undefined);
+	const firstFramePromise = encodeIcon(frames[0], { webp: false });
+	const gifPromise = options.gif
+		? animated().gif({ loop: 0, delay: delaysMs }).toBuffer()
+		: Promise.resolve(undefined);
+
+	const [firstFrame, webp, gif] = await Promise.all([firstFramePromise, webpPromise, gifPromise]);
 	const result: EncodedAnimatedIcon = { png: firstFrame.png };
-	if (options.webp !== false) {
-		result.webp = await animated().webp({ lossless: true, effort: ANIMATED_WEBP_EFFORT, loop: 0, delay: delaysMs }).toBuffer();
+	if (webp) {
+		result.webp = webp;
 	}
-	if (options.gif) {
-		result.gif = await animated().gif({ loop: 0, delay: delaysMs }).toBuffer();
+	if (gif) {
+		result.gif = gif;
 	}
 	if (options.avif) {
 		// libheif builds bundled with sharp generally cannot encode image
@@ -146,14 +155,24 @@ export async function encodeIcon(texture: FloatTexture, options: EncodeOptions =
 	// with more than 256 colors (this is exactly how the old pipeline shipped
 	// quantized wood-block icons) — only use it when it is provably lossless.
 	const paletteSafe = countColors(bytes.data, 256) <= 256;
-	const png = await raw.clone().png({ compressionLevel: 9, effort: 10, palette: paletteSafe }).toBuffer();
-	const result: EncodedIcon = { png };
 
-	if (options.webp !== false) {
-		result.webp = await raw.clone().webp({ lossless: true, effort: STATIC_WEBP_EFFORT }).toBuffer();
+	// Encode PNG and WebP in parallel: they are independent native operations
+	// that run on libvips' threadpool, so overlapping them roughly halves the
+	// wall time for the common single-frame icon.
+	const pngPromise = raw.clone().png({ compressionLevel: 9, effort: 10, palette: paletteSafe }).toBuffer();
+	const webpPromise = options.webp !== false
+		? raw.clone().webp({ lossless: true, effort: STATIC_WEBP_EFFORT }).toBuffer()
+		: Promise.resolve(undefined);
+	const avifPromise = options.avif
+		? raw.clone().avif({ lossless: true, effort: 6 }).toBuffer()
+		: Promise.resolve(undefined);
+	const [png, webp, avif] = await Promise.all([pngPromise, webpPromise, avifPromise]);
+	const result: EncodedIcon = { png };
+	if (webp) {
+		result.webp = webp;
 	}
-	if (options.avif) {
-		result.avif = await raw.clone().avif({ lossless: true, effort: 6 }).toBuffer();
+	if (avif) {
+		result.avif = avif;
 	}
 	return result;
 }
