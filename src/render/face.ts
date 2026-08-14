@@ -6,6 +6,7 @@
 import { cloneFloatTexture, darkenTexture, tintTexture } from './blend.ts';
 import {
 	RowCursor,
+	clearFaceBuffer,
 	compactFaceBuffer,
 	createFaceBuffer,
 	drawTexturedTriangle,
@@ -41,6 +42,9 @@ export interface RenderableFace {
 	maxZ: number;
 }
 
+/** Tinted + darkened textures keyed by source texture, then by shading params. */
+export type FaceShadeCache = WeakMap<FloatTexture, Map<string, FloatTexture>>;
+
 export function faceMaxZ(geometry: FaceGeometry): number {
 	return Math.max(
 		geometry.vertices[0][2],
@@ -68,6 +72,10 @@ export function renderFace(
 	width: number,
 	height: number,
 	transformation: Mat4,
+	/** Reused across a model's faces; cleared here, compacted before return. */
+	scratch?: FaceBuffer,
+	/** Shared tint/shade results for one model render. */
+	shadeCache?: FaceShadeCache,
 ): FaceBuffer | null {
 	const { geometry } = face;
 	const uvWidth = geometry.uv2[0] - geometry.uv1[0];
@@ -103,18 +111,33 @@ export function renderFace(
 		};
 	});
 
-	// Clone before tint/darken — the source texture is shared across faces.
-	const texture = cloneFloatTexture(face.texture);
-	const absU1 = geometry.uv1[0] * texture.width;
-	const absV1 = geometry.uv1[1] * texture.height;
-	const absU2 = geometry.uv2[0] * texture.width;
-	const absV2 = geometry.uv2[1] * texture.height;
+	const absU1 = geometry.uv1[0] * face.texture.width;
+	const absV1 = geometry.uv1[1] * face.texture.height;
+	const absU2 = geometry.uv2[0] * face.texture.width;
+	const absV2 = geometry.uv2[1] * face.texture.height;
+	const tint = geometry.tintIndex !== null ? face.tint : null;
+	const darkness = 1 - face.light.lightLevelForNormal(shadeDirection);
 
-	if (geometry.tintIndex !== null && face.tint !== null) {
-		tintTexture(texture, face.tint.r, face.tint.g, face.tint.b);
+	// Shading depends only on the source texture, the tint, the light level and
+	// the UV window, and a block model's elements repeat those combinations
+	// constantly (every top face of a fence shares one). Cloning and re-darkening
+	// a whole texture per face was pure repeat work.
+	const shadeKey = `${tint ? `${tint.r},${tint.g},${tint.b}` : '-'}|${darkness}|${absU1},${absV1},${absU2},${absV2}`;
+	let byKey = shadeCache?.get(face.texture);
+	let texture = byKey?.get(shadeKey);
+	if (!texture) {
+		// Clone before tint/darken — the source texture is shared across faces.
+		texture = cloneFloatTexture(face.texture);
+		if (tint) {
+			tintTexture(texture, tint.r, tint.g, tint.b);
+		}
+		darkenTexture(texture, darkness, absU1, absV1, absU2, absV2);
+		if (shadeCache) {
+			byKey ??= new Map();
+			byKey.set(shadeKey, texture);
+			shadeCache.set(face.texture, byKey);
+		}
 	}
-
-	darkenTexture(texture, 1 - face.light.lightLevelForNormal(shadeDirection), absU1, absV1, absU2, absV2);
 
 	// UV corners in v0..v3 order; face rotation cycles the assignment.
 	const uvs: Array<[number, number]> = [
@@ -131,7 +154,8 @@ export function renderFace(
 		}
 	}
 
-	const buffer = createFaceBuffer(width, height);
+	const buffer = scratch ?? createFaceBuffer(width, height);
+	clearFaceBuffer(buffer);
 	const depths = [linearDepth(v0[2]), linearDepth(v1[2]), linearDepth(v2[2]), linearDepth(v3[2])];
 	const point = (i: number) => {
 		return {

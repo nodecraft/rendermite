@@ -35,6 +35,19 @@ export interface AnimatedEncodeOptions extends EncodeOptions {
 
 export type RasterAssetFormat = 'png' | 'webp' | 'avif';
 
+/**
+ * Lossless WebP effort for single-frame icons. Measured across 1.12.2–1.21.8
+ * vanilla, effort 2 is 0.1–1.9% SMALLER than effort 6 for static icons at 2.8×
+ * the speed — libvips' higher efforts search predictors that rarely pay off on
+ * 64px sprites. Animations are the opposite (up to 21% larger on one item), so
+ * they keep effort 6 below.
+ */
+const STATIC_WEBP_EFFORT = 2;
+const ANIMATED_WEBP_EFFORT = 6;
+
+/** Frames encoded concurrently when assembling an animation's pages. */
+const PAGE_ENCODE_BATCH = 8;
+
 /** Losslessly transcode an existing PNG resource into the formats referenced by generated CSS. */
 export async function encodeRasterAsset(source: Buffer, formats: readonly RasterAssetFormat[]): Promise<Map<RasterAssetFormat, Buffer>> {
 	const image = sharp(source);
@@ -73,19 +86,25 @@ export async function encodeAnimatedIcon(
 	// libvips assembles animations from an array of encoded pages; raw
 	// multi-page buffers don't carry the page metadata through. Fast PNGs
 	// (no compression) are only intermediates here.
-	const pages = await Promise.all(frames.map((frame) => {
-		const bytes = toByteTexture(frame);
-		return sharp(Buffer.from(bytes.data.buffer, bytes.data.byteOffset, bytes.data.length), {
-			raw: { width, height, channels: 4 },
-		}).png({ compressionLevel: 0 }).toBuffer();
-	}));
+	// Bounded rather than a Promise.all over every frame: a 128-frame icon in
+	// each of several render threads would otherwise put a thousand concurrent
+	// encodes on libvips at once.
+	const pages: Buffer[] = [];
+	for (let start = 0; start < frames.length; start += PAGE_ENCODE_BATCH) {
+		pages.push(...await Promise.all(frames.slice(start, start + PAGE_ENCODE_BATCH).map((frame) => {
+			const bytes = toByteTexture(frame);
+			return sharp(Buffer.from(bytes.data.buffer, bytes.data.byteOffset, bytes.data.length), {
+				raw: { width, height, channels: 4 },
+			}).png({ compressionLevel: 0 }).toBuffer();
+		})));
+	}
 	const animated = () => sharp(pages, { join: { animated: true } });
 
 	// PNG fallback stays single-frame, like upstream's --fallback output.
 	const firstFrame = await encodeIcon(frames[0], { webp: false });
 	const result: EncodedAnimatedIcon = { png: firstFrame.png };
 	if (options.webp !== false) {
-		result.webp = await animated().webp({ lossless: true, effort: 6, loop: 0, delay: delaysMs }).toBuffer();
+		result.webp = await animated().webp({ lossless: true, effort: ANIMATED_WEBP_EFFORT, loop: 0, delay: delaysMs }).toBuffer();
 	}
 	if (options.gif) {
 		result.gif = await animated().gif({ loop: 0, delay: delaysMs }).toBuffer();
@@ -131,7 +150,7 @@ export async function encodeIcon(texture: FloatTexture, options: EncodeOptions =
 	const result: EncodedIcon = { png };
 
 	if (options.webp !== false) {
-		result.webp = await raw.clone().webp({ lossless: true, effort: 6 }).toBuffer();
+		result.webp = await raw.clone().webp({ lossless: true, effort: STATIC_WEBP_EFFORT }).toBuffer();
 	}
 	if (options.avif) {
 		result.avif = await raw.clone().avif({ lossless: true, effort: 6 }).toBuffer();

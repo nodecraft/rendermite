@@ -6,6 +6,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: read # the benchmark job downloads main's baseline artifact
 
 jobs:
   test:
@@ -39,6 +40,57 @@ jobs:
       - run: npm run test
         env:
           NODE_OPTIONS: --max_old_space_size=6144
+
+  # Performance monitoring (reporting, not a gate): publish a report every run so
+  # main always has a baseline, and diff PRs against it. Runner speed varies more
+  # than most regressions do, so the report scales timings by a calibration
+  # benchmark measured in the same run — see scripts/bench-report.ts.
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    name: Benchmarks
+    if: (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: "npm"
+      - run: npm ci
+      # Benchmarks stage one vanilla jar; share the test job's fixture cache.
+      - name: Cache test fixtures
+        uses: actions/cache@v6
+        with:
+          path: .work/fixtures
+          key: fixtures-${{ hashFiles('test/global-setup.ts', 'test/fixtures/*.ts') }}
+          restore-keys: fixtures-
+      - name: Run benchmarks
+        run: npm run bench:report
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v7
+        with:
+          name: bench-report
+          path: bench-report.json
+          retention-days: 90
+      - name: Download main benchmark baseline
+        if: github.event_name == 'pull_request'
+        uses: dawidd6/action-download-artifact@v21
+        with:
+          workflow: workflow.yml
+          branch: main
+          name: bench-report
+          path: base-bench
+          if_no_artifact_found: warn
+      - name: Render benchmark comment
+        if: github.event_name == 'pull_request'
+        run: BASE_BENCH_JSON=base-bench/bench-report.json node scripts/bench-report.ts --comment bench-comment.md
+      - name: Post benchmark comment
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: benchmarks
+          path: bench-comment.md
 
   release:
     runs-on: ubuntu-latest

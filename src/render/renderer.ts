@@ -11,22 +11,32 @@ import { paintBucketFluid } from './fluid-bucket.ts';
 import { buildElementFaces } from './geometry.ts';
 import { lightsForProfile } from './lighting.ts';
 import { renderObjModel } from './obj.ts';
+import { createFaceBuffer } from './rasterizer.ts';
 import { displayMatrix, identity, multiply } from './vector.ts';
 import { resolveTexture } from '../models/loader.ts';
 
 import type { FloatTexture } from './blend.ts';
-import type { RenderableFace, TintColor } from './face.ts';
+import type { FaceShadeCache, RenderableFace, TintColor } from './face.ts';
+import type { FaceGeometry } from './geometry.ts';
 import type { LightingProfileName } from './lighting.ts';
+import type { FaceBuffer } from './rasterizer.ts';
 import type { Mat4, Vec3 } from './vector.ts';
 import type { ResolvedModel } from '../models/loader.ts';
 import type { ResourceLocator } from '../resources/locator.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 import type { AnimatedTexture, Texture, TextureLoader } from '../textures/loader.ts';
 
+export interface AnimationLimits {
+	/** Emitted frames per icon (default 128). */
+	maxFrames?: number;
+}
+
 export interface RenderOptions {
 	size: number;
 	quality: number;
 	lightingProfile: LightingProfileName;
+	/** Bounds on animated timelines; defaults apply when omitted. */
+	animation?: AnimationLimits;
 	/** Accumulated item-definition transformation (inner matrix). */
 	itemTransform?: Mat4;
 	/** Tint colors by index (face tintindex / generated layer number). */
@@ -41,6 +51,18 @@ export interface RenderedFrames {
 	frames: FloatTexture[];
 	/** Display duration per frame in milliseconds (50ms per game tick). */
 	delaysMs: number[];
+	/** What the timeline did, so a bounded animation is never a silent one. */
+	animation?: AnimationDiagnostics;
+}
+
+export interface AnimationDiagnostics {
+	/** Combined cycle length in game ticks (the lcm of the textures' periods). */
+	ticks: number;
+	/** Ticks considered before identical neighbours were coalesced. */
+	candidates: number;
+	/** Whether the frame cap forced even sampling instead of exact frames. */
+	sampled: boolean;
+	interpolated: boolean;
 }
 
 const TICK_MS = 50;
@@ -103,22 +125,31 @@ export async function renderModelFrames(
 		ticks = ticks / gcd(ticks, texture.tickLength) * texture.tickLength;
 		interpolated ||= texture.interpolated;
 	}
-	const maxSkippable = interpolated ? Math.ceil(ticks / MAX_ANIMATION_FRAMES) : null;
+	const maxFrames = Math.max(1, options.animation?.maxFrames ?? MAX_ANIMATION_FRAMES);
+	// Prefer the ticks where something actually changes. When there are more of
+	// those than the cap allows — or every tick differs, as with interpolation —
+	// spread samples evenly over the timeline instead of taking a prefix: several
+	// independently animated layers can combine into a cycle minutes long, and a
+	// truncated one would only ever show its opening seconds.
+	const exact = interpolated ? null : changeTicks(animated.values().toArray(), ticks, maxFrames);
+	const candidates = exact ?? evenlySpacedTicks(ticks, maxFrames);
 
 	const frames: FloatTexture[] = [];
 	const emitTicks: number[] = [];
 	let lastKey: string | null = null;
-	let sinceLast = 0;
-	for (let tick = 0; tick < ticks; tick++) {
-		sinceLast++;
+	// Geometry, matrices, paint order and unchanged faces carry across frames.
+	const session = createSession();
+	for (const tick of candidates) {
+		// Adjacent samples showing the same thing become one frame with a longer
+		// delay rather than an encoded duplicate.
 		const key = animated.values()
-			.map(texture => texture.resolveFrame(tick).frame)
+			.map((texture) => {
+				const resolved = texture.resolveFrame(tick);
+				return texture.interpolated ? `${resolved.frame}+${resolved.interpolation}` : String(resolved.frame);
+			})
 			.toArray()
 			.join(',');
-		if (lastKey !== null && key === lastKey && !interpolated && tick !== ticks - 1) {
-			continue;
-		}
-		if (lastKey !== null && interpolated && maxSkippable !== null && sinceLast < maxSkippable && key === lastKey) {
+		if (key === lastKey) {
 			continue;
 		}
 		const supplier = async (reference: string): Promise<Texture | null> => {
@@ -134,18 +165,72 @@ export async function renderModelFrames(
 		const renderSize = options.size * options.quality;
 		const full = model.builtinParent === 'builtin/generated'
 			? await renderGeneratedItemWith(model, supplier, renderSize, options.tints)
-			: await renderElementModelWith(model, supplier, renderSize, options);
+			: await renderElementModelWith(model, supplier, renderSize, options, session);
 		frames.push(options.quality === 1 ? full : boxDownscale(full, options.quality));
 		emitTicks.push(tick);
 		lastKey = key;
-		sinceLast = 0;
 	}
 
 	const delaysMs = emitTicks.map((tick, index) => {
 		const next = index + 1 < emitTicks.length ? emitTicks[index + 1] : ticks;
 		return Math.max(TICK_MS, (next - tick) * TICK_MS);
 	});
-	return { frames, delaysMs };
+	return {
+		frames,
+		delaysMs,
+		animation: {
+			ticks,
+			candidates: candidates.length,
+			sampled: exact === null && ticks > frames.length,
+			interpolated,
+		},
+	};
+}
+
+/**
+ * Every tick in the combined timeline where some texture switches frame, or
+ * null once that exceeds `limit` — past that the caller samples instead, and
+ * enumerating a multi-minute timeline in full would be the very cost this
+ * bound exists to avoid.
+ */
+function changeTicks(textures: AnimatedTexture[], ticks: number, limit: number): number[] | null {
+	const found = new Set<number>([0]);
+	for (const texture of textures) {
+		// A still texture never changes; counting its 1-tick period as a change
+		// point would make every tick a candidate and force needless sampling.
+		if (texture.frameCount <= 1) {
+			continue;
+		}
+		const period = Math.max(1, texture.tickLength);
+		const starts = texture.frameStartTicks();
+		for (let base = 0; base < ticks; base += period) {
+			for (const start of starts) {
+				const tick = base + start;
+				if (tick < ticks) {
+					found.add(tick);
+				}
+				if (found.size > limit) {
+					return null;
+				}
+			}
+		}
+	}
+	return [...found].toSorted((left, right) => left - right);
+}
+
+/** `count` tick positions spread evenly across the cycle, always starting at 0. */
+function evenlySpacedTicks(ticks: number, maxFrames: number): number[] {
+	const count = Math.min(ticks, maxFrames);
+	const sampled: number[] = [];
+	let previous = -1;
+	for (let index = 0; index < count; index++) {
+		const tick = Math.floor(index * ticks / count);
+		if (tick !== previous) {
+			sampled.push(tick);
+			previous = tick;
+		}
+	}
+	return sampled;
 }
 
 async function loadAnimatedTexture(
@@ -341,16 +426,48 @@ async function renderElementModel(
 	return renderElementModelWith(model, supplier, renderSize, options);
 }
 
+/**
+ * State an animated model reuses between frames. Geometry, the display matrix
+ * and the paint order are the same at every tick, and a face whose texture did
+ * not change this tick rasterizes to exactly the buffer it did last tick — so
+ * only the layers that actually moved are redrawn.
+ */
+interface ElementRenderSession {
+	geometry: Array<{ geometry: FaceGeometry; maxZ: number; }> | null;
+	/** Indices into `geometry`, ascending by maxZ — the paint order. */
+	order: number[] | null;
+	transformation: Mat4 | null;
+	scratch: FaceBuffer | null;
+	shadeCache: FaceShadeCache;
+	floatTextures: Map<Texture, FloatTexture>;
+	faceBuffers: Array<{ texture: FloatTexture; buffer: FaceBuffer | null; } | undefined>;
+}
+
+function createSession(): ElementRenderSession {
+	return {
+		geometry: null,
+		order: null,
+		transformation: null,
+		scratch: null,
+		shadeCache: new WeakMap(),
+		floatTextures: new Map(),
+		faceBuffers: [],
+	};
+}
+
+/** Interpolated frames are new objects every tick; don't grow without bound. */
+const MAX_CACHED_FLOAT_TEXTURES = 32;
+
 async function renderElementModelWith(
 	model: ResolvedModel,
 	supplier: TextureSupplier,
 	renderSize: number,
 	options: RenderOptions,
+	session: ElementRenderSession = createSession(),
 ): Promise<FloatTexture> {
 	const lights = lightsForProfile(options.lightingProfile);
 	const light = model.elementsGuiLight === 'side' ? lights.side : lights.front;
 	const loadedTextures = new Map<string, Promise<Texture | null>>();
-	const floatTextures = new Map<Texture, FloatTexture>();
 	const load = (reference: string): Promise<Texture | null> => {
 		let pending = loadedTextures.get(reference);
 		if (!pending) {
@@ -360,48 +477,82 @@ async function renderElementModelWith(
 		return pending;
 	};
 
-	const faces: RenderableFace[] = [];
+	if (!session.geometry) {
+		const geometry: Array<{ geometry: FaceGeometry; maxZ: number; }> = [];
+		for (const element of model.elements) {
+			for (const face of buildElementFaces(element)) {
+				geometry.push({ geometry: face, maxZ: faceMaxZ(face) });
+			}
+		}
+		session.geometry = geometry;
+		// Ascending by untransformed model-space maxZ, stable — upstream's
+		// tie-break order. Sorting indices instead of the faces themselves keeps
+		// texture loading in element order, so the first unresolvable texture is
+		// still the one reported.
+		session.order = geometry
+			.map((_, index) => index)
+			.toSorted((left, right) => geometry[left].maxZ - geometry[right].maxZ);
+	}
+	const specs = session.geometry;
+	const order = session.order ?? [];
+
+	// Resolve in element order: a missing texture must report the same face it
+	// always did, whichever order the paint pass happens to use.
 	let skippedFaces = 0;
-	for (const element of model.elements) {
-		for (const geometry of buildElementFaces(element)) {
-			const texture = await load(geometry.textureRef);
-			if (!texture) {
-				skippedFaces++;
-				continue;
-			}
-			let float = floatTextures.get(texture);
-			if (!float) {
-				float = toFloatTexture(texture);
-				floatTextures.set(texture, float);
-			}
-			faces.push({
-				geometry,
-				texture: float,
-				light,
-				tint: geometry.tintIndex !== null ? options.tints?.[geometry.tintIndex] ?? null : null,
-				maxZ: faceMaxZ(geometry),
-			});
+	let drawable = 0;
+	for (const spec of specs) {
+		if (await load(spec.geometry.textureRef)) {
+			drawable++;
+		} else {
+			skippedFaces++;
 		}
 	}
-
-	if (faces.length === 0 && skippedFaces > 0) {
+	if (drawable === 0 && skippedFaces > 0) {
 		throw new ItemRenderError(`Every face texture unresolved in ${model.locator} (would render invisible)`);
 	}
 
-	// Ascending by untransformed model-space maxZ, stable — upstream's tie-break order.
-	faces.sort((a, b) => a.maxZ - b.maxZ);
+	if (!session.transformation) {
+		const gui = model.display.gui;
+		const guiMatrix = displayMatrix(
+			(gui?.rotation ?? [0, 0, 0]) as Vec3,
+			(gui?.translation ?? [0, 0, 0]) as Vec3,
+			(gui?.scale ?? [1, 1, 1]) as Vec3,
+		);
+		session.transformation = multiply(guiMatrix, options.itemTransform ?? identity());
+	}
+	session.scratch ??= createFaceBuffer(renderSize, renderSize);
 
-	const gui = model.display.gui;
-	const guiMatrix = displayMatrix(
-		(gui?.rotation ?? [0, 0, 0]) as Vec3,
-		(gui?.translation ?? [0, 0, 0]) as Vec3,
-		(gui?.scale ?? [1, 1, 1]) as Vec3,
-	);
-	const transformation = multiply(guiMatrix, options.itemTransform ?? identity());
-
+	if (session.floatTextures.size > MAX_CACHED_FLOAT_TEXTURES) {
+		session.floatTextures.clear();
+	}
 	const buffers = [];
-	for (const face of faces) {
-		const buffer = renderFace(face, renderSize, renderSize, transformation);
+	for (const index of order) {
+		const spec = specs[index];
+		const texture = await load(spec.geometry.textureRef);
+		if (!texture) {
+			continue;
+		}
+		let float = session.floatTextures.get(texture);
+		if (!float) {
+			float = toFloatTexture(texture);
+			session.floatTextures.set(texture, float);
+		}
+		const cached = session.faceBuffers[index];
+		if (cached?.texture === float) {
+			if (cached.buffer) {
+				buffers.push(cached.buffer);
+			}
+			continue;
+		}
+		const face: RenderableFace = {
+			geometry: spec.geometry,
+			texture: float,
+			light,
+			tint: spec.geometry.tintIndex !== null ? options.tints?.[spec.geometry.tintIndex] ?? null : null,
+			maxZ: spec.maxZ,
+		};
+		const buffer = renderFace(face, renderSize, renderSize, session.transformation, session.scratch, session.shadeCache);
+		session.faceBuffers[index] = { texture: float, buffer };
 		if (buffer) {
 			buffers.push(buffer);
 		}

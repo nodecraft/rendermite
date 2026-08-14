@@ -38,6 +38,9 @@ describe('run() end to end', () => {
 	beforeAll(async () => {
 		output = await mkdtemp(path.join(tmpdir(), 'renderchest-run-'));
 		result = await run({
+			// Rendered in-process: test files run in parallel, so a thread pool per
+			// run would starve the others. Worker parity has its own suite.
+			workers: 1,
 			resources: new LayeredResourceManager([
 				new JarResourceManager(fixtureModJar('modernmod')),
 				new JarResourceManager(await ensureVanillaJar('1.21.8')),
@@ -125,6 +128,9 @@ describe('run() end to end', () => {
 		const avifOutput = await mkdtemp(path.join(tmpdir(), 'rendermite-avif-'));
 		try {
 			const avifResult = await run({
+				// Rendered in-process: test files run in parallel, so a thread pool per
+				// run would starve the others. Worker parity has its own suite.
+				workers: 1,
 				resources: new JarResourceManager(await ensureVanillaJar('1.21.8')),
 				builtin,
 				output: avifOutput,

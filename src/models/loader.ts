@@ -1,3 +1,4 @@
+import { LruCache } from '../resources/cache.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
 import type {
@@ -297,13 +298,22 @@ export function salvageJson(text: string): unknown | null {
 	return null;
 }
 
+/**
+ * Resolved models and their source JSON are small but there are a lot of them:
+ * a full modded run walks thousands of namespaces in one process, so the caches
+ * are bounded rather than kept for the life of the run.
+ */
+const MAX_CACHED_MODELS = 4096;
+
 export class ModelLoader {
 	private readonly resources: ResourceManager;
-	private readonly cache = new Map<string, Promise<ResolvedModel>>();
-	private readonly jsonCache = new Map<string, Promise<ModelJson>>();
+	private readonly cache: LruCache<string, Promise<ResolvedModel>>;
+	private readonly jsonCache: LruCache<string, Promise<ModelJson>>;
 
-	constructor(resources: ResourceManager) {
+	constructor(resources: ResourceManager, maxCachedModels = MAX_CACHED_MODELS) {
 		this.resources = resources;
+		this.cache = new LruCache(maxCachedModels);
+		this.jsonCache = new LruCache(maxCachedModels);
 	}
 
 	private readModelJson(locator: ResourceLocator): Promise<ModelJson> {

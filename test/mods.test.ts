@@ -305,6 +305,9 @@ describe('code-rendered items (geckomod) via run() fallbacks', () => {
 		const output = await mkdtemp(pathModule.join(tmpdir(), 'rc-gecko-'));
 		try {
 			const result = await run({
+				// Rendered in-process: test files run in parallel, so a thread pool per
+				// run would starve the others. Worker parity has its own suite.
+				workers: 1,
 				resources: new LayeredResourceManager([
 					new JarResourceManager(fixtureModJar('geckomod')),
 					new JarResourceManager(await ensureVanillaJar('1.20.4')),
@@ -386,6 +389,9 @@ describe('modern code-rendered entity fallbacks', () => {
 		const output = await mkdtemp(pathModule.join(tmpdir(), 'rc-modern-entity-'));
 		try {
 			const result = await run({
+				// Rendered in-process: test files run in parallel, so a thread pool per
+				// run would starve the others. Worker parity has its own suite.
+				workers: 1,
 				resources: new LayeredResourceManager([
 					new JarResourceManager(fixtureModJar('modernentitymod')),
 					new JarResourceManager(await ensureVanillaJar('1.21.8')),
@@ -421,6 +427,9 @@ describe('run() fallback chain (loadermod)', () => {
 		const output = await mkdtemp(pathModule.join(tmpdir(), 'rc-loader-'));
 		try {
 			const result = await run({
+				// Rendered in-process: test files run in parallel, so a thread pool per
+				// run would starve the others. Worker parity has its own suite.
+				workers: 1,
 				resources: new LayeredResourceManager([
 					new JarResourceManager(fixtureModJar('loadermod')),
 					new JarResourceManager(await ensureVanillaJar('1.20.4')),
@@ -463,6 +472,9 @@ describe('run() fallback chain (loadermod)', () => {
 		const output = await mkdtemp(pathModule.join(tmpdir(), 'rc-loader-all-models-'));
 		try {
 			const result = await run({
+				// Rendered in-process: test files run in parallel, so a thread pool per
+				// run would starve the others. Worker parity has its own suite.
+				workers: 1,
 				resources: new LayeredResourceManager([
 					new JarResourceManager(fixtureModJar('loadermod')),
 					new JarResourceManager(await ensureVanillaJar('1.20.4')),
