@@ -6,6 +6,9 @@
 
 import type { Texture } from '../textures/loader.ts';
 
+/** Lookup table for Q16 → 8-bit conversion (ImageMagick's floor(q/257)). */
+const BYTE_LUT = new Uint8Array(65536);
+
 /** RGBA float pixels for render-time work; converted back to 8-bit at encode. */
 export interface FloatTexture {
 	width: number;
@@ -24,12 +27,22 @@ export function toFloatTexture(texture: Texture): FloatTexture {
 
 export function toByteTexture(texture: FloatTexture): Texture {
 	const data = new Uint8ClampedArray(texture.data.length);
-	for (let i = 0; i < texture.data.length; i++) {
-		// ImageMagick's PNG write path maps Q16 → 8-bit as floor(quantum / 257)
-		// (probed exhaustively; float q*255/65535 misrounds at exact multiples).
-		const value = texture.data[i];
-		const clamped = value < 0 ? 0 : (Math.min(value, 1));
-		data[i] = Math.floor(Math.round(clamped * 65535) / 257);
+	// ImageMagick's PNG write path maps Q16 → 8-bit as floor(quantum / 257)
+	// (probed exhaustively; float q*255/65535 misrounds at exact multiples).
+	// Precompute a 65536-entry lookup table so the conversion is an array index
+	// instead of two Math calls per channel per pixel.
+	if (BYTE_LUT[65535] === 0) {
+		for (let q = 0; q < 65536; q++) {
+			BYTE_LUT[q] = Math.floor(q / 257);
+		}
+	}
+	const src = texture.data;
+	// eslint-disable-next-line unicorn/no-for-loop -- hot path: .entries() allocates per element
+	for (let i = 0; i < src.length; i++) {
+		const value = src[i];
+		// eslint-disable-next-line unicorn/no-nested-ternary, unicorn/prefer-math-min-max -- hot path: ternary is faster than Math.min
+		const clamped = value < 0 ? 0 : value > 1 ? 1 : value;
+		data[i] = BYTE_LUT[Math.round(clamped * 65535)];
 	}
 	return { width: texture.width, height: texture.height, data };
 }
@@ -51,7 +64,8 @@ export function q16(value: number): number {
 /**
  * Source-over with straight alpha, in place on `dst` at `offset`:
  * ra = 1-(1-sa)(1-da); rc = (sc*sa + dc*da*(1-sa)) / ra; rgb = 0 when ra = 0.
- * Results are Q16-quantized like every Imagick pixel write.
+ * Results are Q16-quantized like every Imagick pixel write. q16 is inlined
+ * here because blendPixel is the single hottest function in the pipeline.
  */
 export function blendPixel(dst: Float64Array, offset: number, sr: number, sg: number, sb: number, sa: number): void {
 	const da = dst[offset + 3];
@@ -64,10 +78,21 @@ export function blendPixel(dst: Float64Array, offset: number, sr: number, sg: nu
 		return;
 	}
 	const dstWeight = da * (1 - sa);
-	dst[offset] = q16((sr * sa + dst[offset] * dstWeight) / ra);
-	dst[offset + 1] = q16((sg * sa + dst[offset + 1] * dstWeight) / ra);
-	dst[offset + 2] = q16((sb * sa + dst[offset + 2] * dstWeight) / ra);
-	dst[offset + 3] = q16(ra);
+	let v = (sr * sa + dst[offset] * dstWeight) / ra;
+	// eslint-disable-next-line unicorn/no-nested-ternary, unicorn/prefer-math-min-max -- hot path: ternary avoids Math.min call overhead
+	v = v < 0 ? 0 : v > 1 ? 1 : v;
+	dst[offset] = Math.round(v * 65535) / 65535;
+	v = (sg * sa + dst[offset + 1] * dstWeight) / ra;
+	// eslint-disable-next-line unicorn/no-nested-ternary, unicorn/prefer-math-min-max
+	v = v < 0 ? 0 : v > 1 ? 1 : v;
+	dst[offset + 1] = Math.round(v * 65535) / 65535;
+	v = (sb * sa + dst[offset + 2] * dstWeight) / ra;
+	// eslint-disable-next-line unicorn/no-nested-ternary, unicorn/prefer-math-min-max
+	v = v < 0 ? 0 : v > 1 ? 1 : v;
+	dst[offset + 2] = Math.round(v * 65535) / 65535;
+	// eslint-disable-next-line unicorn/no-nested-ternary, unicorn/prefer-math-min-max
+	v = ra < 0 ? 0 : ra > 1 ? 1 : ra;
+	dst[offset + 3] = Math.round(v * 65535) / 65535;
 }
 
 /**

@@ -563,14 +563,22 @@ async function renderElementModelWith(
 /** Nearest-neighbour resize matching Imagick FILTER_POINT (destination-center sampling). */
 export function pointResize(texture: FloatTexture, width: number, height: number): FloatTexture {
 	const data = new Float64Array(width * height * 4);
+	// Precompute source X for every destination column: the mapping is identical
+	// for every row, so computing it once avoids width * height redundant
+	// Math.floor + division calls.
+	const srcXs = new Int32Array(width);
+	for (let x = 0; x < width; x++) {
+		const srcX = Math.floor((x + 0.5) * texture.width / width);
+		srcXs[x] = srcX >= texture.width ? texture.width - 1 : srcX;
+	}
 	for (let y = 0; y < height; y++) {
 		let srcY = Math.floor((y + 0.5) * texture.height / height);
 		srcY = srcY >= texture.height ? texture.height - 1 : srcY;
+		const srcRow = srcY * texture.width;
+		const dstRow = y * width;
 		for (let x = 0; x < width; x++) {
-			let srcX = Math.floor((x + 0.5) * texture.width / width);
-			srcX = srcX >= texture.width ? texture.width - 1 : srcX;
-			const src = (srcY * texture.width + srcX) * 4;
-			const dst = (y * width + x) * 4;
+			const src = (srcRow + srcXs[x]) * 4;
+			const dst = (dstRow + x) * 4;
 			data[dst] = texture.data[src];
 			data[dst + 1] = texture.data[src + 1];
 			data[dst + 2] = texture.data[src + 2];
@@ -595,6 +603,7 @@ function boxPass(texture: FloatTexture, factor: number, isHorizontal: boolean): 
 	const width = isHorizontal ? Math.round(texture.width / factor) : texture.width;
 	const height = isHorizontal ? texture.height : Math.round(texture.height / factor);
 	const data = new Float64Array(width * height * 4);
+	const { data: src } = texture;
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
 			// Accumulate in integer quantum space: normalized floats drift by an
@@ -606,11 +615,11 @@ function boxPass(texture: FloatTexture, factor: number, isHorizontal: boolean): 
 			for (let i = 0; i < factor; i++) {
 				const srcX = isHorizontal ? x * factor + i : x;
 				const srcY = isHorizontal ? y : y * factor + i;
-				const src = (srcY * texture.width + srcX) * 4;
-				const alpha = Math.round(texture.data[src + 3] * 65535);
-				r += Math.round(texture.data[src] * 65535) * alpha;
-				g += Math.round(texture.data[src + 1] * 65535) * alpha;
-				b += Math.round(texture.data[src + 2] * 65535) * alpha;
+				const srcOffset = (srcY * texture.width + srcX) * 4;
+				const alpha = Math.round(src[srcOffset + 3] * 65535);
+				r += Math.round(src[srcOffset] * 65535) * alpha;
+				g += Math.round(src[srcOffset + 1] * 65535) * alpha;
+				b += Math.round(src[srcOffset + 2] * 65535) * alpha;
 				alphaSum += alpha;
 			}
 			const dst = (y * width + x) * 4;
