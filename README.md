@@ -75,6 +75,11 @@ Benchmarked against PHP renderchest v5.1.0 on the same machine, rendering the sa
 | renderchest (docker, 8 workers) | 210s | 1,573 | 33 | ~449/min |
 | rendermite (one Node process, pool 8) | 22.9s | 2,065 | 0 | ~5,410/min |
 
+That comparison is a fixed point in time; rendermite has since roughly halved its own wall
+time again (worker threads, a faster compositor, bounded animations). Run `npm run bench` for
+current numbers on your machine — CI runs the same suite and comments the delta on pull
+requests.
+
 ## Testing
 
 ```sh

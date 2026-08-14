@@ -45,6 +45,7 @@ const { values } = parseArgs({
 		'builtin': { type: 'string' },
 		'cache-dir': { type: 'string' },
 		'concurrency': { type: 'string' },
+		'workers': { type: 'string', short: 'w' },
 		'help': { type: 'boolean', short: 'h', default: false },
 	},
 });
@@ -77,7 +78,8 @@ Options:
       --lighting-profile   modern (default) | legacy (matches published corpus)
       --builtin <dir>      override the builtin pack (defaults per era)
       --cache-dir <dir>    jar download cache (default ~/.rendermite)
-      --concurrency <n>    in-flight items (default 8)
+      --concurrency <n>    in-flight items per thread (default 8)
+  -w, --workers <n>        render threads (default: one per core, less one)
 `);
 	process.exit(values.help ? 0 : 1);
 }
@@ -153,6 +155,7 @@ const result = await run({
 	gif: values.gif,
 	avif: values.avif,
 	concurrency: values.concurrency ? Number(values.concurrency) : undefined,
+	workers: values.workers ? Number(values.workers) : undefined,
 	lightingProfile: values['lighting-profile'] === 'legacy' ? 'legacy' : 'modern',
 	itemList: values['item-list'],
 	onProgress: (done, total, id, error) => {

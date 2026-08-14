@@ -6,6 +6,14 @@
 
 import type { FloatTexture } from './blend.ts';
 
+/** The rectangle of a buffer written since it was last cleared. */
+export interface DirtyRect {
+	minX: number;
+	minY: number;
+	maxX: number;
+	maxY: number;
+}
+
 /** Per-face private color + depth buffers, image sized. */
 export interface FaceBuffer {
 	/** Position within the final image (full-size scratch buffers start at 0,0). */
@@ -17,6 +25,12 @@ export interface FaceBuffer {
 	colors: Float64Array;
 	/** Depth per pixel; 0 where never written — the overdraw band relies on that. */
 	depths: Float64Array;
+	/**
+	 * Where the rasterizer has written. A fresh buffer claims its whole extent
+	 * so callers that fill it by hand still compact correctly; clearFaceBuffer
+	 * resets it to empty, which is what makes buffer reuse cheap.
+	 */
+	dirty: DirtyRect;
 }
 
 export function createFaceBuffer(width: number, height: number): FaceBuffer {
@@ -27,7 +41,26 @@ export function createFaceBuffer(width: number, height: number): FaceBuffer {
 		height,
 		colors: new Float64Array(width * height * 4),
 		depths: new Float64Array(width * height),
+		dirty: { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 },
 	};
+}
+
+/**
+ * Zero the written region and mark the buffer empty, so one scratch buffer can
+ * serve every face of a model. Allocating an image-sized color+depth pair per
+ * face is what made complex models allocate hundreds of megabytes transiently.
+ */
+export function clearFaceBuffer(buffer: FaceBuffer): void {
+	const { dirty } = buffer;
+	for (let y = dirty.minY; y <= dirty.maxY; y++) {
+		const row = y * buffer.width;
+		buffer.colors.fill(0, (row + dirty.minX) * 4, (row + dirty.maxX + 1) * 4);
+		buffer.depths.fill(0, row + dirty.minX, row + dirty.maxX + 1);
+	}
+	dirty.minX = buffer.width;
+	dirty.minY = buffer.height;
+	dirty.maxX = -1;
+	dirty.maxY = -1;
 }
 
 /**
@@ -40,8 +73,8 @@ export function compactFaceBuffer(buffer: FaceBuffer): FaceBuffer | null {
 	let minY = buffer.height;
 	let maxX = -1;
 	let maxY = -1;
-	for (let y = 0; y < buffer.height; y++) {
-		for (let x = 0; x < buffer.width; x++) {
+	for (let y = Math.max(buffer.dirty.minY, 0); y <= Math.min(buffer.dirty.maxY, buffer.height - 1); y++) {
+		for (let x = Math.max(buffer.dirty.minX, 0); x <= Math.min(buffer.dirty.maxX, buffer.width - 1); x++) {
 			if (buffer.colors[(y * buffer.width + x) * 4 + 3] <= 0) {
 				continue;
 			}
@@ -68,7 +101,15 @@ export function compactFaceBuffer(buffer: FaceBuffer): FaceBuffer | null {
 		);
 		depths.set(buffer.depths.subarray(sourcePixel, sourcePixel + width), targetPixel);
 	}
-	return { x: buffer.x + minX, y: buffer.y + minY, width, height, colors, depths };
+	return {
+		x: buffer.x + minX,
+		y: buffer.y + minY,
+		width,
+		height,
+		colors,
+		depths,
+		dirty: { minX: 0, minY: 0, maxX: width - 1, maxY: height - 1 },
+	};
 }
 
 export interface RasterPoint {
@@ -202,6 +243,15 @@ export function drawTexturedTriangle(
 				let textureX = textureStep * 0.3;
 
 				const rowOffset = row * width;
+				const spanMinX = Math.max(startX - 1, 0);
+				const spanMaxX = Math.min(endX + 1, width - 1);
+				if (spanMinX <= spanMaxX) {
+					const { dirty } = buffer;
+					dirty.minX = Math.min(dirty.minX, spanMinX);
+					dirty.maxX = Math.max(dirty.maxX, spanMaxX);
+					dirty.minY = Math.min(dirty.minY, row);
+					dirty.maxY = Math.max(dirty.maxY, row);
+				}
 				for (let x = startX - 1; x <= endX + 1; x++) {
 					const currentU = (1 - textureX) * startU + textureX * endU;
 					const currentV = (1 - textureX) * startV + textureX * endV;

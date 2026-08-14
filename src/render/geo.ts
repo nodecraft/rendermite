@@ -11,11 +11,12 @@ import { toFloatTexture } from './blend.ts';
 import { combineFaceBuffers } from './compose.ts';
 import { faceMaxZ, renderFace } from './face.ts';
 import { lightsForProfile } from './lighting.ts';
+import { createFaceBuffer } from './rasterizer.ts';
 import { displayMatrix } from './vector.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
 import type { FloatTexture } from './blend.ts';
-import type { RenderableFace } from './face.ts';
+import type { FaceShadeCache, RenderableFace } from './face.ts';
 import type { FaceGeometry } from './geometry.ts';
 import type { RenderOptions } from './renderer.ts';
 import type { Vec3 } from './vector.ts';
@@ -303,8 +304,10 @@ export async function renderGeo(
 	renderable.sort((a, b) => a.maxZ - b.maxZ);
 
 	const buffers = [];
+	const scratch = createFaceBuffer(renderSize, renderSize);
+	const shadeCache: FaceShadeCache = new WeakMap();
 	for (const face of renderable) {
-		const buffer = renderFace(face, renderSize, renderSize, transformation);
+		const buffer = renderFace(face, renderSize, renderSize, transformation, scratch, shadeCache);
 		if (buffer) {
 			buffers.push(buffer);
 		}

@@ -1,5 +1,7 @@
 import sharp from 'sharp';
 
+import { LruCache } from '../resources/cache.ts';
+
 import type { ResourceLocator } from '../resources/locator.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 
@@ -31,6 +33,10 @@ export interface TextureMeta {
 }
 
 export class TextureResolutionError extends Error {}
+
+/** Decoded-pixel budget and hard entry cap for one loader's texture cache. */
+const MAX_TEXTURE_CACHE_BYTES = 128 * 1024 * 1024;
+const MAX_TEXTURE_CACHE_ENTRIES = 8192;
 
 /**
  * Animation-aware texture access: frame extraction over strips and grids with
@@ -83,6 +89,30 @@ export class AnimatedTexture {
 			return total;
 		}
 		return this.frameCount * frameTime;
+	}
+
+	/**
+	 * Ticks within one cycle at which the displayed frame changes. Used to emit
+	 * exactly the frames an animation actually has instead of walking every tick
+	 * of a combined timeline that can run to tens of thousands.
+	 */
+	frameStartTicks(): number[] {
+		const animation = this.meta?.animation;
+		if (!animation || this.frameCount <= 1) {
+			return [0];
+		}
+		const frameTime = animation.frametime ?? 1;
+		const frames = animation.frames;
+		if (!frames?.length) {
+			return Array.from({ length: this.frameCount }, (_, index) => index * frameTime);
+		}
+		const starts: number[] = [];
+		let tick = 0;
+		for (const entry of frames) {
+			starts.push(tick);
+			tick += typeof entry === 'number' ? frameTime : entry.time ?? frameTime;
+		}
+		return starts;
 	}
 
 	/** Which physical frame index shows at a tick, and the interpolation factor. */
@@ -147,11 +177,17 @@ export class AnimatedTexture {
 
 export class TextureLoader {
 	private readonly resources: ResourceManager;
-	private readonly cache = new Map<string, Promise<Texture | null>>();
+	private readonly cache: LruCache<string, Promise<Texture | null>>;
 	private atlas: AtlasResolverLike | null = null;
 
-	constructor(resources: ResourceManager) {
+	constructor(resources: ResourceManager, maxCacheBytes = MAX_TEXTURE_CACHE_BYTES) {
 		this.resources = resources;
+		// Bounded by decoded bytes rather than entry count: a namespace's sprites
+		// are a kilobyte each, but one stitched atlas sheet can be megabytes.
+		this.cache = new LruCache(MAX_TEXTURE_CACHE_ENTRIES, {
+			maxWeight: maxCacheBytes,
+			weigh: pending => (pending as Promise<Texture | null> & { bytes?: number; }).bytes ?? 0,
+		});
 	}
 
 	private async decode(locator: ResourceLocator): Promise<Texture | null> {
@@ -248,11 +284,20 @@ export class TextureLoader {
 	 */
 	async load(locator: ResourceLocator): Promise<Texture | null> {
 		const key = locator.toString();
-		let pending = this.cache.get(key);
-		if (!pending) {
-			pending = this.decode(locator);
-			this.cache.set(key, pending);
+		const cached = this.cache.get(key);
+		if (cached) {
+			return cached;
 		}
+		const pending = this.decode(locator);
+		this.cache.set(key, pending);
+		// The decoded size is only known once it resolves; tagging the promise
+		// keeps the weight with the entry the cache already holds.
+		pending.then((texture) => {
+			Object.assign(pending, { bytes: texture ? texture.data.length : 0 });
+			this.cache.settle(key, pending);
+		}).catch(() => {
+			// A failed decode throws to the caller; the cache entry just weighs nothing.
+		});
 		return pending;
 	}
 }

@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { ResourceLocator } from './locator.ts';
+
+import type { ResourceDescriptor } from './descriptor.ts';
 
 /**
  * A category of resource inside a pack, mapping to a directory under
@@ -68,7 +70,15 @@ export class FolderResourceManager implements ResourceManager {
 	}
 
 	async hasResource(kind: ResourceKindName, locator: ResourceLocator): Promise<boolean> {
-		return await this.getResource(kind, locator) !== null;
+		// stat, not readFile: existence is checked once per discovered item, and
+		// reading every candidate model in full to answer "is this an item?" cost
+		// the whole file's bytes for a boolean.
+		try {
+			const stats = await stat(this.resolve(kind, locator));
+			return stats.isFile();
+		} catch {
+			return false;
+		}
 	}
 
 	async getAllResources(kind: ResourceKindName, locator: ResourceLocator): Promise<Buffer[]> {
@@ -114,6 +124,10 @@ export class FolderResourceManager implements ResourceManager {
 			}
 			throw err;
 		}
+	}
+
+	describe(): ResourceDescriptor {
+		return { kind: 'folder', root: this.root };
 	}
 }
 
@@ -179,4 +193,24 @@ export class LayeredResourceManager implements ResourceManager {
 		}
 		return [...namespaces].toSorted((left, right) => left.localeCompare(right));
 	}
+
+	describe(): ResourceDescriptor | null {
+		const layers: ResourceDescriptor[] = [];
+		for (const layer of this.layers) {
+			const described = describeLayer(layer);
+			// One indescribable layer makes the whole tree indescribable: a partial
+			// tree would render missing textures instead of failing.
+			if (!described) {
+				return null;
+			}
+			layers.push(described);
+		}
+		return { kind: 'layered', layers };
+	}
+}
+
+/** Local copy of describeResources, avoiding an import cycle with descriptor.ts. */
+function describeLayer(manager: ResourceManager): ResourceDescriptor | null {
+	const describable = manager as { describe?: () => ResourceDescriptor | null; };
+	return typeof describable.describe === 'function' ? describable.describe() : null;
 }

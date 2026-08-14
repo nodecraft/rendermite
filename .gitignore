@@ -5,3 +5,7 @@ dist/
 .env
 test/.fixtures/
 preview/
+
+bench-results.json
+bench-report.json
+bench-comment.md

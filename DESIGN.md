@@ -129,11 +129,22 @@ Plus per-era shims from the ui pipeline: synthesized `atlases/blocks.json` below
 
 ## Performance plan
 
-- Rasterization/composite in TS over typed arrays; the per-pixel composite is the hot spot —
-  optimize after parity (e.g. skip fully-transparent face rows, precompute depth order for
-  the common single-opaque-face case).
-- Texture decode/cache per worker; models cached by locator.
-- Benchmark target: beat renderchest's ~1,100 items/min (5 shards, docker) single-process.
+- Rasterization/composite in TS over typed arrays. The per-pixel composite was the hot spot
+  (18% of CPU); it now indexes faces by bounding box and tracks the paint order as a rank per
+  face instead of re-sorting every face at every pixel.
+- One scratch color/depth buffer per model render with a rasterizer-tracked dirty rect,
+  rather than an image-sized pair per face.
+- Face shading (clone + tint + darken) memoized per texture/tint/light/UV window; animated
+  models reuse geometry, matrices, paint order and any face whose texture did not change
+  that tick.
+- Texture decode and models cached per worker, both LRU-bounded (textures by decoded bytes)
+  so a run across thousands of namespaces does not grow without limit.
+- Client jars index with their central directory read in one go; per-record reads cost more
+  than a second of startup on a 26k-entry jar.
+- Items render across worker threads when the resource tree can describe itself
+  (`src/resources/descriptor.ts`); otherwise the same `ItemPipeline` runs in-process.
+- Animated timelines are bounded: a combined cycle beyond the frame cap is sampled evenly
+  across its whole length, never truncated, and identical neighbours coalesce.
 
 ## Testing
 
@@ -164,3 +175,27 @@ Fully self-contained: no fixture references a developer machine.
 
 9.2× faster with 29% more items rendered; the PHP run demonstrated the silent-drop failure
 mode live (33 items logged as rendered, never written).
+
+That table is a fixed point-in-time comparison against the PHP tool and is not re-measured;
+rendermite has since roughly halved its own side of it. Current numbers come from the
+benchmark suite below, not from this table.
+
+## Continuous benchmarks (`bench/`)
+
+`npm run bench` runs the Vitest benchmark suite over the render, encode and asset-access hot
+paths; `npm run bench:report` also writes `bench-report.json`. CI runs it on every push,
+publishes the report as an artifact, and comments a delta table on pull requests against
+main's baseline (reporting only — never a gate).
+
+Two things make the numbers usable on hosted runners:
+
+- **`reference > calibration`** is a fixed arithmetic workload measured in the same run. The
+  report divides every other benchmark by it, which cancels most of the difference between
+  one runner and the next. Never change that benchmark — it is the ruler.
+- **Benchmarks assert their own workload.** Vitest does not run `beforeAll` in benchmark mode,
+  so setup is top-level and each benchmark checks it actually rendered/encoded something. A
+  benchmark measuring an empty loop reports a wonderful time.
+
+Moves smaller than 10%, or smaller than the noise the run itself measured, are not called
+out. For a decisive local answer, run a benchmark before and after on the same machine, or
+use `.work/`-based scripts for whole-corpus timings.

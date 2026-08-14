@@ -2,39 +2,33 @@
  * Render-run orchestration: discover items, evaluate definitions, render,
  * encode, write images + stylesheet + item list. Unlike upstream, failures are
  * per-item, collected, and reported — a run summary counts files, never log lines.
+ *
+ * Items render in worker threads when the resource tree can describe itself
+ * (see resources/descriptor.ts); otherwise the same pipeline runs in-process.
  */
 
 import { mkdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { loadAtlasResolver } from './atlas/registry.ts';
-import { builtinDynamicResources } from './dynamic/generators.ts';
-import { defaultProperties, evaluateItemModel } from './items/definition.ts';
-import { discoverItems, resolveItem } from './items/discovery.ts';
-import { ModelLoader } from './models/loader.ts';
-import { encodeAnimatedIcon, encodeRasterAsset } from './output/encode.ts';
+
+import { discoverItems } from './items/discovery.ts';
+import { encodeRasterAsset } from './output/encode.ts';
 import { classifyItemStyle } from './output/item-styles.ts';
 import { minifyStylesheet } from './output/minify.ts';
 import { generateStylesheet } from './output/stylesheet.ts';
-import { blendPixel, toFloatTexture } from './render/blend.ts';
-import { renderDyedVariantFallback, renderEntityFallback, spawnEggTints } from './render/entity-fallback.ts';
-import { findGeoForItem, renderGeo } from './render/geo.ts';
-import { legacyTintsForChain } from './render/legacy-tints.ts';
-import {
-	boxDownscale,
-	pointResize,
-	renderModel,
-	renderModelFrames,
-} from './render/renderer.ts';
-import { resolveTints } from './render/tints.ts';
+import { ItemPipeline } from './render/pipeline.ts';
+import { describeResources } from './resources/descriptor.ts';
 import { ResourceLocator } from './resources/locator.ts';
-import { FolderResourceManager, LayeredResourceManager } from './resources/manager.ts';
-import { TextureLoader } from './textures/loader.ts';
+import { WorkerRenderPool } from './workers/pool.ts';
 
 import type { ItemStyle } from './output/stylesheet.ts';
-import type { FloatTexture } from './render/blend.ts';
 import type { LightingProfileName } from './render/lighting.ts';
+import type { ItemRenderOutcome } from './render/pipeline.ts';
+import type { AnimationLimits } from './render/renderer.ts';
 import type { ResourceManager } from './resources/manager.ts';
+import type { RenderWorkerData } from './workers/render-worker.ts';
 
 export interface RunOptions {
 	resources: ResourceManager;
@@ -57,8 +51,15 @@ export interface RunOptions {
 	avif?: boolean;
 	/** Minify the stylesheet via lightningcss (default true). */
 	minify?: boolean;
-	/** In-flight items (encode overlaps on libvips' threadpool; default 8). */
+	/** In-flight items per thread (encode overlaps on libvips' threadpool; default 8). */
 	concurrency?: number;
+	/**
+	 * Render threads. Defaults to one per core (minus the main thread). 1 renders
+	 * in-process; a resource tree that cannot be described falls back to that too.
+	 */
+	workers?: number;
+	/** Bounds on animated timelines (frame count). */
+	animation?: AnimationLimits;
 	/**
 	 * Drop classic item models with no matching translation (default true).
 	 * Disable for a prepared asset tree whose own preprocessing has already
@@ -91,6 +92,8 @@ export interface RunResult {
 	skippedTemplates: string[];
 	/** Image files actually written, the only trustworthy success signal. */
 	writtenFiles: number;
+	/** Worker threads used; 1 means everything rendered in-process. */
+	workers: number;
 }
 
 export async function run(options: RunOptions): Promise<RunResult> {
@@ -101,25 +104,50 @@ export async function run(options: RunOptions): Promise<RunResult> {
 	const format = options.format ?? 'webp';
 	const fallback = options.fallback ?? true;
 	const lightingProfile = options.lightingProfile ?? 'modern';
+	const settings = {
+		builtin: options.builtin,
+		output: options.output,
+		size,
+		quality,
+		format,
+		gif: options.gif,
+		avif: options.avif,
+		lightingProfile,
+		animation: options.animation,
+	};
 
-	// Dynamic resources (pot variants, leather trim layers, charged crossbows)
-	// depend on builtin models, so they ride along with the builtin pack.
-	const dynamic = options.builtin ? builtinDynamicResources() : null;
-	const resources = options.builtin && dynamic
-		? new LayeredResourceManager([new FolderResourceManager(options.builtin), dynamic.layer, options.resources])
-		: options.resources;
-	const models = new ModelLoader(resources);
-	const textures = new TextureLoader(resources);
+	// Workers spawn before discovery so their asset indexing overlaps it; a tree
+	// that cannot describe itself renders in-process instead.
+	const concurrency = Math.max(1, options.concurrency ?? 8);
+	const requestedWorkers = resolveWorkerCount(options.workers);
+	const descriptor = requestedWorkers > 1 ? describeResources(options.resources) : null;
+	const pool = descriptor
+		? new WorkerRenderPool<ItemRenderOutcome>({
+			workerUrl: workerUrl(),
+			workerData: {
+				resources: descriptor,
+				settings,
+				// libvips threads are per process, so each worker would otherwise
+				// start a machine-sized pool and oversubscribe the CPU N times.
+				sharpConcurrency: Math.max(1, Math.round(os.availableParallelism() / requestedWorkers)),
+			} satisfies RenderWorkerData,
+			workers: requestedWorkers,
+			inFlight: concurrency,
+		})
+		: null;
+	const usedWorkers = pool ? requestedWorkers : 1;
+
+	const pipeline = await ItemPipeline.create(options.resources, settings).catch(async (err: unknown) => {
+		await pool?.close();
+		throw err;
+	});
+	const { resources } = pipeline;
 	const glint = await resolveEnchantmentGlint(resources);
 	if (!glint) {
 		throw new Error('Missing enchantment glint texture (minecraft:misc/enchanted_glint_item or enchanted_item_glint)');
 	}
 	const glintFormats = fallback ? ['png', format] as const : [format] as const;
 	const encodedGlint = await encodeRasterAsset(glint, glintFormats);
-	// Atlas sources synthesize sprites with no file behind them (armor trims via
-	// paletted_permutations, unstitch regions) — the class renderchest v2.5.2
-	// resolved nothing for.
-	textures.setAtlasResolver(await loadAtlasResolver(resources, locator => textures.load(locator)));
 
 	const ids: string[] = [];
 	const seen = new Set<string>();
@@ -152,7 +180,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 	// Dynamic items belong to vanilla renders only, matching upstream's
 	// generators — and each group only exists where its prerequisites do
 	// (1.12.2 has no trims, pots, or crossbows).
-	if (dynamic && namespaces.includes('minecraft')) {
+	if (pipeline.dynamicItems && namespaces.includes('minecraft')) {
 		const hasTrims = await resources.hasResource('texture', ResourceLocator.parse('minecraft:trims/color_palettes/trim_palette'));
 		const hasPot = await resources.hasResource('texture', ResourceLocator.parse('minecraft:entity/decorated_pot/decorated_pot_base'));
 		const hasCrossbow = await resources.hasResource('model', ResourceLocator.parse('minecraft:item/crossbow_arrow'));
@@ -162,11 +190,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
 			_decorated_pot: hasPot,
 			_crossbow: hasCrossbow,
 		};
-		for (const item of dynamic.items) {
-			const namespace = item.id.split(':', 1)[0];
-			if ((groupAvailable[namespace] ?? true) && !seen.has(item.id)) {
-				seen.add(item.id);
-				ids.push(item.id);
+		for (const id of pipeline.dynamicItems) {
+			const namespace = id.split(':', 1)[0];
+			if ((groupAvailable[namespace] ?? true) && !seen.has(id)) {
+				seen.add(id);
+				ids.push(id);
 			}
 		}
 	}
@@ -219,179 +247,47 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		return parents.has(new ResourceLocator(locator.namespace, `item/${locator.path}`).toString());
 	};
 
-	/**
-	 * Code-rendered models often still ship a flat item sprite (the old
-	 * pipeline's black-icon audit checked exactly this). A real sprite beats
-	 * no icon; the fallback is recorded so it is never a silent substitution.
-	 */
-	const spriteFallback = async (id: string): Promise<FloatTexture | null> => {
-		const locator = ResourceLocator.parse(id);
-		for (const directory of ['item', 'items']) {
-			const texture = await textures.load(new ResourceLocator(locator.namespace, `${directory}/${locator.path}`));
-			if (texture) {
-				const float = toFloatTexture(texture);
-				const upscaled = pointResize(float, size * quality, size * quality);
-				return quality === 1 ? upscaled : boxDownscale(upscaled, quality);
-			}
-		}
-		return null;
-	};
-
-	// A small async pool: the JS rasterizer shares one thread, but sharp's
-	// encoders run on libvips' native threadpool, so overlapping items keeps
-	// encode off the critical path.
-	const concurrency = Math.max(1, options.concurrency ?? 8);
-	let nextIndex = 0;
 	let completed = 0;
-
-	const renderFrames = async (id: string): Promise<{ frames: FloatTexture[]; delaysMs: number[]; }> => {
-		const instructions = await resolveItem(resources, id, defaultProperties());
-		let frames: FloatTexture[];
-		let delaysMs: number[];
-		{
-			if (instructions.length === 1) {
-				const model = await models.load(instructions[0].model);
-				let tints = instructions[0].tints.length > 0
-					? await resolveTints(instructions[0].tints, { textures })
-					: await legacyTintsForChain(model.chain, textures);
-				// Mod spawn eggs carry their colors in item-registration code —
-				// derive them from the mob's entity texture instead.
-				if (!tints && model.chain.some(entry => entry.endsWith('item/template_spawn_egg'))) {
-					tints = await spawnEggTints(id, resources, textures).catch(() => null);
-				}
-				tints ??= [];
-				const result = await renderModelFrames(model, textures, {
-					size,
-					quality,
-					lightingProfile,
-					itemTransform: instructions[0].transform,
-					tints,
-					resources,
-				});
-				frames = result.frames;
-				delaysMs = result.delaysMs;
-			} else {
-				// Composites blend statically at tick 0 — per-part animations with
-				// different timelines are rare and not worth the timeline merge.
-				let combined: FloatTexture | null = null;
-				for (const instruction of instructions) {
-					const model = await models.load(instruction.model);
-					// Pre-definition eras carry no tints[] — fall back to the classic
-					// hard-coded tables (spawn eggs, potions, foliage colormaps).
-					const tints = instruction.tints.length > 0
-						? await resolveTints(instruction.tints, { textures })
-						: await legacyTintsForChain(model.chain, textures) ?? [];
-					const renderedModel = await renderModel(model, textures, {
-						size,
-						quality,
-						lightingProfile,
-						itemTransform: instruction.transform,
-						tints,
-						resources,
-					});
-					combined = combined === null ? renderedModel : blendOver(combined, renderedModel);
-				}
-				frames = [combined ?? { width: size, height: size, data: new Float64Array(size * size * 4) }];
-				delaysMs = [50];
-			}
-			if (frames.length === 0) {
-				// empty/special items render fully transparent, matching upstream.
-				frames = [{ width: size, height: size, data: new Float64Array(size * size * 4) }];
-				delaysMs = [50];
-			}
-		}
-		return { frames, delaysMs };
-	};
-
-	const renderOne = async (index: number): Promise<void> => {
-		const id = ids[index];
-		let frames: FloatTexture[];
-		let delaysMs: number[];
-		let usedFallback = false;
-		try {
-			({ frames, delaysMs } = await renderFrames(id));
-		} catch (err) {
-			// A same-name block model is what the game itself draws for most
-			// block items whose item model is a code loader (IE's coresample).
-			const blockLocator = ResourceLocator.parse(id);
-			const blockRender = await models.load(new ResourceLocator(blockLocator.namespace, `block/${blockLocator.path}`))
-				.then(model => renderModel(model, textures, { size, quality, lightingProfile, resources }))
-				.catch(() => null);
-			// GeckoLib-style items keep their geometry in Bedrock .geo.json files
-			// the game only reaches through Java code — render those directly.
-			const geo = blockRender ? null : await findGeoForItem(resources, id).catch(() => null);
-			const geoRender = geo
-				? await renderGeo(geo.geo, geo.texture, textures, { size, quality, lightingProfile }).catch(() => null)
-				: null;
-			// renderGeo returns full supersampled size; the other fallbacks go
-			// through renderModel, which already downscales.
-			let fallbackRender = blockRender
-				?? (geoRender && quality !== 1 ? boxDownscale(geoRender, quality) : geoRender);
-			// Code-rendered chests/heads/banners/shulkers map onto builtin geometry.
-			fallbackRender ??= options.builtin
-				? await renderEntityFallback(id, models, textures, resources, { size, quality, lightingProfile, resources }).catch(() => null)
-				: null;
-			// Dyed variants of vanilla items with runtime-generated models.
-			fallbackRender ??= await renderDyedVariantFallback(id, models, textures, { size, quality, lightingProfile, resources }).catch(() => null);
-			if (fallbackRender) {
-				frames = [fallbackRender];
-				delaysMs = [50];
-			} else {
-				const fallback = await spriteFallback(id).catch(() => null);
-				if (!fallback) {
-					if (await isTemplateModel(id).catch(() => false)) {
-						skippedTemplates.push(id);
-					} else {
-						failed.push({ id, error: (err as Error).message });
-					}
-					completed++;
-					options.onProgress?.(completed, ids.length, id, (err as Error).message);
-					return;
-				}
-				frames = [fallback];
-				delaysMs = [50];
-				usedFallback = true;
-			}
-		}
-		try {
-			const encoded = await encodeAnimatedIcon(frames, delaysMs, {
-				webp: true,
-				gif: options.gif,
-				avif: options.avif || format === 'avif',
-			});
-			const [namespace, itemPath] = id.split(':', 2);
-			const imageBase = path.join(options.output, 'items', namespace, `${itemPath}`);
-			await mkdir(path.dirname(imageBase), { recursive: true });
-			await writeFile(`${imageBase}.png`, encoded.png);
-			writtenFiles++;
-			for (const [extension, buffer] of [['webp', encoded.webp], ['gif', encoded.gif], ['avif', encoded.avif]] as const) {
-				if (!buffer) {
-					continue;
-				}
-
-				await writeFile(`${imageBase}.${extension}`, buffer);
-				writtenFiles++;
-			}
-
+	const record = async (id: string, outcome: ItemRenderOutcome | null, error?: string): Promise<void> => {
+		if (outcome) {
+			writtenFiles += outcome.written;
 			rendered.push(id);
-			if (usedFallback) {
+			if (outcome.usedFallback) {
 				spriteFallbacks.push(id);
 			}
-			completed++;
-			options.onProgress?.(completed, ids.length, id);
-		} catch (err) {
-			failed.push({ id, error: (err as Error).message });
-			completed++;
-			options.onProgress?.(completed, ids.length, id, (err as Error).message);
+		} else if (await isTemplateModel(id).catch(() => false)) {
+			skippedTemplates.push(id);
+		} else {
+			failed.push({ id, error: error ?? 'Unknown render failure' });
 		}
+		completed++;
+		options.onProgress?.(completed, ids.length, id, outcome ? undefined : error);
 	};
 
-	await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, async () => {
-		while (nextIndex < ids.length) {
-			const index = nextIndex++;
-			await renderOne(index);
-		}
-	}));
+	if (pool) {
+		const pending: Array<Promise<void>> = [];
+		await pool.run(ids.map((id) => {
+			return { id };
+		}), (message) => {
+			pending.push(record(message.id, message.result ?? null, message.error));
+		});
+		await Promise.all(pending);
+	} else {
+		// A small async pool: the JS rasterizer shares one thread, but sharp's
+		// encoders run on libvips' native threadpool, so overlapping items keeps
+		// encode off the critical path.
+		let nextIndex = 0;
+		await Promise.all(Array.from({ length: Math.min(concurrency, ids.length) }, async () => {
+			while (nextIndex < ids.length) {
+				const id = ids[nextIndex++];
+				try {
+					await record(id, await pipeline.renderItem(id));
+				} catch (err) {
+					await record(id, null, (err as Error).message);
+				}
+			}
+		}));
+	}
 	// Deterministic outputs regardless of completion order.
 	rendered.sort((left, right) => left.localeCompare(right));
 
@@ -421,7 +317,25 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		await writeFile(path.join(options.output, `${prefix}${namespaces[0]}-failures.json`), JSON.stringify(failed, null, '\t'));
 	}
 
-	return { rendered, failed, spriteFallbacks, skippedTemplates, writtenFiles };
+	return { rendered, failed, spriteFallbacks, skippedTemplates, writtenFiles, workers: usedWorkers };
+}
+
+/**
+ * One thread per core less the orchestrator, capped at 8: measured throughput
+ * on a 16-thread host peaks around 4-8 workers and falls off above that, where
+ * per-worker asset caches and libvips threads start competing for the same cores.
+ */
+function resolveWorkerCount(requested: number | undefined): number {
+	if (requested !== undefined) {
+		return Math.max(1, Math.floor(requested));
+	}
+	return Math.min(8, Math.max(1, os.availableParallelism() - 1));
+}
+
+/** The worker's own file, in whichever form this module was loaded from. */
+function workerUrl(): URL {
+	const extension = path.extname(fileURLToPath(import.meta.url)) || '.js';
+	return new URL(`./workers/render-worker${extension}`, import.meta.url);
 }
 
 async function itemExistsIn(resources: ResourceManager, id: string): Promise<boolean> {
@@ -443,15 +357,7 @@ async function resolveEnchantmentGlint(resources: ResourceManager): Promise<Buff
 	return null;
 }
 
-function blendOver(base: FloatTexture, layer: FloatTexture): FloatTexture {
-	for (let offset = 0; offset < base.data.length; offset += 4) {
-		const alpha = layer.data[offset + 3];
-		if (alpha > 0) {
-			blendPixel(base.data, offset, layer.data[offset], layer.data[offset + 1], layer.data[offset + 2], alpha);
-		}
-	}
-	return base;
-}
-
 // Re-export so library consumers can drive custom pipelines with the same pieces.
-export { evaluateItemModel };
+
+
+export { evaluateItemModel } from './items/definition.ts';

@@ -11,6 +11,7 @@ import { blendPixel } from './blend.ts';
 import { lightsForProfile } from './lighting.ts';
 import {
 	RowCursor,
+	clearFaceBuffer,
 	createFaceBuffer,
 	drawTexturedTriangle,
 	phpRound,
@@ -189,6 +190,7 @@ export async function renderObjModel(
 
 	const renderSize = options.size * options.quality;
 	const out = createFaceBuffer(renderSize, renderSize);
+	const scratch = createFaceBuffer(renderSize, renderSize);
 	// Darkened texture variants per material+light bucket, so shading matches
 	// the JSON-element pipeline without re-darkening per triangle.
 	const shaded = new Map<string, FloatTexture>();
@@ -225,9 +227,9 @@ export async function renderObjModel(
 			shaded.set(key, texture);
 		}
 
-		// Rasterize into a private buffer, then z-merge into the shared one:
+		// Rasterize into a reused scratch buffer, then z-merge into the shared one:
 		// larger depth = nearer the viewer.
-		const scratch = createFaceBuffer(renderSize, renderSize);
+		clearFaceBuffer(scratch);
 		const cursor = new RowCursor();
 		const point = (index: number) => {
 			return {
@@ -239,22 +241,26 @@ export async function renderObjModel(
 			};
 		};
 		drawTexturedTriangle(point(0), point(1), point(2), scratch, texture, cursor);
-		for (let pixel = 0; pixel < renderSize * renderSize; pixel++) {
-			const offset = pixel * 4;
-			const alpha = scratch.colors[offset + 3];
-			if (alpha <= 0) {
-				continue;
-			}
-			if (scratch.depths[pixel] >= out.depths[pixel] || out.colors[offset + 3] === 0) {
-				if (alpha >= 1 || out.colors[offset + 3] === 0) {
-					out.colors[offset] = scratch.colors[offset];
-					out.colors[offset + 1] = scratch.colors[offset + 1];
-					out.colors[offset + 2] = scratch.colors[offset + 2];
-					out.colors[offset + 3] = alpha;
-				} else {
-					blendPixel(out.colors, offset, scratch.colors[offset], scratch.colors[offset + 1], scratch.colors[offset + 2], alpha);
+		// Only the triangle's own span can differ from the shared buffer.
+		for (let y = Math.max(scratch.dirty.minY, 0); y <= Math.min(scratch.dirty.maxY, renderSize - 1); y++) {
+			for (let x = Math.max(scratch.dirty.minX, 0); x <= Math.min(scratch.dirty.maxX, renderSize - 1); x++) {
+				const pixel = y * renderSize + x;
+				const offset = pixel * 4;
+				const alpha = scratch.colors[offset + 3];
+				if (alpha <= 0) {
+					continue;
 				}
-				out.depths[pixel] = Math.max(out.depths[pixel], scratch.depths[pixel]);
+				if (scratch.depths[pixel] >= out.depths[pixel] || out.colors[offset + 3] === 0) {
+					if (alpha >= 1 || out.colors[offset + 3] === 0) {
+						out.colors[offset] = scratch.colors[offset];
+						out.colors[offset + 1] = scratch.colors[offset + 1];
+						out.colors[offset + 2] = scratch.colors[offset + 2];
+						out.colors[offset + 3] = alpha;
+					} else {
+						blendPixel(out.colors, offset, scratch.colors[offset], scratch.colors[offset + 1], scratch.colors[offset + 2], alpha);
+					}
+					out.depths[pixel] = Math.max(out.depths[pixel], scratch.depths[pixel]);
+				}
 			}
 		}
 	}

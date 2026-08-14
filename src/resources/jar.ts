@@ -4,11 +4,11 @@
  * count on Docker bind mounts). The central directory is indexed once.
  */
 
-import { open } from 'yauzl';
-
 import { ResourceLocator } from './locator.ts';
 import { ResourceKind } from './manager.ts';
+import { openZip } from './zip-reader.ts';
 
+import type { ResourceDescriptor } from './descriptor.ts';
 import type { ResourceKindName, ResourceManager } from './manager.ts';
 import type { Entry, ZipFile } from 'yauzl';
 
@@ -43,12 +43,9 @@ export class JarResourceManager implements ResourceManager {
 	}
 
 	private getIndex(): Promise<JarIndex> {
-		this.index ??= new Promise((resolve, reject) => {
-			open(this.jarPath, { lazyEntries: true, autoClose: false }, (err, zip) => {
-				if (err) {
-					reject(err);
-					return;
-				}
+		this.index ??= (async () => {
+			const zip = await openZip(this.jarPath);
+			return new Promise<JarIndex>((resolve, reject) => {
 				const entries = new Map<string, Entry>();
 				const entriesLower = new Map<string, Entry>();
 				const namespaces = new Set<string>();
@@ -73,7 +70,7 @@ export class JarResourceManager implements ResourceManager {
 				zip.on('error', reject);
 				zip.readEntry();
 			});
-		});
+		})();
 		return this.index;
 	}
 
@@ -139,6 +136,10 @@ export class JarResourceManager implements ResourceManager {
 	async listNamespaces(): Promise<string[]> {
 		const index = await this.getIndex();
 		return [...index.namespaces].toSorted((left, right) => left.localeCompare(right));
+	}
+
+	describe(): ResourceDescriptor {
+		return { kind: 'jar', path: this.jarPath };
 	}
 
 	async close(): Promise<void> {
