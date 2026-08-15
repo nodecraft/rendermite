@@ -106,7 +106,21 @@ export class ItemPipeline {
 	 * pipeline's black-icon audit checked exactly this). A real sprite beats
 	 * no icon; the fallback is recorded so it is never a silent substitution.
 	 */
-	private async spriteFallback(id: string): Promise<FloatTexture | null> {
+	/** Whether the game draws this item from an entity model rather than a sprite. */
+	private async isEntityDrawn(id: string): Promise<boolean> {
+		try {
+			const [instruction] = await resolveItem(this.resources, id, defaultProperties());
+			if (!instruction) {
+				return false;
+			}
+			const model = await this.models.load(instruction.model);
+			return model.builtinParent === 'builtin/entity';
+		} catch {
+			return false;
+		}
+	}
+
+	private async spriteFallback(id: string, entityDrawn: boolean): Promise<FloatTexture | null> {
 		const { size, quality } = this.settings;
 		const locator = ResourceLocator.parse(id);
 		const draw = (texture: Texture): FloatTexture => {
@@ -118,6 +132,14 @@ export class ItemPipeline {
 			if (texture) {
 				return draw(texture);
 			}
+		}
+		// A `builtin/entity` item is drawn by Java from an entity sheet, and that
+		// sheet is a UV atlas — scattered islands of parts, never an icon. Drawing
+		// one flat produced a spray of bone fragments for wan_ancient_beasts'
+		// skulls. The conventional item/ lookups above are safe either way; only
+		// this by-name search can wander onto a sheet, so it stops here.
+		if (entityDrawn) {
+			return null;
 		}
 		// Mods file sprites into their own subdirectories (draconicevolution keeps
 		// item/equipment/wyvern_bow.png, and its code-rendered machines only have
@@ -296,7 +318,7 @@ export class ItemPipeline {
 			if (fallbackRender) {
 				return { frames: [fallbackRender], delaysMs: [50], usedFallback: false };
 			}
-			const sprite = await this.spriteFallback(id).catch(() => null);
+			const sprite = await this.spriteFallback(id, await this.isEntityDrawn(id)).catch(() => null);
 			if (!sprite) {
 				throw err;
 			}
