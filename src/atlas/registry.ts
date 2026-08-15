@@ -60,12 +60,21 @@ class InferredItemTrimSource implements AtlasSource {
 			// namespace: blue_skies-moonstone lives at
 			// blue_skies:trims/color_palettes/moonstone.
 			const separator = variant.indexOf('-');
+			// Other mods join the two with an underscore instead, which no split can
+			// tell from a material name that simply has one. Matching against the
+			// namespaces actually loaded is what makes the boundary unambiguous:
+			// caverns_and_chasms_copper_darker is that mod's copper_darker palette.
+			const namespaces = await this.resources.listNamespaces();
+			const namespaced = namespaces
+				.filter(namespace => variant.startsWith(`${namespace}_`))
+				.map(namespace => new ResourceLocator(namespace, `trims/color_palettes/${variant.slice(namespace.length + 1)}`));
 			const palette = await this.firstTexture([
 				new ResourceLocator(locator.namespace, `trims/color_palettes/${variant}`),
 				ResourceLocator.parse(`minecraft:trims/color_palettes/${variant}`),
 				...(separator > 0
 					? [new ResourceLocator(variant.slice(0, separator), `trims/color_palettes/${variant.slice(separator + 1)}`)]
 					: []),
+				...namespaced,
 			]);
 			if (!key || !palette) {
 				return null;

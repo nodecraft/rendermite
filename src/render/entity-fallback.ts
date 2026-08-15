@@ -432,12 +432,19 @@ export async function renderEntityFallback(
 	}
 
 	if (name.includes('shulker_box')) {
-		try {
-			const model = await models.load('renderchest:item/shulker_box');
-			return await renderModel(model, textures, options);
-		} catch {
+		const model = await models.load('renderchest:item/shulker_box').catch(() => null);
+		if (!model) {
 			return null;
 		}
+		// The bare builtin model leaves `#texture` for a descendant to bind. A mod
+		// sheet is only usable if it is a whole skin: Sophisticated Storage's tier
+		// sheets are trim overlays meant to composite over the vanilla box, and
+		// wearing one alone leaves nothing but floating corners.
+		const candidate = await findShulkerTexture(resources, locator.namespace, name);
+		const sheet = candidate && await coversSheet(textures, candidate)
+			? candidate
+			: ResourceLocator.parse('minecraft:entity/shulker/shulker');
+		return renderModel(withTexture(model, 'texture', sheet), textures, options).catch(() => null);
 	}
 
 	if (name.endsWith('banner')) {
@@ -462,6 +469,52 @@ export async function renderEntityFallback(
 	}
 
 	return null;
+}
+
+/**
+ * Whether a sheet is a whole skin rather than an overlay. Vanilla's shulker
+ * covers 44% of its sheet; a tier trim covers under 5%.
+ */
+async function coversSheet(textures: TextureLoader, locator: ResourceLocator): Promise<boolean> {
+	const texture = await textures.load(locator).catch(() => null);
+	if (!texture) {
+		return false;
+	}
+	let opaque = 0;
+	for (let offset = 3; offset < texture.data.length; offset += 4) {
+		if (texture.data[offset] > 16) {
+			opaque++;
+		}
+	}
+	return opaque / (texture.width * texture.height) > 0.2;
+}
+
+/** A mod's shulker box sheet, preferring the one its name points at. */
+async function findShulkerTexture(
+	resources: ResourceManager,
+	namespace: string,
+	itemName: string,
+): Promise<ResourceLocator | null> {
+	const wanted = tokens(itemName).filter(token => token !== 'shulker' && token !== 'box');
+	let best: ResourceLocator | null = null;
+	let bestScore = -1;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		if (!locator.path.startsWith('entity/') || !locator.path.includes('shulker')) {
+			continue;
+		}
+		const candidate = tokens(locator.path);
+		let score = 0;
+		for (const token of wanted) {
+			if (candidate.includes(token)) {
+				score += 2;
+			}
+		}
+		if (score > bestScore) {
+			best = locator;
+			bestScore = score;
+		}
+	}
+	return best;
 }
 
 /**

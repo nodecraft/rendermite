@@ -21,6 +21,28 @@ import path from 'node:path';
 /** SRG ids known to be PartPose.rotation (NOT offset). */
 const SRG_ROTATION = new Set(['m_171430_', 'rotation']);
 
+/**
+ * Intermediary (Fabric/Yarn) is the one mapping where the class names do NOT
+ * survive, so owner matching needs them spelled back out. Each id is fixed for
+ * all of 1.20+ and is confirmed by the descriptors it appears in below — e.g.
+ * class_5610.method_x(String, class_5606, class_5603) can only be
+ * PartDefinition.addOrReplaceChild(String, CubeListBuilder, PartPose).
+ */
+const INTERMEDIARY_CLASSES: Record<string, string> = {
+	class_630: 'ModelPart',
+	class_5603: 'PartPose',
+	class_5605: 'CubeDeformation',
+	class_5606: 'CubeListBuilder',
+	class_5607: 'LayerDefinition',
+	class_5609: 'MeshDefinition',
+	class_5610: 'PartDefinition',
+};
+
+/** Rewrite an intermediary listing so owner and descriptor matching sees the real names. */
+function deintermediary(listing: string): string {
+	return listing.replaceAll(/\bclass_\d+\b/g, name => INTERMEDIARY_CLASSES[name] ?? name);
+}
+
 const WORK = path.join(import.meta.dirname, '..', '..', '.work', 'mod-models', 'classes');
 
 export interface Cube {
@@ -218,11 +240,27 @@ function parse(listing: string, className: string): PartTable {
 	return table;
 }
 
-export function extractPartTables(jar: string, classSuffix: string): PartTable[] {
+/**
+ * Narrow a javap listing to one method's block. A class that builds several
+ * layers from one file (Ad Astra's rockets are four tiers in one class) would
+ * otherwise read as a single table holding every tier's parts at once.
+ */
+function methodBlock(listing: string, method: string): string {
+	const lines = listing.split('\n');
+	const start = lines.findIndex(line => new RegExp(String.raw`\b${method}\(`).test(line) && !line.startsWith(' '.repeat(3)));
+	if (start === -1) {
+		throw new Error(`no method ${method} in listing`);
+	}
+	const rest = lines.slice(start + 1);
+	const end = rest.findIndex(line => line.trim() !== '' && !line.startsWith(' '.repeat(3)));
+	return rest.slice(0, end === -1 ? rest.length : end).join('\n');
+}
+
+export function extractPartTables(jar: string, classSuffix: string, method?: string): PartTable[] {
 	const tables: PartTable[] = [];
 	for (const entry of unpack(jar, classSuffix)) {
-		const listing = execFileSync('javap', ['-p', '-c', path.join(WORK, entry)], { encoding: 'utf8', maxBuffer: 1 << 28 });
-		const table = parse(listing, entry);
+		const listing = deintermediary(execFileSync('javap', ['-p', '-c', path.join(WORK, entry)], { encoding: 'utf8', maxBuffer: 1 << 28 }));
+		const table = parse(method ? methodBlock(listing, method) : listing, entry);
 		if (table.parts.length > 0) {
 			tables.push(table);
 		}

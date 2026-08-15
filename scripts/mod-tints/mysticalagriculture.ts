@@ -1,7 +1,7 @@
 /**
  * Regenerates assets/mod-tints/mysticalagriculture from the mod's own bytecode:
  *
- *   node --experimental-strip-types scripts/mod-tints/mysticalagriculture.ts <jar>
+ *   node scripts/mod-tints/mysticalagriculture.ts <jar>
  *
  * Mystical Agriculture's augments all share one greyscale sprite and are told
  * apart purely by a tint its client code computes, so an untinted render makes

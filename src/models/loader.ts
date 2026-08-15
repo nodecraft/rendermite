@@ -72,6 +72,9 @@ const MOD_LOADER_HANDLERS: Record<string, (json: ModelJson) => ModelJson> = {
 	'tconstruct:tool': layerToolParts,
 	'modern_industrialization:machine': composeMachine,
 	'modern_industrialization:use_block_model': imitateBlockModel,
+	'sophisticatedstorage:barrel': flattenStorageBarrel,
+	'sophisticatedstorage:limited_barrel': flattenStorageBarrel,
+	'sophisticatedstorage:simple_composite': mergeCompositeParts,
 	// IE addons (Immersive Petroleum etc.) register conveyor types through
 	// IE's API, so their items also carry IE's loader id.
 	'immersiveengineering:models/conveyor': flattenConveyor,
@@ -170,6 +173,19 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 	// IE's split multiblocks wrap the drawable model as inner_model.
 	if (extended.inner_model && typeof extended.inner_model === 'object') {
 		return flattenLoaderModel(extended.inner_model, depth + 1);
+	}
+	// A loader that nests one whole model under a key of its own naming
+	// (architects_palette:wrapped uses `wrapped_model`) is that model with runtime
+	// behaviour attached, so the nested one is what draws. Only a value carrying
+	// `parent` or `elements` qualifies, which no `display` or `textures` map does.
+	for (const value of Object.values(json)) {
+		const nested = value as ModelJson | null;
+		if (typeof nested !== 'object' || nested === null || Array.isArray(nested)) {
+			continue;
+		}
+		if (nested.parent !== undefined || Array.isArray(nested.elements)) {
+			return flattenLoaderModel(nested, depth + 1);
+		}
 	}
 	if (/fluid_container|bucket/i.test(loader)) {
 		// The declared parent is usually forge:item/bucket, which exists in no
@@ -396,6 +412,61 @@ function composeMachine(json: ModelJson): ModelJson {
 	} as ModelJson;
 }
 
+/**
+ * Sophisticated Storage composes its barrels from part models with two levels of
+ * texture indirection, but the tier part states the three textures a barrel
+ * actually wears under vanilla's own `top`/`side`/`bottom` names. Those names
+ * belong to `cube_bottom_top`, which is the shape a barrel is — the parts the
+ * loader adds on top are trim and the tintable core.
+ */
+function flattenStorageBarrel(json: ModelJson): ModelJson {
+	const extended = json as ModelJson & {
+		model_parts?: Record<string, { model?: string; textures?: Record<string, string>; }>;
+		partitioned_model_parts?: Record<string, { model?: string; textures?: Record<string, string>; }>;
+	};
+	const groups = [extended.partitioned_model_parts, extended.model_parts];
+	// A part states a shape, textures for the shape below it, or both. The tier
+	// textures are trim overlays rather than whole faces, so they have to land on
+	// the body the parts draw rather than on a bare cube.
+	const textures: Record<string, string> = {};
+	const merges: string[] = [];
+	for (const group of groups) {
+		for (const part of Object.values(group ?? {})) {
+			Object.assign(textures, part.textures);
+			if (typeof part.model === 'string') {
+				merges.push(part.model);
+			}
+		}
+	}
+	const flattened = withoutLoader(json) as ModelJson & Record<string, unknown>;
+	delete flattened.model_parts;
+	delete flattened.partitioned_model_parts;
+	delete flattened.dynamic_part_models;
+	delete flattened.wood_overrides;
+	return {
+		...flattened,
+		// The root barrel model declares no parent at all, so nothing in the chain
+		// would supply a gui pose and the icon would fill the frame flat-on.
+		parent: flattened.parent ?? 'minecraft:block/block',
+		textures: { ...flattened.textures, ...textures },
+		...((merges.length > 0) && { mergeModels: merges }),
+	} as ModelJson;
+}
+
+/**
+ * A composite whose parts are named parent references rather than inline
+ * geometry — every part is drawn, so they all merge in.
+ */
+function mergeCompositeParts(json: ModelJson): ModelJson {
+	const parts = (json as ModelJson & { parts?: Record<string, { parent?: string; }>; }).parts ?? {};
+	const merges = Object.values(parts)
+		.map(part => part.parent)
+		.filter((parent): parent is string => typeof parent === 'string');
+	return merges.length === 0
+		? withoutLoader(json)
+		: { ...withoutLoader(json), parts: undefined, mergeModels: merges } as ModelJson;
+}
+
 function extractLoaderType(json: ModelJson): string | null {
 	const record = json as { loader?: unknown; };
 	if (typeof record.loader === 'string') {
@@ -602,12 +673,25 @@ export class ModelLoader {
 				if (!merged) {
 					continue;
 				}
-				elements = [...elements, ...merged.elements.map(element => bindElementTextures(element, merged))];
+				elements = [...elements, ...merged.elements.map(element => bindElementTextures(element, merged, textures))];
 			}
 			break;
 		}
 
 		// Model default is side (master, dcf19ec); builtin/generated sprites light front.
+		// A legacy-era model may carry nothing but an `overrides` list, leaving the
+		// chain with no layers or elements to draw even when it parents onto
+		// item/generated. An inventory stack reads every predicate as 0, which is
+		// the state upstream resolves the list against.
+		if (obj === undefined && elements.length === 0 && Object.keys(textures).length === 0) {
+			const overridden = chain.find(entry => entry.json.overrides?.length)?.json.overrides;
+			const chosen = overridden
+				&& (overridden.findLast(entry => Object.values(entry.predicate).every(value => value <= 0)) ?? overridden[0]);
+			if (chosen) {
+				return this.load(chosen.model);
+			}
+		}
+
 		const defaultLight = builtinParent === 'builtin/generated' ? 'front' : 'side';
 		return {
 			obj,
@@ -640,13 +724,21 @@ export class ModelLoader {
  * Rewrite an element's face textures from the owning model's variables to
  * concrete locators, so the element survives being merged into another model.
  */
-function bindElementTextures(element: ModelElementJson, model: ResolvedModel): ModelElementJson {
+function bindElementTextures(
+	element: ModelElementJson,
+	model: ResolvedModel,
+	owner: Record<string, string>,
+): ModelElementJson {
+	// The composing model's bindings win over the part's own defaults, the way a
+	// child model overrides its parent's textures — Sophisticated Storage's
+	// barrel parts all default to acacia and are rebound per tier.
+	const rebound: ResolvedModel = { ...model, textures: { ...model.textures, ...owner } };
 	const faces: ModelElementJson['faces'] = {};
 	for (const [direction, face] of Object.entries(element.faces)) {
 		if (!face) {
 			continue;
 		}
-		const bound = resolveTexture(model, face.texture);
+		const bound = resolveTexture(rebound, face.texture) ?? resolveTexture(model, face.texture);
 		faces[direction as keyof ModelElementJson['faces']] = bound ? { ...face, texture: bound.toString() } : face;
 	}
 	return { ...element, faces };

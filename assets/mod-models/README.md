@@ -9,7 +9,7 @@ display transforms and no `elements`, so the boxes only exist in a Java class: n
 **These files are generated — do not hand-edit them.** Run:
 
 ```sh
-node --experimental-strip-types scripts/mod-models/build.ts
+node scripts/mod-models/build.ts
 ```
 
 `scripts/mod-models/extract.ts` reads the box list straight out of the mod's bytecode via

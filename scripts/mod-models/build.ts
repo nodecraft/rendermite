@@ -1,7 +1,7 @@
 /**
  * Regenerates assets/mod-models from the mods' own entity-model classes:
  *
- *   node --experimental-strip-types scripts/mod-models/build.ts
+ *   node scripts/mod-models/build.ts
  *
  * Geometry is read out of the bytecode (see extract.ts) so no box or UV number
  * is hand-copied. What cannot be read mechanically — the ISTER pose, which

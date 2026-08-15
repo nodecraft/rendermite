@@ -14,16 +14,23 @@ import { FolderResourceManager, LayeredResourceManager } from '../src/resources/
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { TextureLoader } from '../src/textures/loader.ts';
 
-import type { ResourceManager } from '../src/resources/manager.ts';
-
 async function sheet(width: number, height: number): Promise<Buffer> {
 	return sharp({ create: { width, height, channels: 4, background: { r: 120, g: 90, b: 60, alpha: 1 } } })
 		.png()
 		.toBuffer();
 }
 
-async function render(resources: ResourceManager, id: string): Promise<unknown> {
-	const layered = new LayeredResourceManager([new FolderResourceManager(builtinPackPath('modern')), resources]);
+/** Vanilla parents the builtin pack chains to, which no stub pack carries. */
+function withVanillaStubs(resources: MapResourceManager): MapResourceManager {
+	return resources
+		.set('model', 'minecraft:item/template_shulker_box', JSON.stringify({ parent: 'minecraft:block/block' }))
+		.set('model', 'minecraft:block/block', JSON.stringify({
+			display: { gui: { rotation: [30, 225, 0], translation: [0, 0, 0], scale: [0.625, 0.625, 0.625] } },
+		}));
+}
+
+async function render(resources: MapResourceManager, id: string): Promise<unknown> {
+	const layered = new LayeredResourceManager([new FolderResourceManager(builtinPackPath('modern')), withVanillaStubs(resources)]);
 	const models = new ModelLoader(layered);
 	const textures = new TextureLoader(layered);
 	return renderEntityFallback(id, models, textures, layered, {
@@ -51,6 +58,27 @@ describe('shield fallback', () => {
 
 	it('does not treat an unrelated item as a shield', async () => {
 		expect(await render(new MapResourceManager(), 'somemod:copper_ingot')).toBeNull();
+	});
+});
+
+describe('shulker box fallback', () => {
+	it('ignores a tier sheet that is only trim', async () => {
+		// Sophisticated Storage's tier sheets composite over the vanilla box; worn
+		// alone they leave floating corners, so the vanilla skin stands in.
+		const trim = await sharp({ create: { width: 64, height: 64, channels: 4, background: { r: 200, g: 170, b: 60, alpha: 0 } } })
+			.png()
+			.toBuffer();
+		const resources = new MapResourceManager()
+			.set('texture', 'sophisticatedstorage:entity/shulker_box/gold_tier', trim)
+			.set('texture', 'minecraft:entity/shulker/shulker', await sheet(64, 64));
+		expect(await render(resources, 'sophisticatedstorage:gold_shulker_box')).not.toBeNull();
+	});
+
+	it('uses a mod sheet that is a whole skin', async () => {
+		const resources = new MapResourceManager()
+			.set('texture', 'somemod:entity/shulker/fancy_shulker_box', await sheet(64, 64))
+			.set('texture', 'minecraft:entity/shulker/shulker', await sheet(64, 64));
+		expect(await render(resources, 'somemod:fancy_shulker_box')).not.toBeNull();
 	});
 });
 

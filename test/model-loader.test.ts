@@ -8,6 +8,7 @@ import { JarResourceManager } from '../src/resources/jar.ts';
 import { LayeredResourceManager } from '../src/resources/manager.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 
+import type { ResolvedModel } from '../src/models/loader.ts';
 import type { ResourceManager } from '../src/resources/manager.ts';
 
 // Real 1.21.8 client assets, staged by `.work` setup (see DESIGN.md testing section).
@@ -120,8 +121,52 @@ describe('shared model parents', () => {
 	});
 });
 
+describe('override-only models', () => {
+	/** A legacy model that is nothing but an `overrides` list has no geometry of
+	 * its own, so the state an inventory stack reads (every predicate 0) picks it. */
+	function overrideOnly(): MapResourceManager {
+		return new MapResourceManager()
+			.set('model', 'example:item/sigil', JSON.stringify({
+				overrides: [
+					{ predicate: { 'example:active': 1 }, model: 'example:item/on' },
+					{ predicate: { 'example:active': 0 }, model: 'example:item/off' },
+				],
+			}))
+			.set('model', 'example:item/off', JSON.stringify({ parent: 'builtin/generated', textures: { layer0: 'example:item/off' } }))
+			.set('model', 'example:item/on', JSON.stringify({ parent: 'builtin/generated', textures: { layer0: 'example:item/on' } }));
+	}
+
+	it('resolves to the override matching the default state', async () => {
+		const resolved = await new ModelLoader(overrideOnly()).load('example:item/sigil');
+		expect(resolved.textures.layer0).toBe('example:item/off');
+	});
+
+	it('redirects even when the empty model parents onto item/generated', async () => {
+		// Refined Storage's configuration_card declares that parent and then no
+		// layers at all, leaving the overrides as the only thing that can draw.
+		const resources = overrideOnly()
+			.set('model', 'minecraft:item/generated', JSON.stringify({ parent: 'builtin/generated' }))
+			.set('model', 'example:item/sigil', JSON.stringify({
+				parent: 'item/generated',
+				overrides: [{ predicate: { 'example:active': 0 }, model: 'example:item/off' }],
+			}));
+		const resolved = await new ModelLoader(resources).load('example:item/sigil');
+		expect(resolved.textures.layer0).toBe('example:item/off');
+	});
+
+	it('leaves a model that has geometry of its own alone', async () => {
+		const resources = overrideOnly().set('model', 'example:item/sigil', JSON.stringify({
+			parent: 'builtin/generated',
+			textures: { layer0: 'example:item/base' },
+			overrides: [{ predicate: { 'example:active': 0 }, model: 'example:item/off' }],
+		}));
+		const resolved = await new ModelLoader(resources).load('example:item/sigil');
+		expect(resolved.textures.layer0).toBe('example:item/base');
+	});
+});
+
 describe('custom loaders wrapping OBJ geometry', () => {
-	async function load(json: unknown): Promise<{ obj?: { model: string; flipV: boolean; objects?: string[]; }; }> {
+	async function load(json: unknown): Promise<ResolvedModel> {
 		const resources = new MapResourceManager().set('model', 'test:item/thing', JSON.stringify(json));
 		return new ModelLoader(resources).load('test:item/thing');
 	}
@@ -162,6 +207,29 @@ describe('custom loaders wrapping OBJ geometry', () => {
 	it('does not mistake a non-OBJ model reference for geometry', async () => {
 		const model = await load({ loader: 'somemod:wrapper', model: 'somemod:block/inner' });
 		expect(model.obj).toBeUndefined();
+	});
+
+	it('unwraps a whole model nested under a key the loader names', async () => {
+		// architects_palette:wrapped holds the drawable model as `wrapped_model`.
+		const resources = new MapResourceManager()
+			.set('model', 'minecraft:block/stairs', JSON.stringify({ elements: [{ from: [0, 0, 0], to: [16, 8, 16], faces: {} }] }))
+			.set('model', 'test:item/thing', JSON.stringify({
+				loader: 'architects_palette:wrapped',
+				wrapper_type: 'boards',
+				wrapped_model: { parent: 'minecraft:block/stairs', textures: { top: 'test:block/boards' } },
+			}));
+		const model = await new ModelLoader(resources).load('test:item/thing');
+		expect(model.chain).toContain('minecraft:block/stairs');
+		expect(model.textures.top).toBe('test:block/boards');
+	});
+
+	it('does not mistake a display or texture map for a nested model', async () => {
+		const model = await load({
+			loader: 'somemod:widget',
+			textures: { layer0: 'somemod:item/widget' },
+			display: { gui: { scale: [1, 1, 1] } },
+		});
+		expect(model.textures.layer0).toBe('somemod:item/widget');
 	});
 });
 
@@ -297,5 +365,36 @@ describe('machine models assembled from a casing', () => {
 			}));
 		const model = await new ModelLoader(resources).load('test:item/pipe');
 		expect(model.chain).toContain('somemod:block/pipe');
+	});
+});
+
+describe('barrels composed from part models', () => {
+	it('merges the part shapes and rebinds their textures per tier', async () => {
+		// Sophisticated Storage's parts all default to acacia and are rebound by
+		// the tier that composes them; the tier's own textures are trim overlays,
+		// so they have to land on the part geometry rather than a bare cube.
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/gold_barrel', JSON.stringify({
+				loader: 'sophisticatedstorage:barrel',
+				parent: 'test:block/barrel',
+				model_parts: { tier: { textures: { top: 'test:block/gold_top', side: 'test:block/gold_side' } } },
+			}))
+			.set('model', 'test:block/barrel', JSON.stringify({
+				loader: 'sophisticatedstorage:barrel',
+				partitioned_model_parts: { body: { model: 'test:block/barrel_part/base' } },
+			}))
+			.set('model', 'test:block/barrel_part/base', JSON.stringify({
+				textures: { top: 'test:block/acacia_top', side: 'test:block/acacia_side' },
+				elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: { up: { texture: '#top' }, north: { texture: '#side' } } }],
+			}))
+			.set('model', 'minecraft:block/block', JSON.stringify({ display: { gui: { rotation: [30, 225, 0] } } }));
+		const model = await new ModelLoader(resources).load('test:item/gold_barrel');
+
+		expect(model.elements).toHaveLength(1);
+		const bound = Object.values(model.elements[0].faces).map(face => face?.texture);
+		expect(bound).toContain('test:block/gold_top');
+		expect(bound).toContain('test:block/gold_side');
+		// The root barrel model declares no parent, so the gui pose has to be added.
+		expect(model.display.gui).toBeDefined();
 	});
 });

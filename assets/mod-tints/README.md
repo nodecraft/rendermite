@@ -18,7 +18,7 @@ release that states the tint as data: the harvester will then source it authorit
 `mysticalagriculture/` is regenerated from the mod's own bytecode rather than hand-authored:
 
 ```sh
-node --experimental-strip-types scripts/mod-tints/mysticalagriculture.ts <jar>
+node scripts/mod-tints/mysticalagriculture.ts <jar>
 ```
 
 No colour in it is hand-copied — see the script's header for what it reads. Everything else

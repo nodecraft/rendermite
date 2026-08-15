@@ -46,6 +46,17 @@ describe('item model types a mod wraps', () => {
 		expect(instruction.model).toBe('forbidden_arcanus:item/acacia_wand');
 	});
 
+	it('falls back to base_model when the type names the model that way', () => {
+		// ae2:memory_card_identity layers a hash sprite over base_model; the base
+		// alone is what a blank card shows.
+		const [instruction] = evaluate({
+			type: 'ae2:memory_card_identity',
+			base_model: 'ae2:item/memory_card_base',
+			color_overlay_sprite: 'ae2:item/memory_card_hash',
+		});
+		expect(instruction.model).toBe('ae2:item/memory_card_base');
+	});
+
 	it('carries tints through a wrapped type', () => {
 		const [instruction] = evaluate({
 			type: 'somemod:fancy',

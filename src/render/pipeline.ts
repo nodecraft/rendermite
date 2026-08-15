@@ -41,6 +41,7 @@ import type { LightingProfileName } from './lighting.ts';
 import type { AnimationLimits } from './renderer.ts';
 import type { ResolvedBlockState } from '../items/blockstate.ts';
 import type { ResourceManager } from '../resources/manager.ts';
+import type { Texture } from '../textures/loader.ts';
 
 export interface PipelineSettings {
 	builtin?: string;
@@ -107,11 +108,36 @@ export class ItemPipeline {
 	private async spriteFallback(id: string): Promise<FloatTexture | null> {
 		const { size, quality } = this.settings;
 		const locator = ResourceLocator.parse(id);
+		const draw = (texture: Texture): FloatTexture => {
+			const upscaled = pointResize(toFloatTexture(texture), size * quality, size * quality);
+			return quality === 1 ? upscaled : boxDownscale(upscaled, quality);
+		};
 		for (const directory of ['item', 'items']) {
 			const texture = await this.textures.load(new ResourceLocator(locator.namespace, `${directory}/${locator.path}`));
 			if (texture) {
-				const upscaled = pointResize(toFloatTexture(texture), size * quality, size * quality);
-				return quality === 1 ? upscaled : boxDownscale(upscaled, quality);
+				return draw(texture);
+			}
+		}
+		// Mods file sprites into their own subdirectories (draconicevolution keeps
+		// item/equipment/wyvern_bow.png, and its code-rendered machines only have
+		// block/reactor/reactor_injector.png), so fall back to an exact leaf-name
+		// match. Item sprites first, then block ones; equality rather than fuzzy
+		// matching keeps it from wandering onto an unrelated texture.
+		const leaf = locator.path.split('/').pop();
+		const candidates = await this.resources.listResources('texture', locator.namespace);
+		for (const prefix of [/^items?\//, /^blocks?\//]) {
+			let best: ResourceLocator | null = null;
+			for (const candidate of candidates) {
+				if (!prefix.test(candidate.path) || candidate.path.split('/').pop() !== leaf) {
+					continue;
+				}
+				if (best === null || candidate.path.length < best.path.length) {
+					best = candidate;
+				}
+			}
+			const nested = best ? await this.textures.load(best) : null;
+			if (nested) {
+				return draw(nested);
 			}
 		}
 		return null;

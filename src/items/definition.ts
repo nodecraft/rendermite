@@ -204,9 +204,12 @@ export function evaluateItemModel(
 			// runtime behaviour bolted on (forbidden_arcanus:wand swaps the sprite
 			// for a charged variant). The named model is what an uncharged, freshly
 			// crafted item shows, so render it rather than failing the item.
-			if (typeof item.model === 'string') {
+			// `base_model` is the same idea under the name mods reach for when the
+			// type layers a sprite over a plain model (ae2:memory_card_identity).
+			const named = typeof item.model === 'string' ? item.model : item.base_model;
+			if (typeof named === 'string') {
 				const tints = Array.isArray(item.tints) ? item.tints as TintDefinition[] : [];
-				return [{ model: item.model, tints, transform }];
+				return [{ model: named, tints, transform }];
 			}
 			throw new InvalidItemDefinitionError(`Unknown item model type: ${String(item.type)}`);
 		}

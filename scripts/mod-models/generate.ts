@@ -61,6 +61,12 @@ export interface ItemSpec {
 	 */
 	repeat?: Record<string, Repeat[]>;
 	groups?: Group[];
+	/**
+	 * Layer-builder method to read, when one class builds several. Ad Astra's
+	 * RocketModel holds all four tiers, so without this every tier's parts would
+	 * land in one table.
+	 */
+	layerMethod?: string;
 	/** Override when the sheet size is registered outside the model class. */
 	sheet?: [number, number];
 	/** Parts the item context never draws. */
@@ -131,7 +137,7 @@ function groupFor(name: string, groups: Group[]): Group {
 }
 
 export async function buildModel(spec: ItemSpec, root: string): Promise<number> {
-	const [table] = extractPartTables(spec.jar, spec.modelClass);
+	const [table] = extractPartTables(spec.jar, spec.modelClass, spec.layerMethod);
 	if (!table) {
 		throw new Error(`no part table extracted from ${spec.modelClass} in ${spec.jar}`);
 	}
@@ -143,6 +149,21 @@ export async function buildModel(spec: ItemSpec, root: string): Promise<number> 
 	const skip = new Set(spec.skip);
 	const baseOps = spec.pose ?? DEFAULT_POSE;
 	const poseFor = (name: string, instance: Repeat): Transform => poseTransform([...baseOps, ...spec.partPoses?.[name] ?? [], ...instance.pose ?? []]);
+	// A part's pose is relative to its parent, so the whole ancestry composes
+	// root-first. Flat models (every Mekanism and Botania one) have no parents
+	// and so are unchanged by this; Ad Astra's rockets nest three deep.
+	const byName = new Map(table.parts.map(entry => [entry.name, entry]));
+	const chainTransform = (part: Part, yRotOverride?: number): Transform => {
+		const ancestry: Part[] = [];
+		for (let current: Part | undefined = part; current && ancestry.length <= table.parts.length; current = current.parent ? byName.get(current.parent) : undefined) {
+			ancestry.unshift(current);
+		}
+		let result = poseTransform([]);
+		for (const ancestor of ancestry) {
+			result = compose(result, partTransform(ancestor, ancestor === part ? yRotOverride : undefined));
+		}
+		return result;
+	};
 	const locator = ResourceLocator.parse(spec.id);
 
 	// The override replaces the jar's builtin/entity stub outright, so its
@@ -168,7 +189,7 @@ export async function buildModel(spec: ItemSpec, root: string): Promise<number> 
 		for (const instance of spec.repeat?.[part.name] ?? [{}]) {
 		// Full chain for this part, then split into what one element can carry:
 		// place the scaled box at `origin` and rotate about it.
-			const full = compose(poseFor(part.name, instance), partTransform(part, instance.yRot));
+			const full = compose(poseFor(part.name, instance), chainTransform(part, instance.yRot));
 			const { scale, euler } = decompose(full.linear);
 			const origin = full.translation;
 
