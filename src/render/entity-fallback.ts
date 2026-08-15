@@ -207,11 +207,26 @@ async function findBedTexture(
 	return best;
 }
 
+/** The dye name a `<dye>_<thing>` mod item is prefixed with, or null. */
+export function dyeVariantName(id: string): string | null {
+	const locator = ResourceLocator.tryParse(id);
+	if (!locator || locator.namespace === 'minecraft') {
+		return null;
+	}
+	const name = locator.path.split('/').pop() ?? locator.path;
+	return DYE_PREFIX.exec(name)?.[1] ?? null;
+}
+
 /**
  * The dye color a `<dye>_<thing>` item name implies, or null. Mods that name
- * variants after dyes usually register the matching DyeColor as the tint in
+ * variants after dyes sometimes register the matching DyeColor as the tint in
  * client code, where no asset states it (waystones' sharestones call
  * `DyeColor.getTextColor()`), so the name is the only record of it left.
+ *
+ * Only ever right for variants that SHARE one uncoloured sprite. A mod that
+ * draws each colour its own texture is already the right colour, and tinting it
+ * again multiplies the dye in — chipped's blue_paper_lantern came out near
+ * black. Callers must check the model's textures; see `dyeVariantName`.
  */
 export function dyedVariantTint(id: string): TintColor | null {
 	const locator = ResourceLocator.tryParse(id);

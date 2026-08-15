@@ -1,10 +1,12 @@
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import { modTintPackPath } from '../src/builtin.ts';
 import { defaultProperties } from '../src/items/definition.ts';
 import { resolveItem } from '../src/items/discovery.ts';
 import { curatedTintOverrides, harvestTintOverrides } from '../src/mods/tints.ts';
-import { dyedVariantTint } from '../src/render/entity-fallback.ts';
+import { dyeVariantName, dyedVariantTint } from '../src/render/entity-fallback.ts';
+import { ItemPipeline } from '../src/render/pipeline.ts';
 import { resolveTints } from '../src/render/tints.ts';
 import { ResourceLocator } from '../src/resources/locator.ts';
 import { FolderResourceManager } from '../src/resources/manager.ts';
@@ -169,11 +171,71 @@ describe('dye-named variant tints', () => {
 		});
 	});
 
+	it('names the dye a variant is prefixed with, for the texture check', () => {
+		// The pipeline only applies the tint when the model's own textures do NOT
+		// name the colour: chipped draws every lantern colour its own sprite, and
+		// tinting an already-blue sprite blue again renders it near black.
+		expect(dyeVariantName('chipped:blue_paper_lantern')).toBe('blue');
+		expect(dyeVariantName('waystones:light_blue_portstone')).toBe('light_blue');
+		expect(dyeVariantName('minecraft:red_bed')).toBeNull();
+		expect(dyeVariantName('waystones:warp_stone')).toBeNull();
+	});
+
 	it('leaves vanilla and undyed names alone', () => {
 		// Vanilla states its own tints; guessing from a name would override them.
 		expect(dyedVariantTint('minecraft:red_bed')).toBeNull();
 		expect(dyedVariantTint('waystones:warp_stone')).toBeNull();
 		// `redstone` starts with a dye name but is not `<dye>_<thing>`.
 		expect(dyedVariantTint('waystones:redstone')).toBeNull();
+	});
+});
+
+describe('dye tint applied through the pipeline', () => {
+	/** A 2x2 sprite plus the models a `<dye>_<thing>` item resolves through. */
+	async function tree(textureName: string): Promise<MapResourceManager> {
+		const sprite = await sharp({ create: { width: 2, height: 2, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } })
+			.png()
+			.toBuffer();
+		return new MapResourceManager()
+			.set('texture', `chipped:item/${textureName}`, sprite)
+			.set('model', 'minecraft:item/generated', JSON.stringify({ parent: 'builtin/generated' }))
+			.set('model', 'chipped:item/blue_widget', JSON.stringify({
+				parent: 'minecraft:item/generated',
+				textures: { layer0: `chipped:item/${textureName}` },
+			}));
+	}
+
+	/** Mean red channel of the rendered icon; a blue dye tint crushes it. */
+	async function meanRed(resources: MapResourceManager): Promise<number> {
+		const pipeline = await ItemPipeline.create(resources, {
+			size: 8,
+			quality: 1,
+			lightingProfile: 'modern',
+			output: '',
+			format: 'webp',
+		});
+		const { frames } = await pipeline.renderFrames('chipped:blue_widget');
+		let sum = 0;
+		let count = 0;
+		for (let offset = 0; offset < frames[0].data.length; offset += 4) {
+			if (frames[0].data[offset + 3] <= 0.5) {
+				continue;
+			}
+
+			sum += frames[0].data[offset];
+			count++;
+		}
+		return count === 0 ? 0 : sum / count;
+	}
+
+	it('does not tint a variant whose own texture names the colour', async () => {
+		// chipped:blue_paper_lantern draws a blue sprite; tinting it blue again
+		// rendered it near black in the published modded corpus.
+		expect(await meanRed(await tree('blue_widget'))).toBeGreaterThan(0.9);
+	});
+
+	it('still tints a variant sharing one uncoloured sprite', async () => {
+		// waystones' sharestones all draw the same grey stone.
+		expect(await meanRed(await tree('widget'))).toBeLessThan(0.5);
 	});
 });

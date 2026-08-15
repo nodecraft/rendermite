@@ -394,6 +394,31 @@ Two smaller things the incident exposed:
   is a real leak for any long-running consumer, and the measurement is the point: the obvious
   suspect was innocent.
 
+### Dye-named variants were being tinted twice
+
+Caught by rendering the `ui` modded corpus against the published 1.0.7 icons: 23 of one shard's
+6,989 icons came out near-black. All of them were `<dye>_<thing>` names — chipped's
+`blue_paper_lantern`, `brown_mushroom_bulb`, `green_paper_lantern`.
+
+`dyedVariantTint` guesses a tint from a mod item's name, for variants that register the colour in
+client code and state it nowhere in the assets (waystones' sharestones). Its comment claimed it
+was "harmless where it does not apply: a model with no tintindex ignores tints" — **which is
+false for flat sprites**. A `builtin/generated` item tints `layer0` unconditionally, so every
+dye-prefixed item got dyed whether or not it needed it. Chipped draws each lantern colour its own
+sprite, so a blue sprite was tinted blue again and collapsed to near black.
+
+The fix is the signal that tells the two cases apart: **if the model's own textures name the
+colour, the sprite is already that colour** — only a shared, uncoloured base needs the tint.
+After it, the shard is byte-identical to the 1.0.7 corpus across all 6,989 icons.
+
+Two process notes. The regression was invisible to the mod survey, because a wrongly-tinted icon
+still *renders* — coverage counts said 99.91% either way. It took rendering a real corpus and
+diffing against known-good output to see it. And the first diagnosis was wrong: the item's block
+model has no `display.gui` and lights its faces at ~0.51, so a hand-rolled block-model render
+looked plausibly like the culprit. The pipeline never renders that model — chipped ships
+`{"parent":"minecraft:item/generated"}` for the item, a flat sprite. Diagnose through the same
+entry point the pipeline uses, or the bug you find will be your own.
+
 ### The debug-viewer trap (cost a wrong conclusion)
 
 `FloatTexture.data` is a **`Float64Array` normalized [0,1]**, not bytes. A scratch viewer that

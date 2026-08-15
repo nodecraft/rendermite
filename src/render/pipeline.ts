@@ -11,6 +11,7 @@ import path from 'node:path';
 
 import { blendPixel, toFloatTexture } from './blend.ts';
 import {
+	dyeVariantName,
 	dyedVariantTint,
 	renderDyedVariantFallback,
 	renderEntityFallback,
@@ -194,10 +195,16 @@ export class ItemPipeline {
 				tints = await spawnEggTints(id, resources, textures).catch(() => null);
 			}
 			// A `<dye>_<thing>` mod item whose tint no release ever stated as data
-			// (waystones' sharestones registered theirs in client code). Harmless
-			// where it does not apply: a model with no tintindex ignores tints.
+			// (waystones' sharestones registered theirs in client code). Only for
+			// variants sharing one uncoloured sprite: where the mod draws each
+			// colour its own texture the sprite is already right, and tinting it
+			// again multiplies the dye in — chipped's per-colour lanterns came out
+			// near black. The texture naming the colour is what tells them apart.
 			if (!tints) {
-				const dyed = dyedVariantTint(id);
+				const dye = dyeVariantName(id);
+				const alreadyColoured = dye !== null
+					&& Object.values(model.textures).some(texture => texture.includes(dye));
+				const dyed = alreadyColoured ? null : dyedVariantTint(id);
 				tints = dyed === null ? null : [dyed];
 			}
 			tints ??= [];
