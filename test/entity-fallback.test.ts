@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { builtinPackPath } from '../src/builtin.ts';
 import { ModelLoader } from '../src/models/loader.ts';
 import { renderEntityFallback } from '../src/render/entity-fallback.ts';
+import { ItemPipeline } from '../src/render/pipeline.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../src/resources/manager.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { TextureLoader } from '../src/textures/loader.ts';
@@ -136,5 +137,42 @@ describe('mob head fallback', () => {
 		const resources = new MapResourceManager()
 			.set('texture', 'spectrum:entity/kindling/kindling', await sheet(64, 32));
 		expect(await render(resources, 'spectrum:kindling_head')).not.toBeNull();
+	});
+});
+
+describe('sprite fallback for entity-drawn items', () => {
+	/** A `builtin/entity` item plus a same-named sheet filed under block/. */
+	function entityItem(): MapResourceManager {
+		return new MapResourceManager()
+			.set('model', 'mod:item/charger_skull', JSON.stringify({ parent: 'mod:block/charger_skull' }))
+			.set('model', 'mod:block/charger_skull', JSON.stringify({
+				parent: 'builtin/entity',
+				textures: { particle: 'mod:block/charger_skull' },
+			}));
+	}
+
+	async function renders(resources: MapResourceManager): Promise<boolean> {
+		const pipeline = await ItemPipeline.create(resources, {
+			size: 16,
+			quality: 1,
+			lightingProfile: 'modern',
+			output: '',
+			format: 'webp',
+		});
+		return pipeline.renderFramesWithFallback('mod:charger_skull').then(() => true, () => false);
+	}
+
+	it('refuses an entity sheet found only by name', async () => {
+		// wan_ancient_beasts files a 128x128 entity atlas at block/<name>.png.
+		// Drawn flat it is a spray of disconnected parts — a wrong icon, which is
+		// worse than none, so the by-name search does not run for entity models.
+		const resources = entityItem().set('texture', 'mod:block/charger_skull', await sheet(128, 128));
+		expect(await renders(resources)).toBe(false);
+	});
+
+	it('still uses a conventionally named item sprite', async () => {
+		// item/<path> is the sprite the mod means for the slot, entity model or not.
+		const resources = entityItem().set('texture', 'mod:item/charger_skull', await sheet(16, 16));
+		expect(await renders(resources)).toBe(true);
 	});
 });
