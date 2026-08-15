@@ -19,6 +19,7 @@ import type { PoseOp } from './pose.ts';
 const fixtures = path.join(import.meta.dirname, '..', '..', '.work', 'fixtures', 'modrinth');
 const MEKANISM = path.join(fixtures, 'mekanism-neoforge-1.21.1.jar');
 const BOTANIA = path.join(fixtures, 'botania-forge-1.20.1.jar');
+const AD_ASTRA = path.join(fixtures, 'ad_astra-fabric-1.20.1.jar');
 
 /**
  * PylonBlockEntityRenderer takes 1.35 rather than 1.5 when the block entity is
@@ -318,8 +319,40 @@ const SPECS: ItemSpec[] = [
 	},
 ];
 
+/**
+ * Both Ad Astra vehicle ItemRenderers pose identically: Axis.ZP 180° then
+ * translate(0, -1.501, 0), with no centring translate of their own. The jar is
+ * intermediary-mapped, which extract.ts reads by rewriting the class ids, and
+ * RocketModel holds all four tiers, hence layerMethod.
+ */
+const AD_ASTRA_POSE: PoseOp[] = [
+	{ rotate: 'z', degrees: 180 },
+	{ translate: [0, -1.501, 0] },
+];
+
+const AD_ASTRA_SPECS: ItemSpec[] = [
+	...[1, 2, 3, 4].map((tier): ItemSpec => {
+		return {
+			id: `ad_astra:tier_${tier}_rocket`,
+			jar: AD_ASTRA,
+			modelClass: 'vehicles/RocketModel.class',
+			layerMethod: `createTier${tier}Layer`,
+			texture: `ad_astra:entity/rocket/tier_${tier}_rocket`,
+			pose: AD_ASTRA_POSE,
+		};
+	}),
+	{
+		id: 'ad_astra:tier_1_rover',
+		jar: AD_ASTRA,
+		modelClass: 'vehicles/RoverModel.class',
+		layerMethod: 'createBodyLayer',
+		texture: 'ad_astra:entity/rover/tier_1_rover',
+		pose: AD_ASTRA_POSE,
+	},
+];
+
 const root = path.join(import.meta.dirname, '..', '..', 'assets', 'mod-models');
-for (const spec of [...SPECS, ...BOTANIA_SPECS]) {
+for (const spec of [...SPECS, ...BOTANIA_SPECS, ...AD_ASTRA_SPECS]) {
 	const elements = await buildModel(spec, root);
 	console.log(`${spec.id.padEnd(34)} ${elements} elements`);
 }

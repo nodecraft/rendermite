@@ -154,6 +154,24 @@ describe('override-only models', () => {
 		expect(resolved.textures.layer0).toBe('example:item/off');
 	});
 
+	it('does not hang when an override names the model it sits in', async () => {
+		// armourers_workshop:item/skin lists itself as its unloaded state. load()
+		// hands back the in-flight promise for a key it is already resolving, so
+		// redirecting through it made the model await itself forever.
+		const resources = new MapResourceManager()
+			.set('model', 'example:item/skin', JSON.stringify({
+				parent: 'builtin/entity',
+				overrides: [{ predicate: { 'example:loading': 0 }, model: 'example:item/skin' }],
+			}));
+		const settled = await Promise.race([
+			new ModelLoader(resources).load('example:item/skin').then(() => 'settled', () => 'settled'),
+			new Promise((resolve) => {
+				setTimeout(() => resolve('hung'), 2000);
+			}),
+		]);
+		expect(settled).toBe('settled');
+	});
+
 	it('leaves a model that has geometry of its own alone', async () => {
 		const resources = overrideOnly().set('model', 'example:item/sigil', JSON.stringify({
 			parent: 'builtin/generated',

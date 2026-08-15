@@ -148,3 +148,143 @@ function forEachUvPixel(
 		}
 	}
 }
+
+/**
+ * The per-face shading a sample applies as it is written, instead of against a
+ * pre-shaded copy of the texture.
+ *
+ * Shading used to clone the whole texture per face and darken its UV window.
+ * That is fine for block models, whose faces reuse a handful of windows, and
+ * catastrophic for anything detailed: a 1,208-cube GeckoLib gun has 6,136 faces,
+ * each with its own UV rect and its own float light level, so nothing is ever
+ * reused — 6,136 clones of a 1024x1024 texture, over 20 GB for one 16x16 icon.
+ * Cost now tracks pixels actually drawn (a few hundred) rather than the atlas.
+ */
+export interface FaceShading {
+	tint: { r: number; g: number; b: number; } | null;
+	/** Blend-to-black amount, applied only inside the window. */
+	darkness: number;
+	/** Alpha multiplier, applied only inside the window. */
+	alpha: number;
+	/** UV bounding box in texels, expanded 1px each way, clamped — see uvWindow. */
+	windowX1: number;
+	windowY1: number;
+	windowX2: number;
+	windowY2: number;
+}
+
+/** The UV window darkenTexture would have covered, in texels. */
+export function uvWindow(
+	texture: FloatTexture,
+	u1: number,
+	v1: number,
+	u2: number,
+	v2: number,
+): [number, number, number, number] {
+	return [
+		Math.max(0, Math.floor(Math.min(u1, u2)) - 1),
+		Math.max(0, Math.floor(Math.min(v1, v2)) - 1),
+		Math.min(texture.width - 1, Math.ceil(Math.max(u1, u2)) + 1),
+		Math.min(texture.height - 1, Math.ceil(Math.max(v1, v2)) + 1),
+	];
+}
+
+/**
+ * Source-over of one colour onto one pixel, written into `dst`. The same
+ * arithmetic as blendPixel, reading its source from separate values so a sample
+ * can be shaded without a backing array.
+ */
+function blendInto(dst: Float64Array, at: number, red: number, green: number, blue: number, alpha: number, sr: number, sg: number, sb: number, sa: number): void {
+	const ra = 1 - (1 - sa) * (1 - alpha);
+	if (ra === 0) {
+		dst[at] = 0;
+		dst[at + 1] = 0;
+		dst[at + 2] = 0;
+		dst[at + 3] = 0;
+		return;
+	}
+	const dstWeight = alpha * (1 - sa);
+	dst[at] = q16((sr * sa + red * dstWeight) / ra);
+	dst[at + 1] = q16((sg * sa + green * dstWeight) / ra);
+	dst[at + 2] = q16((sb * sa + blue * dstWeight) / ra);
+	dst[at + 3] = q16(ra);
+}
+
+/**
+ * Copy one texel into a face buffer with the face's shading applied, matching
+ * tintTexture → darkenTexture → scaleTextureAlpha run over a cloned texture.
+ * Tint covers the whole sheet; darkness and alpha only the UV window, which is
+ * why a sample landing outside it (the rasterizer overdraws by a pixel) must
+ * stay untouched by those two.
+ */
+export function shadeTexel(
+	dst: Float64Array,
+	at: number,
+	source: Float64Array,
+	from: number,
+	shading: FaceShading,
+	texX: number,
+	texY: number,
+): void {
+	const red = source[from];
+	const green = source[from + 1];
+	const blue = source[from + 2];
+	const alpha = source[from + 3];
+
+	const inWindow = texX >= shading.windowX1 && texX <= shading.windowX2
+		&& texY >= shading.windowY1 && texY <= shading.windowY2;
+	const { tint } = shading;
+
+	// Overwhelmingly the common case: an untinted, fully opaque texel. Blending
+	// black at `darkness` over alpha 1 reduces to scaling the colour by its
+	// complement, which is one multiply instead of a source-over per channel.
+	if (tint === null && alpha === 1) {
+		if (!inWindow) {
+			dst[at] = red;
+			dst[at + 1] = green;
+			dst[at + 2] = blue;
+			dst[at + 3] = 1;
+			return;
+		}
+		const keep = 1 - shading.darkness;
+		dst[at] = q16(red * keep);
+		dst[at + 1] = q16(green * keep);
+		dst[at + 2] = q16(blue * keep);
+		dst[at + 3] = shading.alpha < 1 ? q16(shading.alpha) : 1;
+		return;
+	}
+
+	// Fully transparent texels darken to nothing: blendPixel's ra is 0.
+	if (tint === null && alpha === 0 && inWindow) {
+		dst[at] = 0;
+		dst[at + 1] = 0;
+		dst[at + 2] = 0;
+		dst[at + 3] = 0;
+		return;
+	}
+
+	let currentRed = red;
+	let currentGreen = green;
+	let currentBlue = blue;
+	let currentAlpha = alpha;
+	if (tint) {
+		// Upstream tints from the RED channel only, treating it as luminance.
+		blendInto(dst, at, currentRed, currentGreen, currentBlue, currentAlpha, tint.r * red, tint.g * red, tint.b * red, currentAlpha);
+		currentRed = dst[at];
+		currentGreen = dst[at + 1];
+		currentBlue = dst[at + 2];
+		currentAlpha = dst[at + 3];
+	}
+	if (inWindow) {
+		blendInto(dst, at, currentRed, currentGreen, currentBlue, currentAlpha, 0, 0, 0, shading.darkness * currentAlpha);
+		currentRed = dst[at];
+		currentGreen = dst[at + 1];
+		currentBlue = dst[at + 2];
+		currentAlpha = shading.alpha < 1 ? q16(dst[at + 3] * shading.alpha) : dst[at + 3];
+	}
+
+	dst[at] = currentRed;
+	dst[at + 1] = currentGreen;
+	dst[at + 2] = currentBlue;
+	dst[at + 3] = currentAlpha;
+}

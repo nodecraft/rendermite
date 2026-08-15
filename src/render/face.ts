@@ -8,6 +8,7 @@ import {
 	darkenTexture,
 	scaleTextureAlpha,
 	tintTexture,
+	uvWindow,
 } from './blend.ts';
 import {
 	RowCursor,
@@ -26,7 +27,7 @@ import {
 	transformVector,
 } from './vector.ts';
 
-import type { FloatTexture } from './blend.ts';
+import type { FaceShading, FloatTexture } from './blend.ts';
 import type { FaceGeometry } from './geometry.ts';
 import type { LightSource } from './lighting.ts';
 import type { FaceBuffer } from './rasterizer.ts';
@@ -47,8 +48,29 @@ export interface RenderableFace {
 	maxZ: number;
 }
 
-/** Tinted + darkened textures keyed by source texture, then by shading params. */
-export type FaceShadeCache = WeakMap<FloatTexture, Map<string, FloatTexture>>;
+/**
+ * Pre-shaded textures for one model render, with a byte ceiling.
+ *
+ * Shading a texel as it is sampled is always correct, but for a small sheet it
+ * is slower than shading one copy and reusing it: a block model's faces repeat
+ * the same few (window, light level) pairs, and there are far more drawn pixels
+ * than texels. The reverse holds for a detailed model on a big sheet — every
+ * face is its own key, and the copies are what once reached 20 GB for a single
+ * icon. So cache while it is cheap and fall through to per-sample shading once
+ * the budget is spent; the two produce identical output.
+ */
+export interface FaceShadeCache {
+	byTexture: WeakMap<FloatTexture, Map<string, FloatTexture>>;
+	bytes: number;
+}
+
+export function createShadeCache(): FaceShadeCache {
+	return { byTexture: new WeakMap(), bytes: 0 };
+}
+
+/** Roughly a small sheet reused freely, or one large sheet and no more. */
+const MAX_SHADE_CACHE_BYTES = 64 * 1024 * 1024;
+const FLOAT_BYTES_PER_TEXEL = 32;
 
 export function faceMaxZ(geometry: FaceGeometry): number {
 	return Math.max(
@@ -79,7 +101,7 @@ export function renderFace(
 	transformation: Mat4,
 	/** Reused across a model's faces; cleared here, compacted before return. */
 	scratch?: FaceBuffer,
-	/** Shared tint/shade results for one model render. */
+	/** Bounded store of pre-shaded textures; omitted means always shade per sample. */
 	shadeCache?: FaceShadeCache,
 ): FaceBuffer | null {
 	const { geometry } = face;
@@ -125,28 +147,43 @@ export function renderFace(
 	// game ignores the light source entirely.
 	const darkness = geometry.emissive ? 0 : 1 - face.light.lightLevelForNormal(shadeDirection);
 
-	// Shading depends only on the source texture, the tint, the light level and
-	// the UV window, and a block model's elements repeat those combinations
-	// constantly (every top face of a fence shares one). Cloning and re-darkening
-	// a whole texture per face was pure repeat work.
+	// Shading is applied to each sample as the rasterizer writes it, never to a
+	// copy of the texture — see FaceShading. The window is the same 1px-expanded
+	// box darkenTexture used, because a sample can land just outside the face's
+	// UVs and must stay undarkened there.
+	const [windowX1, windowY1, windowX2, windowY2] = uvWindow(face.texture, absU1, absV1, absU2, absV2);
+	let shading: FaceShading | null = {
+		tint,
+		darkness,
+		alpha: geometry.alpha,
+		windowX1,
+		windowY1,
+		windowX2,
+		windowY2,
+	};
+	let texture = face.texture;
 	const shadeKey = `${tint ? `${tint.r},${tint.g},${tint.b}` : '-'}|${darkness}|${geometry.alpha}|${absU1},${absV1},${absU2},${absV2}`;
-	let byKey = shadeCache?.get(face.texture);
-	let texture = byKey?.get(shadeKey);
-	if (!texture) {
-		// Clone before tint/darken — the source texture is shared across faces.
-		texture = cloneFloatTexture(face.texture);
+	const byKey = shadeCache?.byTexture.get(face.texture);
+	const cached = byKey?.get(shadeKey);
+	const cloneBytes = face.texture.width * face.texture.height * FLOAT_BYTES_PER_TEXEL;
+	if (cached) {
+		texture = cached;
+		shading = null;
+	} else if (shadeCache && shadeCache.bytes + cloneBytes <= MAX_SHADE_CACHE_BYTES) {
+		const shaded = cloneFloatTexture(face.texture);
 		if (tint) {
-			tintTexture(texture, tint.r, tint.g, tint.b);
+			tintTexture(shaded, tint.r, tint.g, tint.b);
 		}
-		darkenTexture(texture, darkness, absU1, absV1, absU2, absV2);
+		darkenTexture(shaded, darkness, absU1, absV1, absU2, absV2);
 		if (geometry.alpha < 1) {
-			scaleTextureAlpha(texture, geometry.alpha, absU1, absV1, absU2, absV2);
+			scaleTextureAlpha(shaded, geometry.alpha, absU1, absV1, absU2, absV2);
 		}
-		if (shadeCache) {
-			byKey ??= new Map();
-			byKey.set(shadeKey, texture);
-			shadeCache.set(face.texture, byKey);
-		}
+		const store = byKey ?? new Map<string, FloatTexture>();
+		store.set(shadeKey, shaded);
+		shadeCache.byTexture.set(face.texture, store);
+		shadeCache.bytes += cloneBytes;
+		texture = shaded;
+		shading = null;
 	}
 
 	// UV corners in v0..v3 order; face rotation cycles the assignment.
@@ -179,7 +216,7 @@ export function renderFace(
 	// One cursor per face: upstream reuses the same pixel iterators for both
 	// triangles, and the row-shift quirk depends on that shared state.
 	const cursor = new RowCursor();
-	drawTexturedTriangle(point(0), point(2), point(3), buffer, texture, cursor);
-	drawTexturedTriangle(point(0), point(1), point(2), buffer, texture, cursor);
+	drawTexturedTriangle(point(0), point(2), point(3), buffer, texture, cursor, shading);
+	drawTexturedTriangle(point(0), point(1), point(2), buffer, texture, cursor, shading);
 	return compactFaceBuffer(buffer);
 }

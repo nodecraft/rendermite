@@ -269,8 +269,17 @@ export class TextureLoader {
 		const raw = await this.resources.getResource('texture', locator);
 		let full: Texture | null = null;
 		if (raw !== null) {
-			const image = await sharp(raw).ensureAlpha().raw()
-				.toBuffer({ resolveWithObject: true });
+			// Same wrap as decode(): sharp's bare "unsupported image format" names
+			// nothing, and a jar can ship an unreadable file for every texture it
+			// has (frostiful publishes Git LFS pointer stubs), so the locator is
+			// the only thing that makes the failure attributable.
+			let image;
+			try {
+				image = await sharp(raw).ensureAlpha().raw()
+					.toBuffer({ resolveWithObject: true });
+			} catch (err) {
+				throw new TextureResolutionError(`Failed to decode texture ${locator}: ${(err as Error).message}`);
+			}
 			full = {
 				width: image.info.width,
 				height: image.info.height,

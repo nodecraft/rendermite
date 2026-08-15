@@ -40,6 +40,9 @@ export interface ResolvedModel {
 
 export class ModelResolutionError extends Error {}
 
+/** Override redirects to follow before giving up; cycles are the reason. */
+const MAX_OVERRIDE_REDIRECTS = 4;
+
 const MAX_PARENT_DEPTH = 64;
 const MAX_TEXTURE_REF_DEPTH = 16;
 
@@ -585,7 +588,7 @@ export class ModelLoader {
 		return flattenLoaderModel(json);
 	}
 
-	private async resolve(locator: ResourceLocator): Promise<ResolvedModel> {
+	private async resolve(locator: ResourceLocator, overrideDepth = 0): Promise<ResolvedModel> {
 		// Walk root-ward collecting the chain, deepest (requested) model first.
 		const chain: Array<{ locator: ResourceLocator; json: ModelJson; }> = [];
 		const seen = new Set<string>();
@@ -687,8 +690,14 @@ export class ModelLoader {
 			const overridden = chain.find(entry => entry.json.overrides?.length)?.json.overrides;
 			const chosen = overridden
 				&& (overridden.findLast(entry => Object.values(entry.predicate).every(value => value <= 0)) ?? overridden[0]);
-			if (chosen) {
-				return this.load(chosen.model);
+			const target = chosen ? ResourceLocator.tryParse(chosen.model) : null;
+			// Resolved directly rather than through load(): an override may name the
+			// model it sits in (armourers_workshop:item/skin lists itself as its
+			// unloaded state), and load() hands back the in-flight promise for a key
+			// it is already resolving — so the model would await itself forever.
+			// The depth cap covers the same cycle spread across several models.
+			if (target && overrideDepth < MAX_OVERRIDE_REDIRECTS && target.toString() !== locator.toString()) {
+				return this.resolve(target, overrideDepth + 1);
 			}
 		}
 

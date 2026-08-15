@@ -82,6 +82,47 @@ describe('shulker box fallback', () => {
 	});
 });
 
+describe('trident fallback', () => {
+	it('puts a mod\'s own trident sheet on the builtin geometry', async () => {
+		const resources = new MapResourceManager()
+			.set('texture', 'somemod:entity/trident', await sheet(32, 32));
+		expect(await render(resources, 'somemod:prismarine_trident')).not.toBeNull();
+	});
+
+	it('falls back to the vanilla trident sheet', async () => {
+		const resources = new MapResourceManager()
+			.set('texture', 'minecraft:entity/trident', await sheet(32, 32));
+		expect(await render(resources, 'somemod:trident')).not.toBeNull();
+	});
+
+	it('does not treat a trident part as a trident', async () => {
+		expect(await render(new MapResourceManager(), 'somemod:trident_blueprint')).toBeNull();
+	});
+});
+
+describe('display name as the kind signal', () => {
+	it('renders a chest whose id never says chest', async () => {
+		// lootr:lootr_inventory is a "Loot Chest"; only the lang file says so.
+		const resources = new MapResourceManager()
+			.set('lang', 'lootr:en_us', Buffer.from(JSON.stringify({ 'block.lootr.lootr_inventory': 'Loot Chest' })))
+			.set('texture', 'minecraft:entity/chest/normal', await sheet(64, 64));
+		expect(await render(resources, 'lootr:lootr_inventory')).not.toBeNull();
+	});
+
+	it('still refuses a chestplate whose display name contains chest', async () => {
+		const resources = new MapResourceManager()
+			.set('lang', 'somemod:en_us', Buffer.from(JSON.stringify({ 'item.somemod.steel_armor': 'Steel Chestplate' })))
+			.set('texture', 'minecraft:entity/chest/normal', await sheet(64, 64));
+		expect(await render(resources, 'somemod:steel_armor')).toBeNull();
+	});
+
+	it('does not treat a shulker shell as a box', async () => {
+		const resources = new MapResourceManager()
+			.set('texture', 'minecraft:entity/shulker/shulker', await sheet(64, 64));
+		expect(await render(resources, 'somemod:shulker_shell')).toBeNull();
+	});
+});
+
 describe('mob head fallback', () => {
 	it('declines a creature sheet that is not a skin layout', async () => {
 		// A 100x40 sheet unwraps into confetti on head geometry; no icon beats a

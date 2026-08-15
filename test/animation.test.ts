@@ -113,6 +113,17 @@ describe.skipIf(!hasFixture)('animation rendering', () => {
 	});
 });
 
+describe('undecodable textures', () => {
+	it('names the texture that failed rather than leaking sharp\'s message', async () => {
+		// frostiful publishes a jar whose every texture is a Git LFS pointer stub,
+		// so the bare "unsupported image format" would repeat with nothing to act on.
+		const resources = new MapResourceManager()
+			.set('texture', 'somemod:item/broken', Buffer.from('version https://git-lfs.github.com/spec/v1\n'));
+		await expect(new TextureLoader(resources).loadAnimated(ResourceLocator.parse('somemod:item/broken')))
+			.rejects.toThrow('somemod:item/broken');
+	});
+});
+
 describe('minifyStylesheet', () => {
 	it('minifies valid css', () => {
 		const result = minifyStylesheet('.rc-item {\n    position: relative;\n}\n');

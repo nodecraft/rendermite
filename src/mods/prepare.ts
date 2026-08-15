@@ -26,6 +26,14 @@ export interface ModPreparation {
 	tintOverrides: number;
 	/** Jars rejected (unsafe entries) or unreadable, with reasons. */
 	rejected: Array<{ jar: string; reason: string; }>;
+	/**
+	 * Releases the jars this opened. Jars are opened with `autoClose: false` and
+	 * keep both a file descriptor and an entry index per archive, so anything
+	 * preparing many trees in one process (a corpus survey) must call this —
+	 * without it the descriptors and indexes accumulate until the process dies.
+	 * A single-tree caller can skip it and let exit clean up.
+	 */
+	close(): Promise<void>;
 }
 
 export interface PrepareModsOptions {
@@ -135,5 +143,8 @@ export async function prepareModResources(options: PrepareModsOptions): Promise<
 		synthesized,
 		tintOverrides,
 		rejected,
+		close: async () => {
+			await Promise.all(jarLayers.map(async jar => jar.close().catch(() => {})));
+		},
 	};
 }
