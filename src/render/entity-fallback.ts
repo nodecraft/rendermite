@@ -81,6 +81,25 @@ async function findChestTexture(
 	return best;
 }
 
+/**
+ * An item's English display name, slugified, or null. Mods do not always put the
+ * kind in the id — lootr's Loot Chest is `lootr_inventory` — and the lang file is
+ * a statement of what the thing is rather than a guess from its name.
+ */
+async function displayName(resources: ResourceManager, locator: ResourceLocator): Promise<string | null> {
+	const raw = await resources.getResource('lang', new ResourceLocator(locator.namespace, 'en_us')).catch(() => null);
+	if (!raw) {
+		return null;
+	}
+	try {
+		const lang = JSON.parse(raw.toString('utf8')) as Record<string, string>;
+		const value = lang[`item.${locator.namespace}.${locator.path}`] ?? lang[`block.${locator.namespace}.${locator.path}`];
+		return typeof value === 'string' ? value.toLowerCase().replaceAll(/[^a-z\d]+/g, '_') : null;
+	} catch {
+		return null;
+	}
+}
+
 /** Clone a resolved model with one texture variable rebound. */
 function withTexture(model: ResolvedModel, name: string, locator: ResourceLocator): ResolvedModel {
 	return { ...model, textures: { ...model.textures, [name]: locator.toString() } };
@@ -109,6 +128,50 @@ const DYE_COLORS: Record<string, number> = {
 };
 
 const DYE_PREFIX = new RegExp(`^(${Object.keys(DYE_COLORS).join('|')})_(.+)$`);
+
+/** Skin sheet sizes the mobheads pack has base geometry for. */
+const HEAD_LAYOUTS: Record<string, string> = {
+	'64x32': 'head_64_32',
+	'64x64': 'head_64_64',
+	'32x32': 'head_32_32',
+};
+
+/**
+ * The entity sheet for a mob, preferring a file named exactly after it. Sheets
+ * live at entity/<mob>.png or entity/<mob>/<mob>.png depending on the mod, and a
+ * head only ever wants the base skin — never a blink or armour overlay.
+ */
+async function findMobTexture(
+	resources: ResourceManager,
+	namespace: string,
+	mob: string,
+): Promise<ResourceLocator | null> {
+	// The mod's own namespace first, then vanilla: a head for a mob the builtin
+	// pack predates (bogged) has its sheet in the client jar, nested under the
+	// family folder as entity/skeleton/bogged.
+	for (const source of [namespace, 'minecraft']) {
+		for (const candidate of [`entity/${mob}`, `entity/${mob}/${mob}`]) {
+			const locator = new ResourceLocator(source, candidate);
+			if (await resources.hasResource('texture', locator)) {
+				return locator;
+			}
+		}
+		let best: ResourceLocator | null = null;
+		for (const locator of await resources.listResources('texture', source)) {
+			const leaf = locator.path.split('/').pop();
+			if (!locator.path.startsWith('entity/') || leaf !== mob) {
+				continue;
+			}
+			if (best === null || locator.path.length < best.path.length) {
+				best = locator;
+			}
+		}
+		if (best) {
+			return best;
+		}
+	}
+	return null;
+}
 
 /** Find a full modded bed entity sheet, preferring every distinguishing item-name token. */
 async function findBedTexture(
@@ -142,6 +205,45 @@ async function findBedTexture(
 		}
 	}
 	return best;
+}
+
+/** The dye name a `<dye>_<thing>` mod item is prefixed with, or null. */
+export function dyeVariantName(id: string): string | null {
+	const locator = ResourceLocator.tryParse(id);
+	if (!locator || locator.namespace === 'minecraft') {
+		return null;
+	}
+	const name = locator.path.split('/').pop() ?? locator.path;
+	return DYE_PREFIX.exec(name)?.[1] ?? null;
+}
+
+/**
+ * The dye color a `<dye>_<thing>` item name implies, or null. Mods that name
+ * variants after dyes sometimes register the matching DyeColor as the tint in
+ * client code, where no asset states it (waystones' sharestones call
+ * `DyeColor.getTextColor()`), so the name is the only record of it left.
+ *
+ * Only ever right for variants that SHARE one uncoloured sprite. A mod that
+ * draws each colour its own texture is already the right colour, and tinting it
+ * again multiplies the dye in — chipped's blue_paper_lantern came out near
+ * black. Callers must check the model's textures; see `dyeVariantName`.
+ */
+export function dyedVariantTint(id: string): TintColor | null {
+	const locator = ResourceLocator.tryParse(id);
+	if (!locator || locator.namespace === 'minecraft') {
+		return null;
+	}
+	const name = locator.path.split('/').pop() ?? locator.path;
+	const match = DYE_PREFIX.exec(name);
+	if (!match) {
+		return null;
+	}
+	const color = DYE_COLORS[match[1]];
+	return {
+		r: ((color >>> 16) & 0xFF) / 255,
+		g: ((color >>> 8) & 0xFF) / 255,
+		b: (color & 0xFF) / 255,
+	};
 }
 
 /**
@@ -287,6 +389,11 @@ export async function renderEntityFallback(
 ): Promise<FloatTexture | null> {
 	const locator = ResourceLocator.parse(id);
 	const name = locator.path.split('/').pop() ?? locator.path;
+	// A mod may not put the kind in the id — lootr's Loot Chest is `lootr_inventory`
+	// — but its display name says so, and that name is authoritative in a way a
+	// name guess is not. Appended rather than substituted so the kind guards below
+	// (chestplate, shulker shell) still see the whole string.
+	const searchName = `${name}_${await displayName(resources, locator) ?? ''}`;
 
 	// Mob heads/skulls: map onto the builtin mobheads namespace when the mob
 	// name matches one of its 90+ models (spectrum ships vanilla-mob heads).
@@ -305,12 +412,28 @@ export async function renderEntityFallback(
 				continue;
 			}
 		}
+		// A mob the builtin pack has never heard of — a mod's own creature, or one
+		// vanilla added after the pack was vendored. The head is the same eight
+		// pixels either way, so bind the mod's own entity sheet to the base
+		// geometry rather than giving up.
+		const sheet = await findMobTexture(resources, locator.namespace, mob);
+		const skin = sheet ? await textures.load(sheet).catch(() => null) : null;
+		// Only a real skin layout can be worn as a head. A creature sheet of some
+		// other size unwraps into confetti, which is worse than no icon, so the
+		// size has to match one of the pack's own base models exactly.
+		const base = skin ? HEAD_LAYOUTS[`${skin.width}x${skin.height}`] : undefined;
+		if (sheet && base) {
+			const geometry = await models.load(`mobheads:item/base/${base}`).catch(() => null);
+			if (geometry) {
+				return renderModel(withTexture(geometry, 'texture', sheet), textures, options);
+			}
+		}
 		return null;
 	}
 
 	// Chests — but never chestplates.
-	if ((name.includes('chest') && !name.includes('chestplate')) || name.endsWith('_crate')) {
-		const variant = name.includes('ender') ? 'ender' : (name.includes('trapped') ? 'trapped' : 'normal');
+	if ((searchName.includes('chest') && !searchName.includes('chestplate')) || name.endsWith('_crate')) {
+		const variant = searchName.includes('ender') ? 'ender' : (searchName.includes('trapped') ? 'trapped' : 'normal');
 		// The modern builtin nests per-variant wrappers; the legacy one has a
 		// single geometry expecting a #texture binding.
 		const candidates: Array<[model: string, defaultTexture: string | null]> = [
@@ -347,13 +470,21 @@ export async function renderEntityFallback(
 		}
 	}
 
-	if (name.includes('shulker_box')) {
-		try {
-			const model = await models.load('renderchest:item/shulker_box');
-			return await renderModel(model, textures, options);
-		} catch {
+	// A shulker shell is a flat sprite, never this geometry.
+	if (searchName.includes('shulker') && !searchName.includes('shell')) {
+		const model = await models.load('renderchest:item/shulker_box').catch(() => null);
+		if (!model) {
 			return null;
 		}
+		// The bare builtin model leaves `#texture` for a descendant to bind. A mod
+		// sheet is only usable if it is a whole skin: Sophisticated Storage's tier
+		// sheets are trim overlays meant to composite over the vanilla box, and
+		// wearing one alone leaves nothing but floating corners.
+		const candidate = await findEntityTexture(resources, locator.namespace, name, 'shulker');
+		const sheet = candidate && await coversSheet(textures, candidate)
+			? candidate
+			: ResourceLocator.parse('minecraft:entity/shulker/shulker');
+		return renderModel(withTexture(model, 'texture', sheet), textures, options).catch(() => null);
 	}
 
 	if (name.endsWith('banner')) {
@@ -365,5 +496,145 @@ export async function renderEntityFallback(
 		}
 	}
 
+	// Shields — the geometry is one board either way, so the only question is
+	// whose face to put on it. A mod's own shields keep their sheet beside
+	// vanilla's under entity/, named after the material.
+	if (name.includes('shield')) {
+		const model = await models.load('renderchest:item/shield').catch(() => null);
+		if (!model) {
+			return null;
+		}
+		const sheet = await findShieldTexture(resources, locator.namespace, name);
+		return renderModel(sheet ? withTexture(model, 'texture', sheet) : model, textures, options);
+	}
+
+	// Tridents — vanilla-trident-shaped, so the shared geometry covers vanilla
+	// and every mod trident at once. `silentgear:trident` and friends reuse the
+	// vanilla `entity/trident` sheet, so a mod's own skin is just a rebind. The
+	// shaft and prongs are 1px wide in the vanilla model, so they need a
+	// supersampled render — the nearest-neighbour rasterizer collapses a sub-pixel
+	// face into a degenerate triangle that samples the wrong texture column.
+	if (name === 'trident' || name.endsWith('_trident')) {
+		const model = await models.load('renderchest:item/trident').catch(() => null);
+		if (!model) {
+			return null;
+		}
+		const sheet = await findTridentTexture(resources, locator.namespace, name)
+			?? ResourceLocator.parse('minecraft:entity/trident');
+		return renderModel(withTexture(model, 'texture', sheet), textures, { ...options, quality: Math.max(options.quality, 4) })
+			.catch(() => null);
+	}
+
 	return null;
+}
+
+/**
+ * Whether a sheet is a whole skin rather than an overlay. Vanilla's shulker
+ * covers 44% of its sheet; a tier trim covers under 5%.
+ */
+async function coversSheet(textures: TextureLoader, locator: ResourceLocator): Promise<boolean> {
+	const texture = await textures.load(locator).catch(() => null);
+	if (!texture) {
+		return false;
+	}
+	let opaque = 0;
+	for (let offset = 3; offset < texture.data.length; offset += 4) {
+		if (texture.data[offset] > 16) {
+			opaque++;
+		}
+	}
+	return opaque / (texture.width * texture.height) > 0.2;
+}
+
+/**
+ * A mod's entity sheet for a kind, preferring the one its item name points at.
+ * Not restricted to `entity/`: lootr files its whole-skin sheets straight under
+ * `textures/` (`lootr:shulker`), and the caller gates on coverage anyway.
+ */
+async function findEntityTexture(
+	resources: ResourceManager,
+	namespace: string,
+	itemName: string,
+	kind: string,
+): Promise<ResourceLocator | null> {
+	const wanted = tokens(itemName).filter(token => token !== kind && token !== 'box');
+	let best: ResourceLocator | null = null;
+	let bestScore = -1;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		if (!locator.path.includes(kind)) {
+			continue;
+		}
+		const candidate = tokens(locator.path);
+		// An `entity/` sheet is the conventional home, so it outranks a stray
+		// match elsewhere in the tree when both name the item equally well.
+		let score = locator.path.startsWith('entity/') ? 1 : 0;
+		for (const token of wanted) {
+			if (candidate.includes(token)) {
+				score += 2;
+			}
+		}
+		if (score > bestScore) {
+			best = locator;
+			bestScore = score;
+		}
+	}
+	return best;
+}
+
+/**
+ * A trident's entity sheet. Vanilla's is `entity/trident` (32×32) and mods
+ * that reuse the vanilla model ship the same path under their own namespace;
+ * a mod that names its sheet after the item instead (an `iron_trident` with
+ * `entity/iron_trident`) is covered by the item-name fallback. Searches the
+ * item's namespace first, then vanilla.
+ */
+async function findTridentTexture(
+	resources: ResourceManager,
+	namespace: string,
+	itemName: string,
+): Promise<ResourceLocator | null> {
+	for (const source of [namespace, 'minecraft']) {
+		// 1.21.8 and earlier keep the sheet at `entity/trident`; later versions
+		// nest it as `entity/trident/trident` (and `entity/trident/trident_riptide`
+		// for the spin state, which is never the item icon).
+		for (const candidate of ['entity/trident', 'entity/trident/trident', `entity/${itemName}`]) {
+			const locator = new ResourceLocator(source, candidate);
+			if (await resources.hasResource('texture', locator)) {
+				return locator;
+			}
+		}
+	}
+	return null;
+}
+
+/**
+ * A mod's shield face, scored by how much of the item name it accounts for.
+ * `_blocking` is the raised pose rather than a different shield, and a
+ * `_nopattern` sheet is the plain one a banner would otherwise decorate.
+ */
+async function findShieldTexture(
+	resources: ResourceManager,
+	namespace: string,
+	itemName: string,
+): Promise<ResourceLocator | null> {
+	const wanted = tokens(itemName).filter(token => token !== 'shield' && token !== 'blocking');
+	let best: ResourceLocator | null = null;
+	let bestScore = 0;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		if (!locator.path.startsWith('entity/') || !locator.path.includes('shield')) {
+			continue;
+		}
+		const candidate = tokens(locator.path);
+		let score = candidate.includes('nopattern') ? 1 : 0;
+		for (const token of wanted) {
+			if (candidate.includes(token)) {
+				score += 2;
+			}
+		}
+		if (score > bestScore) {
+			best = locator;
+			bestScore = score;
+		}
+	}
+	return best;
 }

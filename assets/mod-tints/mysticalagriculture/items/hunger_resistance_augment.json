@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/hunger_resistance_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 7110656
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 3555328
+			}
+		]
+	}
+}

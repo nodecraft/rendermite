@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/strength_iii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 16776592
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 13405735
+			}
+		]
+	}
+}

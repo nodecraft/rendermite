@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/speed_iii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 11358797
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 2361349
+			}
+		]
+	}
+}

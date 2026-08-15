@@ -4,7 +4,9 @@
  * depth written only inside the span). See docs/research/renderchest-spec.md §4.4.
  */
 
-import type { FloatTexture } from './blend.ts';
+import { shadeTexel } from './blend.ts';
+
+import type { FaceShading, FloatTexture } from './blend.ts';
 
 /** The rectangle of a buffer written since it was last cleared. */
 export interface DirtyRect {
@@ -174,6 +176,8 @@ export function drawTexturedTriangle(
 	buffer: FaceBuffer,
 	texture: FloatTexture,
 	cursor: RowCursor = new RowCursor(),
+	/** Applied per sample; null leaves the texel as-is. */
+	shading: FaceShading | null = null,
 ): void {
 	const { width, height } = buffer;
 	// Stable sort by y ascending (PHP usort is stable since 8.0).
@@ -266,10 +270,14 @@ export function drawTexturedTriangle(
 						texY = texY < 0 ? 0 : (texY >= texture.height ? texture.height - 1 : texY);
 						const src = (texY * texture.width + texX) * 4;
 						const dst = (rowOffset + x) * 4;
-						buffer.colors[dst] = texture.data[src];
-						buffer.colors[dst + 1] = texture.data[src + 1];
-						buffer.colors[dst + 2] = texture.data[src + 2];
-						buffer.colors[dst + 3] = texture.data[src + 3];
+						if (shading === null) {
+							buffer.colors[dst] = texture.data[src];
+							buffer.colors[dst + 1] = texture.data[src + 1];
+							buffer.colors[dst + 2] = texture.data[src + 2];
+							buffer.colors[dst + 3] = texture.data[src + 3];
+						} else {
+							shadeTexel(buffer.colors, dst, texture.data, src, shading, texX, texY);
+						}
 					}
 
 					if (x >= startX && x < endX && x >= 0 && x < width) {

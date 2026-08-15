@@ -33,7 +33,7 @@ import type { ModrinthSpec } from '../test/fixtures/index.ts';
 const { values } = parseArgs({
 	options: {
 		top: { type: 'string', default: '25' },
-		matrix: { type: 'string', default: '1.20.1:forge,1.21.1:neoforge,1.20.1:fabric' },
+		matrix: { type: 'string', default: '26.2:neoforge,1.21.1:neoforge,1.20.1:forge,1.20.1:fabric' },
 		slugs: { type: 'string' },
 	},
 });
@@ -81,8 +81,15 @@ async function topMods(gameVersion: string, loader: string): Promise<SearchHit[]
 		.filter(hit => !hit.categories.some(category => category === 'library' || category === 'optimization'));
 }
 
-/** Known item-heavy mods worth always sweeping, per cell where they exist. */
+/**
+ * Known item-heavy mods worth always sweeping, per cell where they exist. The
+ * newest cell leads: a mod's current release is what most reports are about, and
+ * mods routinely fix in a new version what looks like a renderer bug in an old
+ * one (waystones moved its sharestone tints from client code into item-definition
+ * data). The older cells stay so legacy-era regressions still surface.
+ */
 const SEEDS: Record<string, string[]> = {
+	'26.2:neoforge': ['waystones', 'bloom', 'ae2', 'supplementaries', 'sophisticated-backpacks', 'create'],
 	'1.20.1:forge': ['ae2', 'mekanism', 'botania', 'supplementaries', 'iron-chests', 'waystones', 'alexs-mobs', 'aether', 'create', 'farmers-delight', 'twilightforest', 'immersiveengineering'],
 	'1.21.1:neoforge': ['ae2', 'mekanism', 'supplementaries', 'waystones', 'aether', 'create', 'sophisticated-backpacks', 'iron-chests'],
 	'1.20.1:fabric': ['create-fabric', 'farmers-delight-fabric', 'croptopia', 'spectrum', 'bosses-of-mass-destruction', 'deeperdarker'],

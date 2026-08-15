@@ -5,7 +5,7 @@
  * the form `<ns>:<name>`.
  */
 
-import { evaluateItemModel } from './definition.ts';
+import { InvalidItemDefinitionError, evaluateItemModel } from './definition.ts';
 import { identity } from '../render/vector.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
@@ -126,7 +126,20 @@ export async function resolveItem(
 		if (parsed.model === undefined) {
 			throw new ItemResolutionError(`Item definition has no model node: ${id}`);
 		}
-		return evaluateItemModel(parsed.model, properties);
+		try {
+			return evaluateItemModel(parsed.model, properties);
+		} catch (err) {
+			// A model type only the mod's own code knows, naming nothing we can
+			// draw. Mods that ship one of these almost always still keep a plain
+			// model at the conventional path for the item's resting state —
+			// EnderIO's conduit item model holds the geometry and defaults to the
+			// energy texture — so prefer that over losing the icon.
+			const conventional = new ResourceLocator(locator.namespace, `item/${locator.path}`);
+			if (err instanceof InvalidItemDefinitionError && await resources.hasResource('model', conventional)) {
+				return [{ model: conventional.toString(), tints: [], transform: identity() }];
+			}
+			throw err;
+		}
 	}
 
 	const modelLocator = new ResourceLocator(locator.namespace, `item/${locator.path}`);

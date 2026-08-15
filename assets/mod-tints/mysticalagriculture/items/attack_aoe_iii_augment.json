@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/attack_aoe_iii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 16711680
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 7340032
+			}
+		]
+	}
+}

@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/flight_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 13358806
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 5598059
+			}
+		]
+	}
+}

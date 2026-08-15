@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/health_boost_iii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 12984891
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 3867650
+			}
+		]
+	}
+}

@@ -4,6 +4,7 @@ import { ResourceLocator } from '../resources/locator.ts';
 import type {
 	DisplayPosition,
 	DisplayTransformJson,
+	FaceDirectionName,
 	ModelElementJson,
 	ModelJson,
 } from './types.ts';
@@ -32,12 +33,15 @@ export interface ResolvedModel {
 	/** Deepest-first chain of model locators, for diagnostics. */
 	chain: string[];
 	/** Forge/NeoForge OBJ loader geometry reference, when the chain declares one. */
-	obj?: { model: string; flipV: boolean; };
+	obj?: { model: string; flipV: boolean; objects?: string[]; };
 	/** Fluid id from a fluid_container loader, for painting bucket contents. */
 	fluid?: string;
 }
 
 export class ModelResolutionError extends Error {}
+
+/** Override redirects to follow before giving up; cycles are the reason. */
+const MAX_OVERRIDE_REDIRECTS = 4;
 
 const MAX_PARENT_DEPTH = 64;
 const MAX_TEXTURE_REF_DEPTH = 16;
@@ -46,6 +50,13 @@ const MAX_TEXTURE_REF_DEPTH = 16;
 const MODEL_PARENT_ALIASES: Readonly<Record<string, string>> = {
 	'forge:item/default': 'minecraft:item/generated',
 	'forge:item/default-tool': 'minecraft:item/handheld',
+	// The loaders register these themselves, so they exist in no jar we read.
+	// Blockbench writes `neoforge:block/default` into every block it exports,
+	// which stranded whole mods (pneumaticcraft) on a missing parent.
+	'forge:block/default': 'minecraft:block/block',
+	'neoforge:block/default': 'minecraft:block/block',
+	'neoforge:item/default': 'minecraft:item/generated',
+	'neoforge:item/default-tool': 'minecraft:item/handheld',
 };
 
 /**
@@ -58,6 +69,15 @@ const MODEL_PARENT_ALIASES: Readonly<Record<string, string>> = {
  */
 const MOD_LOADER_HANDLERS: Record<string, (json: ModelJson) => ModelJson> = {
 	'immersiveengineering:conf_sides': flattenConfSides,
+	'mekanism:energy_cube': flattenEnergyCube,
+	'mekanism:transmitter': restrictTransmitterToUnconnected,
+	'botania:floating_flower': composeFloatingFlower,
+	'tconstruct:tool': layerToolParts,
+	'modern_industrialization:machine': composeMachine,
+	'modern_industrialization:use_block_model': imitateBlockModel,
+	'sophisticatedstorage:barrel': flattenStorageBarrel,
+	'sophisticatedstorage:limited_barrel': flattenStorageBarrel,
+	'sophisticatedstorage:simple_composite': mergeCompositeParts,
 	// IE addons (Immersive Petroleum etc.) register conveyor types through
 	// IE's API, so their items also carry IE's loader id.
 	'immersiveengineering:models/conveyor': flattenConveyor,
@@ -80,18 +100,27 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 	if (!loader || depth > 8) {
 		return json;
 	}
+	// OBJ geometry is handled by the renderer; normalize the reference here. A
+	// mod loader that is not named `obj` but states the OBJ loader's own
+	// `model`/`flip_v` keys pointing at an OBJ path is one too — Mekanism's
+	// transmitter loader wraps `…/transmitter_small.obj.mek` exactly that way.
+	const objCandidate = json as ModelJson & { model?: string; flip_v?: boolean; flip_V?: boolean; };
+	const objReference = typeof objCandidate.model === 'string'
+		&& (/obj$/i.test(loader) || /\.obj(?:$|\.)/i.test(objCandidate.model))
+		? objCandidate.model
+		: null;
+	if (objReference !== null) {
+		const marked = withoutLoader(json) as ModelJson & { objModel?: { model: string; flipV: boolean; objects?: string[]; }; };
+		marked.objModel = {
+			model: objReference,
+			flipV: objCandidate.flip_v ?? objCandidate.flip_V ?? false,
+		};
+		delete (marked as { model?: string; }).model;
+		// A mod loader wrapping an OBJ may still need to narrow it down.
+		const objHandler = MOD_LOADER_HANDLERS[loader];
+		return objHandler ? objHandler(marked) : marked;
+	}
 	if (/obj$/i.test(loader)) {
-		// OBJ geometry is handled by the renderer; normalize the reference here.
-		const extended = json as ModelJson & { model?: string; flip_v?: boolean; flip_V?: boolean; };
-		if (typeof extended.model === 'string') {
-			const marked = withoutLoader(json) as ModelJson & { objModel?: { model: string; flipV: boolean; }; };
-			marked.objModel = {
-				model: extended.model,
-				flipV: extended.flip_v ?? extended.flip_V ?? false,
-			};
-			delete (marked as { model?: string; }).model;
-			return marked;
-		}
 		return json;
 	}
 	const handler = MOD_LOADER_HANDLERS[loader];
@@ -102,6 +131,7 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 		perspectives?: { gui?: ModelJson; };
 		base?: ModelJson;
 		childModel?: string;
+		delegate?: string;
 		children?: Record<string, ModelJson | string>;
 		inner_model?: ModelJson;
 	};
@@ -115,6 +145,11 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 	}
 	if (typeof extended.childModel === 'string') {
 		return { parent: extended.childModel };
+	}
+	// A loader that wraps one other model by name (MI's pipes all delegate to
+	// block/pipe) is a parent redirect with extra runtime behaviour attached.
+	if (typeof extended.delegate === 'string') {
+		return { parent: extended.delegate };
 	}
 	if (extended.children && typeof extended.children === 'object') {
 		const children = Object.values(extended.children);
@@ -142,6 +177,19 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 	if (extended.inner_model && typeof extended.inner_model === 'object') {
 		return flattenLoaderModel(extended.inner_model, depth + 1);
 	}
+	// A loader that nests one whole model under a key of its own naming
+	// (architects_palette:wrapped uses `wrapped_model`) is that model with runtime
+	// behaviour attached, so the nested one is what draws. Only a value carrying
+	// `parent` or `elements` qualifies, which no `display` or `textures` map does.
+	for (const value of Object.values(json)) {
+		const nested = value as ModelJson | null;
+		if (typeof nested !== 'object' || nested === null || Array.isArray(nested)) {
+			continue;
+		}
+		if (nested.parent !== undefined || Array.isArray(nested.elements)) {
+			return flattenLoaderModel(nested, depth + 1);
+		}
+	}
 	if (/fluid_container|bucket/i.test(loader)) {
 		// The declared parent is usually forge:item/bucket, which exists in no
 		// jar we load — rebase onto the vanilla bucket and keep the fluid id so
@@ -155,7 +203,15 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 	}
 	// Unflattenable (code-built geometry): strip the loader and let the declared
 	// parent/textures decide; a missing layer0 then fails loudly instead of black.
-	return withoutLoader(json);
+	// A loader that names its one sprite `texture` rather than `layer0` is the
+	// exception — Tinkers' material loader tints that sprite per material, and
+	// the untinted sprite is a far better icon than no icon at all.
+	const stripped = withoutLoader(json);
+	const sprite = stripped.textures?.texture;
+	if (typeof sprite === 'string' && stripped.textures?.layer0 === undefined) {
+		return { ...stripped, textures: { ...stripped.textures, layer0: sprite } };
+	}
+	return stripped;
 }
 
 /** IE conveyor types whose belt texture is not simply `block/conveyor/<type>`. */
@@ -226,6 +282,192 @@ function flattenConfSides(json: ModelJson): ModelJson {
 			west: faces.side,
 		},
 	};
+}
+
+/**
+ * Mekanism's energy_cube loader keeps the body under `frame` and each side's
+ * connector and indicator under `<side>Port`/`<side>LEDs`, picking which sides
+ * show at runtime from the stack's stored side config. Every group is emitted:
+ * a cube with all its ports is what a configured cube looks like, and dropping
+ * them would leave the six faces blank.
+ */
+function flattenEnergyCube(json: ModelJson): ModelJson {
+	const groups = json as ModelJson & Record<string, unknown>;
+	const elements = Object.entries(groups)
+		.filter(([name, value]) => (name === 'frame' || /(?:Port|LEDs)$/.test(name)) && Array.isArray(value))
+		.flatMap(([, value]) => value as ModelElementJson[]);
+	if (elements.length === 0) {
+		return withoutLoader(json);
+	}
+	return { ...withoutLoader(json), elements };
+}
+
+/**
+ * Mekanism's transmitter loader wraps one OBJ holding every connection state of
+ * a cable — each direction appears as `<direction>NONE`, `NORMAL`, `PUSH` and
+ * `PULL` objects, and the loader picks one per side from the neighbouring
+ * blocks. An item has no neighbours, so every side is NONE; drawing the lot
+ * gives a spiked ball of overlapping states.
+ */
+function restrictTransmitterToUnconnected(json: ModelJson): ModelJson {
+	const marked = json as ModelJson & { objModel?: { model: string; flipV: boolean; objects?: string[]; }; };
+	if (marked.objModel) {
+		marked.objModel.objects = ['down', 'up', 'north', 'south', 'east', 'west'].map(side => `${side}NONE`);
+	}
+	return marked;
+}
+
+/**
+ * Botania's floating flowers are a mystical island with a flower planted on it:
+ * the loader draws `botania:block/islands/island_<type>` under the model named
+ * by the `flower` key. The island type is stored per block and defaults to
+ * GRASS, which is what a freshly crafted one — and so the item — shows.
+ */
+function composeFloatingFlower(json: ModelJson): ModelJson {
+	const flower = (json as ModelJson & { flower?: ModelJson; }).flower;
+	const merges = ['botania:block/islands/island_grass'];
+	if (typeof flower?.parent === 'string') {
+		merges.push(flower.parent);
+	}
+	const composed = { ...withoutLoader(json), mergeModels: merges } as ModelJson & { flower?: ModelJson; };
+	delete composed.flower;
+	return composed;
+}
+
+/**
+ * Tinkers' tool loader stacks one sprite per tool part — head, handle, binding
+ * and so on — tinting each by the material it was built from. The parts are
+ * declared in draw order, so laying them out as layer0..layerN reproduces the
+ * uncoloured tool. `large_*` duplicates are the broad-tool variants the item
+ * icon never uses, and `modifier_roots` are overlays for applied modifiers.
+ */
+function layerToolParts(json: ModelJson): ModelJson {
+	const stripped = withoutLoader(json);
+	const parts = Object.entries(stripped.textures ?? {})
+		.filter(([name]) => !name.startsWith('large_') && name !== 'particle' && !/^layer\d+$/.test(name));
+	if (parts.length === 0) {
+		return stripped;
+	}
+	const layers = Object.fromEntries(parts.map(([, value], index) => [`layer${index}`, value]));
+	return { ...stripped, parent: 'minecraft:item/generated', textures: { ...stripped.textures, ...layers } };
+}
+
+/**
+ * A casing that borrows another block's look states only the block id. Its
+ * model is that block's, under the conventional block/<path> name — which is
+ * where every casing MI does this for actually keeps it.
+ */
+function imitateBlockModel(json: ModelJson): ModelJson {
+	const block = (json as ModelJson & { block?: unknown; }).block;
+	if (typeof block !== 'string') {
+		return withoutLoader(json);
+	}
+	const locator = ResourceLocator.tryParse(block);
+	return locator === null
+		? withoutLoader(json)
+		: { parent: `${locator.namespace}:block/${locator.path}` };
+}
+
+/**
+ * Which face each of MI's machine overlays belongs on. The rest of the
+ * vocabulary — `*_active`, `output`, `item_auto`, `fluid_auto` — is runtime
+ * state (running, or a configured auto-IO side) that a freshly crafted machine
+ * does not show, so the icon leaves them off.
+ */
+const MACHINE_OVERLAY_FACES: Record<string, FaceDirectionName[]> = {
+	front: ['north'],
+	top: ['up'],
+	bottom: ['down'],
+	side: ['east', 'west', 'south'],
+};
+
+/**
+ * MI machines are a casing block wearing per-face overlays. The casing is named
+ * rather than inlined (`"casing": "lv"` ↔ machine_casing/lv), and the overlays
+ * are full texture ids, so the model becomes the casing merged in underneath a
+ * hair-inflated cube carrying the overlay faces.
+ */
+function composeMachine(json: ModelJson): ModelJson {
+	const extended = json as ModelJson & { casing?: unknown; default_overlays?: Record<string, unknown>; };
+	const casing = typeof extended.casing === 'string' ? extended.casing : null;
+	const overlays = extended.default_overlays ?? {};
+	const textures: Record<string, string> = {};
+	const faces: ModelElementJson['faces'] = {};
+	for (const [name, directions] of Object.entries(MACHINE_OVERLAY_FACES)) {
+		const texture = overlays[name];
+		if (typeof texture !== 'string') {
+			continue;
+		}
+		textures[name] = texture;
+		for (const direction of directions) {
+			faces[direction] = { texture: `#${name}` };
+		}
+	}
+	// A hair outside the casing so the overlay wins the depth test cleanly.
+	const elements: ModelElementJson[] = Object.keys(faces).length > 0
+		? [{ from: [-0.01, -0.01, -0.01], to: [16.01, 16.01, 16.01], faces }]
+		: [];
+	return {
+		parent: 'minecraft:block/block',
+		textures,
+		elements,
+		...(casing !== null && { mergeModels: [`modern_industrialization:machine_casing/${casing}`] }),
+	} as ModelJson;
+}
+
+/**
+ * Sophisticated Storage composes its barrels from part models with two levels of
+ * texture indirection, but the tier part states the three textures a barrel
+ * actually wears under vanilla's own `top`/`side`/`bottom` names. Those names
+ * belong to `cube_bottom_top`, which is the shape a barrel is — the parts the
+ * loader adds on top are trim and the tintable core.
+ */
+function flattenStorageBarrel(json: ModelJson): ModelJson {
+	const extended = json as ModelJson & {
+		model_parts?: Record<string, { model?: string; textures?: Record<string, string>; }>;
+		partitioned_model_parts?: Record<string, { model?: string; textures?: Record<string, string>; }>;
+	};
+	const groups = [extended.partitioned_model_parts, extended.model_parts];
+	// A part states a shape, textures for the shape below it, or both. The tier
+	// textures are trim overlays rather than whole faces, so they have to land on
+	// the body the parts draw rather than on a bare cube.
+	const textures: Record<string, string> = {};
+	const merges: string[] = [];
+	for (const group of groups) {
+		for (const part of Object.values(group ?? {})) {
+			Object.assign(textures, part.textures);
+			if (typeof part.model === 'string') {
+				merges.push(part.model);
+			}
+		}
+	}
+	const flattened = withoutLoader(json) as ModelJson & Record<string, unknown>;
+	delete flattened.model_parts;
+	delete flattened.partitioned_model_parts;
+	delete flattened.dynamic_part_models;
+	delete flattened.wood_overrides;
+	return {
+		...flattened,
+		// The root barrel model declares no parent at all, so nothing in the chain
+		// would supply a gui pose and the icon would fill the frame flat-on.
+		parent: flattened.parent ?? 'minecraft:block/block',
+		textures: { ...flattened.textures, ...textures },
+		...((merges.length > 0) && { mergeModels: merges }),
+	} as ModelJson;
+}
+
+/**
+ * A composite whose parts are named parent references rather than inline
+ * geometry — every part is drawn, so they all merge in.
+ */
+function mergeCompositeParts(json: ModelJson): ModelJson {
+	const parts = (json as ModelJson & { parts?: Record<string, { parent?: string; }>; }).parts ?? {};
+	const merges = Object.values(parts)
+		.map(part => part.parent)
+		.filter((parent): parent is string => typeof parent === 'string');
+	return merges.length === 0
+		? withoutLoader(json)
+		: { ...withoutLoader(json), parts: undefined, mergeModels: merges } as ModelJson;
 }
 
 function extractLoaderType(json: ModelJson): string | null {
@@ -346,7 +588,7 @@ export class ModelLoader {
 		return flattenLoaderModel(json);
 	}
 
-	private async resolve(locator: ResourceLocator): Promise<ResolvedModel> {
+	private async resolve(locator: ResourceLocator, overrideDepth = 0): Promise<ResolvedModel> {
 		// Walk root-ward collecting the chain, deepest (requested) model first.
 		const chain: Array<{ locator: ResourceLocator; json: ModelJson; }> = [];
 		const seen = new Set<string>();
@@ -404,7 +646,7 @@ export class ModelLoader {
 		// OBJ geometry declared anywhere in the chain (deepest wins).
 		let obj: { model: string; flipV: boolean; } | undefined;
 		for (const entry of chain) {
-			const marked = entry.json as ModelJson & { objModel?: { model: string; flipV: boolean; }; };
+			const marked = entry.json as ModelJson & { objModel?: { model: string; flipV: boolean; objects?: string[]; }; };
 			if (marked.objModel) {
 				obj = marked.objModel;
 				break;
@@ -421,7 +663,44 @@ export class ModelLoader {
 			}
 		}
 
+		// Models a loader composes alongside this one (deepest wins). Their
+		// elements are appended with texture variables already resolved, so two
+		// merged models cannot collide over a shared `#name`.
+		for (const entry of chain) {
+			const merges = (entry.json as ModelJson & { mergeModels?: string[]; }).mergeModels;
+			if (!merges) {
+				continue;
+			}
+			for (const reference of merges) {
+				const merged = await this.load(reference).catch(() => null);
+				if (!merged) {
+					continue;
+				}
+				elements = [...elements, ...merged.elements.map(element => bindElementTextures(element, merged, textures))];
+			}
+			break;
+		}
+
 		// Model default is side (master, dcf19ec); builtin/generated sprites light front.
+		// A legacy-era model may carry nothing but an `overrides` list, leaving the
+		// chain with no layers or elements to draw even when it parents onto
+		// item/generated. An inventory stack reads every predicate as 0, which is
+		// the state upstream resolves the list against.
+		if (obj === undefined && elements.length === 0 && Object.keys(textures).length === 0) {
+			const overridden = chain.find(entry => entry.json.overrides?.length)?.json.overrides;
+			const chosen = overridden
+				&& (overridden.findLast(entry => Object.values(entry.predicate).every(value => value <= 0)) ?? overridden[0]);
+			const target = chosen ? ResourceLocator.tryParse(chosen.model) : null;
+			// Resolved directly rather than through load(): an override may name the
+			// model it sits in (armourers_workshop:item/skin lists itself as its
+			// unloaded state), and load() hands back the in-flight promise for a key
+			// it is already resolving — so the model would await itself forever.
+			// The depth cap covers the same cycle spread across several models.
+			if (target && overrideDepth < MAX_OVERRIDE_REDIRECTS && target.toString() !== locator.toString()) {
+				return this.resolve(target, overrideDepth + 1);
+			}
+		}
+
 		const defaultLight = builtinParent === 'builtin/generated' ? 'front' : 'side';
 		return {
 			obj,
@@ -448,6 +727,30 @@ export class ModelLoader {
 		}
 		return pending;
 	}
+}
+
+/**
+ * Rewrite an element's face textures from the owning model's variables to
+ * concrete locators, so the element survives being merged into another model.
+ */
+function bindElementTextures(
+	element: ModelElementJson,
+	model: ResolvedModel,
+	owner: Record<string, string>,
+): ModelElementJson {
+	// The composing model's bindings win over the part's own defaults, the way a
+	// child model overrides its parent's textures — Sophisticated Storage's
+	// barrel parts all default to acacia and are rebound per tier.
+	const rebound: ResolvedModel = { ...model, textures: { ...model.textures, ...owner } };
+	const faces: ModelElementJson['faces'] = {};
+	for (const [direction, face] of Object.entries(element.faces)) {
+		if (!face) {
+			continue;
+		}
+		const bound = resolveTexture(rebound, face.texture) ?? resolveTexture(model, face.texture);
+		faces[direction as keyof ModelElementJson['faces']] = bound ? { ...face, texture: bound.toString() } : face;
+	}
+	return { ...element, faces };
 }
 
 /**

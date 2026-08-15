@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/water_breathing_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 15925247
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 5943247
+			}
+		]
+	}
+}

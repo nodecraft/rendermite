@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/tilling_aoe_i_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 12158300
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 5848361
+			}
+		]
+	}
+}

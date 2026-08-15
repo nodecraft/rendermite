@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/mining_aoe_iv_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 14024694
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 965309
+			}
+		]
+	}
+}

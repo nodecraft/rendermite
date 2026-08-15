@@ -1,0 +1,1057 @@
+{
+	"gui_light": "side",
+	"textures": {
+		"texture": "botania:model/pylon_natura"
+	},
+	"display": {
+		"firstperson_righthand": {
+			"rotation": [
+				0,
+				315,
+				0
+			],
+			"scale": [
+				0.4,
+				0.4,
+				0.4
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"fixed": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"scale": [
+				0.5,
+				0.5,
+				0.5
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"ground": {
+			"rotation": [
+				0,
+				0,
+				0
+			],
+			"scale": [
+				0.25,
+				0.25,
+				0.25
+			],
+			"translation": [
+				0,
+				3,
+				0
+			]
+		},
+		"gui": {
+			"rotation": [
+				30,
+				45,
+				0
+			],
+			"scale": [
+				0.625,
+				0.625,
+				0.625
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"head": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"scale": [
+				1,
+				1,
+				1
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"thirdperson_righthand": {
+			"rotation": [
+				75,
+				315,
+				0
+			],
+			"scale": [
+				0.375,
+				0.375,
+				0.375
+			],
+			"translation": [
+				0,
+				2.5,
+				0
+			]
+		}
+	},
+	"elements": [
+		{
+			"name": "platef",
+			"from": [
+				4,
+				1.6,
+				0
+			],
+			"to": [
+				12,
+				9.6,
+				2
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0,
+						11.5,
+						0.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0,
+						13.5,
+						0.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						9,
+						0.5,
+						9.5,
+						2.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0.5,
+						11.5,
+						2.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0.5,
+						12,
+						2.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						12,
+						0.5,
+						14,
+						2.5
+					]
+				}
+			}
+		},
+		{
+			"name": "plateb",
+			"from": [
+				4,
+				1.6,
+				0
+			],
+			"to": [
+				12,
+				9.6,
+				2
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0,
+						11.5,
+						0.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0,
+						13.5,
+						0.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						9,
+						0.5,
+						9.5,
+						2.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0.5,
+						11.5,
+						2.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0.5,
+						12,
+						2.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						12,
+						0.5,
+						14,
+						2.5
+					]
+				}
+			}
+		},
+		{
+			"name": "platel",
+			"from": [
+				4,
+				1.6,
+				0
+			],
+			"to": [
+				12,
+				9.6,
+				2
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": -180,
+				"y": -90,
+				"z": 0
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0,
+						11.5,
+						0.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0,
+						13.5,
+						0.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						9,
+						0.5,
+						9.5,
+						2.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0.5,
+						11.5,
+						2.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0.5,
+						12,
+						2.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						12,
+						0.5,
+						14,
+						2.5
+					]
+				}
+			}
+		},
+		{
+			"name": "plater",
+			"from": [
+				4,
+				1.6,
+				0
+			],
+			"to": [
+				12,
+				9.6,
+				2
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": -180,
+				"y": 90,
+				"z": 0
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0,
+						11.5,
+						0.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0,
+						13.5,
+						0.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						9,
+						0.5,
+						9.5,
+						2.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						0.5,
+						11.5,
+						2.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						11.5,
+						0.5,
+						12,
+						2.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						12,
+						0.5,
+						14,
+						2.5
+					]
+				}
+			}
+		},
+		{
+			"name": "shardrft",
+			"from": [
+				10,
+				-7.4,
+				3
+			],
+			"to": [
+				13,
+				-0.4,
+				6
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						4.75,
+						8,
+						5.5,
+						8.75
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						5.5,
+						8,
+						6.25,
+						8.75
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						8.75,
+						4.75,
+						10.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						4.75,
+						8.75,
+						5.5,
+						10.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						5.5,
+						8.75,
+						6.25,
+						10.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						6.25,
+						8.75,
+						7,
+						10.5
+					]
+				}
+			}
+		},
+		{
+			"name": "shardlbt",
+			"from": [
+				3,
+				-5.4,
+				8
+			],
+			"to": [
+				9,
+				3.6,
+				13
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						0,
+						2.75,
+						1.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						2.75,
+						0,
+						4.25,
+						1.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						1.25,
+						1.25,
+						3.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						1.25,
+						2.75,
+						3.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						2.75,
+						1.25,
+						4,
+						3.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						1.25,
+						5.5,
+						3.5
+					]
+				}
+			}
+		},
+		{
+			"name": "shardrbt",
+			"from": [
+				11,
+				-6.4,
+				8
+			],
+			"to": [
+				13,
+				1.6,
+				13
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						6.75,
+						0,
+						7.25,
+						1.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						7.25,
+						0,
+						7.75,
+						1.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						5.5,
+						1.25,
+						6.75,
+						3.25
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						6.75,
+						1.25,
+						7.25,
+						3.25
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						7.25,
+						1.25,
+						8.5,
+						3.25
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						8.5,
+						1.25,
+						9,
+						3.25
+					]
+				}
+			}
+		},
+		{
+			"name": "shardlft",
+			"from": [
+				3,
+				-4.4,
+				3
+			],
+			"to": [
+				8,
+				5.6,
+				6
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.75,
+						8,
+						2,
+						8.75
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						8,
+						3.25,
+						8.75
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						8.75,
+						0.75,
+						11.25
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.75,
+						8.75,
+						2,
+						11.25
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						8.75,
+						2.75,
+						11.25
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						2.75,
+						8.75,
+						4,
+						11.25
+					]
+				}
+			}
+		},
+		{
+			"name": "shardrfb",
+			"from": [
+				10,
+				1.6,
+				3
+			],
+			"to": [
+				13,
+				10.6,
+				6
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						4.75,
+						10.5,
+						5.5,
+						11.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						5.5,
+						10.5,
+						6.25,
+						11.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						11.25,
+						4.75,
+						13.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						4.75,
+						11.25,
+						5.5,
+						13.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						5.5,
+						11.25,
+						6.25,
+						13.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						6.25,
+						11.25,
+						7,
+						13.5
+					]
+				}
+			}
+		},
+		{
+			"name": "shardlbb",
+			"from": [
+				3,
+				5.6,
+				8
+			],
+			"to": [
+				9,
+				12.6,
+				13
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						3.5,
+						2.75,
+						4.75
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						2.75,
+						3.5,
+						4.25,
+						4.75
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						4.75,
+						1.25,
+						6.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						4.75,
+						2.75,
+						6.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						2.75,
+						4.75,
+						4,
+						6.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						4.75,
+						5.5,
+						6.5
+					]
+				}
+			}
+		},
+		{
+			"name": "shardrbb",
+			"from": [
+				11,
+				3.6,
+				8
+			],
+			"to": [
+				13,
+				11.6,
+				13
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						6.75,
+						3.25,
+						7.25,
+						4.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						7.25,
+						3.25,
+						7.75,
+						4.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						5.5,
+						4.5,
+						6.75,
+						6.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						6.75,
+						4.5,
+						7.25,
+						6.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						7.25,
+						4.5,
+						8.5,
+						6.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						8.5,
+						4.5,
+						9,
+						6.5
+					]
+				}
+			}
+		},
+		{
+			"name": "shardlfb",
+			"from": [
+				3,
+				7.6,
+				3
+			],
+			"to": [
+				8,
+				13.6,
+				6
+			],
+			"rotation": {
+				"origin": [
+					8,
+					5.6,
+					8
+				],
+				"x": 180,
+				"z": 0
+			},
+			"emissive_rc": true,
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.75,
+						11.25,
+						2,
+						12
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						11.25,
+						3.25,
+						12
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						12,
+						0.75,
+						13.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.75,
+						12,
+						2,
+						13.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						12,
+						2.75,
+						13.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						2.75,
+						12,
+						4,
+						13.5
+					]
+				}
+			}
+		}
+	]
+}

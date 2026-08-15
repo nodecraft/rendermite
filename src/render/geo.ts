@@ -9,14 +9,14 @@
 
 import { toFloatTexture } from './blend.ts';
 import { combineFaceBuffers } from './compose.ts';
-import { faceMaxZ, renderFace } from './face.ts';
+import { createShadeCache, faceMaxZ, renderFace } from './face.ts';
 import { lightsForProfile } from './lighting.ts';
 import { createFaceBuffer } from './rasterizer.ts';
 import { displayMatrix } from './vector.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
 import type { FloatTexture } from './blend.ts';
-import type { FaceShadeCache, RenderableFace } from './face.ts';
+import type { RenderableFace } from './face.ts';
 import type { FaceGeometry } from './geometry.ts';
 import type { RenderOptions } from './renderer.ts';
 import type { Vec3 } from './vector.ts';
@@ -181,8 +181,15 @@ export function geoToFaces(geo: ParsedGeo): FaceGeometry[] {
 						corners = corners.map(point => rotatePoint(point, link.pivot as Vec3, link.rotation as Vec3));
 					}
 				}
-				// Mirror X: Bedrock's +x is Java's -x.
+				// Mirror X: Bedrock's +x is Java's -x. Negating one axis reverses the
+				// quad's winding, which flips the normal renderFace culls on — left
+				// alone, every geo model rendered inside-out, showing the far faces
+				// (a cube drew its bottom from a top-down view). Reversing the corner
+				// order restores the winding, and because renderFace pairs UV corners
+				// to vertices by index it mirrors the face's texture to match the
+				// mirrored geometry.
 				corners = corners.map(point => [-point[0], point[1], point[2]] as Vec3);
+				corners = [corners[0], corners[3], corners[2], corners[1]];
 				for (const point of corners) {
 					for (let axis = 0; axis < 3; axis++) {
 						min[axis] = Math.min(min[axis], point[axis]);
@@ -198,6 +205,8 @@ export function geoToFaces(geo: ParsedGeo): FaceGeometry[] {
 					rotation: 0,
 					tintIndex: null,
 					shadeDirectionOverride: null,
+					emissive: false,
+					alpha: 1,
 				});
 			}
 		}
@@ -236,14 +245,33 @@ export async function findGeoForItem(
 	// scan for any <name>.geo.json under a geo directory when the conventional
 	// spots miss. Shortest path wins so a top-level file beats variants.
 	const geoPathHits = await Promise.all(geoPaths.map(path => resources.hasResource('raw', new ResourceLocator(locator.namespace, path))));
+	const name = locator.path.split('/').pop() ?? locator.path;
 	if (!geoPathHits.includes(true)) {
-		const name = locator.path.split('/').pop();
 		const candidates = await resources.listResources('raw', locator.namespace);
-		const matches = candidates
+		const geoFiles = candidates
 			.map(candidate => candidate.path)
-			.filter(path => path.endsWith(`/${name}.geo.json`) && /(?:^|\/)(?:geo|geckolib)\//.test(path))
-			.toSorted((a, b) => a.length - b.length);
+			.filter(path => path.endsWith('.geo.json') && /(?:^|\/)(?:geo|geckolib)\//.test(path));
+		const matches = geoFiles
+			.filter(path => path.endsWith(`/${name}.geo.json`))
+			.toSorted((left, right) => left.length - right.length);
 		geoPaths.push(...matches);
+		// Mods ship one geo per base shape and register the variants in code:
+		// pokeblocks draws gigantic_pokedoll_absol and pokedoll_shiny_absol from
+		// pokedoll_absol.geo.json, and eiscue_head_pile from eiscue_head_pile_1.
+		// Accept a geo whose every token appears in the item name — a subset test,
+		// so an unrelated model can never match the way a similarity score would —
+		// and prefer the most specific.
+		if (matches.length === 0) {
+			const wanted = new Set(nameTokens(name));
+			const scored = geoFiles
+				.map((path) => {
+					const tokens = nameTokens(path.split('/').pop()?.replace(/\.geo\.json$/, '') ?? '');
+					return { path, tokens };
+				})
+				.filter(entry => entry.tokens.length > 0 && entry.tokens.every(token => wanted.has(token)))
+				.toSorted((left, right) => right.tokens.length - left.tokens.length || left.path.length - right.path.length);
+			geoPaths.push(...scored.map(entry => entry.path));
+		}
 	}
 	for (const geoPath of geoPaths) {
 		const raw = await resources.getResource('raw', new ResourceLocator(locator.namespace, geoPath));
@@ -268,8 +296,89 @@ export async function findGeoForItem(
 				return { geo, texture };
 			}
 		}
+		// Mods just as often file the skin by name under a directory of their own
+		// choosing (ars_nouveau keeps geo/<name>.geo.json beside
+		// textures/block/<name>.png), so fall back to matching the leaf name.
+		// The ITEM's name is tried before the geo's: a variant sharing a base
+		// shape still has its own skin, and pokedoll_shiny_absol wearing
+		// pokedoll_absol's would be the right doll in the wrong colours.
+		const geoName = geoPath.split('/').pop()?.replace(/\.geo\.json$/, '') ?? '';
+		const named = await findTextureByName(resources, locator.namespace, name)
+			?? await findVariantTexture(resources, locator.namespace, name)
+			?? await findTextureByName(resources, locator.namespace, geoName);
+		if (named) {
+			return { geo, texture: named };
+		}
 	}
 	return null;
+}
+
+/** Name tokens, dropping the numeric suffixes mods use for shape variants. */
+function nameTokens(name: string): string[] {
+	return name.split(/[/_]/).filter(token => token.length > 0 && !/^\d+$/.test(token));
+}
+
+/**
+ * A skin whose name carries every token of the item's, in any order and with
+ * decoration allowed. pokeblocks writes `pokedoll_shiny_absol` as
+ * `pokedoll_absol_shiny_texture.png`, so neither an exact nor a suffix match
+ * finds it. Requiring the item's tokens to all be present keeps this from
+ * wandering onto a sibling variant's skin.
+ */
+async function findVariantTexture(
+	resources: ResourceManager,
+	namespace: string,
+	itemName: string,
+): Promise<ResourceLocator | null> {
+	const wanted = nameTokens(itemName);
+	if (wanted.length === 0) {
+		return null;
+	}
+	let best: ResourceLocator | null = null;
+	let bestExtra = Infinity;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		const tokens = nameTokens(locator.path.split('/').pop() ?? '').filter(token => token !== 'texture');
+		if (!wanted.every(token => tokens.includes(token))) {
+			continue;
+		}
+		// Fewest unrelated tokens wins, so the plain skin beats an overlay.
+		const extra = tokens.length - wanted.length;
+		if (extra < bestExtra || (extra === bestExtra && best !== null && locator.path.length < best.path.length)) {
+			best = locator;
+			bestExtra = extra;
+		}
+	}
+	return best;
+}
+
+/**
+ * The shortest-path texture named after `name`. GeckoLib binds the skin in Java
+ * rather than in the geo file, so the only link is the shared name — and a mod
+ * may decorate it (pokeblocks files 344 figurines as `<name>_texture.png`).
+ * An exact match always wins over a decorated one.
+ */
+async function findTextureByName(
+	resources: ResourceManager,
+	namespace: string,
+	name: string,
+): Promise<ResourceLocator | null> {
+	if (name === '') {
+		return null;
+	}
+	let best: ResourceLocator | null = null;
+	let bestExact = false;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		const leaf = locator.path.split('/').pop() ?? '';
+		const exact = leaf === name;
+		if (!exact && leaf !== `${name}_texture`) {
+			continue;
+		}
+		if (best === null || (exact && !bestExact) || (exact === bestExact && locator.path.length < best.path.length)) {
+			best = locator;
+			bestExact = exact;
+		}
+	}
+	return best;
 }
 
 /** Render a parsed geo with the standard block gui pose. */
@@ -290,7 +399,7 @@ export async function renderGeo(
 	const float = toFloatTexture(loaded);
 	const lights = lightsForProfile(options.lightingProfile);
 	const renderSize = options.size * options.quality;
-	const transformation = displayMatrix([30, 225, 0], [0, 0, 0], [0.9, 0.9, 0.9]);
+	const transformation = displayMatrix([30, 225, 0], [0, 0, 0], [0.625, 0.625, 0.625]);
 
 	const renderable: RenderableFace[] = faces.map((geometry) => {
 		return {
@@ -305,7 +414,7 @@ export async function renderGeo(
 
 	const buffers = [];
 	const scratch = createFaceBuffer(renderSize, renderSize);
-	const shadeCache: FaceShadeCache = new WeakMap();
+	const shadeCache = createShadeCache();
 	for (const face of renderable) {
 		const buffer = renderFace(face, renderSize, renderSize, transformation, scratch, shadeCache);
 		if (buffer) {

@@ -19,6 +19,10 @@ export interface FaceGeometry {
 	rotation: number;
 	tintIndex: number | null;
 	shadeDirectionOverride: Vec3 | null;
+	/** Skip directional shading — the element is drawn fullbright. */
+	emissive: boolean;
+	/** Constant opacity multiplier in [0,1]; 1 leaves the texture untouched. */
+	alpha: number;
 }
 
 export const FACE_NORMALS: Record<FaceDirectionName, Vec3> = {
@@ -90,6 +94,8 @@ export function buildElementFaces(element: ModelElementJson): FaceGeometry[] {
 			rotation: faceJson.rotation ?? 0,
 			tintIndex: faceJson.tintindex ?? null,
 			shadeDirectionOverride: override,
+			emissive: element.emissive_rc === true,
+			alpha: clampAlpha(element.alpha_rc),
 		});
 	}
 
@@ -97,6 +103,13 @@ export function buildElementFaces(element: ModelElementJson): FaceGeometry[] {
 	const rotationData = (element as { rotation_rc?: ElementRotationJson; }).rotation_rc ?? element.rotation;
 	applyElementRotation(rotationData, [a, b, c, d, e, f, g, h]);
 	return faces;
+}
+
+function clampAlpha(alpha: number | undefined): number {
+	if (typeof alpha !== 'number' || !Number.isFinite(alpha)) {
+		return 1;
+	}
+	return Math.min(1, Math.max(0, alpha));
 }
 
 function parseShadeOverride(element: ModelElementJson): Vec3 | null {

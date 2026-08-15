@@ -45,6 +45,14 @@ export interface ModelElementJson {
 	rotation?: ElementRotationJson;
 	shade?: boolean;
 	light_emission?: number;
+	/**
+	 * Ours, not vanilla: skip directional shading for this element. Mods draw
+	 * emissive parts in code with a fullbright render type (Mekanism's disassembler
+	 * blade), which no vanilla model field can express.
+	 */
+	emissive_rc?: boolean;
+	/** Ours, not vanilla: constant opacity multiplier for a translucent element. */
+	alpha_rc?: number;
 	faces: Partial<Record<FaceDirectionName, ModelFaceJson>>;
 }
 

@@ -77,9 +77,19 @@ export async function paintBucketFluid(
 	if (!fluidLocator) {
 		return false;
 	}
+	// A fluid_container item model may name the fluid with the decoration its
+	// own registry uses (enderio:fluid_hootch_still for block/hootch_still), so
+	// probe the bare name too rather than only the id as written.
+	const bare = fluidLocator.path.replace(/^fluid_/, '').replace(/_(?:still|flowing|source)$/, '');
+	const names = new Set([fluidLocator.path, bare]);
 	let still: Texture | null = null;
-	for (const pattern of STILL_TEXTURE_PATTERNS) {
-		still = await textures.load(new ResourceLocator(fluidLocator.namespace, pattern(fluidLocator.path)));
+	for (const name of names) {
+		for (const pattern of STILL_TEXTURE_PATTERNS) {
+			still = await textures.load(new ResourceLocator(fluidLocator.namespace, pattern(name)));
+			if (still) {
+				break;
+			}
+		}
 		if (still) {
 			break;
 		}

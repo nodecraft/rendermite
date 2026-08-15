@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/nausea_resistance_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 6733568
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 2064471
+			}
+		]
+	}
+}

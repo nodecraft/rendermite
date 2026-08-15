@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/step_assist_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 16535296
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 6301184
+			}
+		]
+	}
+}

@@ -15,6 +15,8 @@ export interface ItemRenderInstruction {
 	model: string;
 	tints: TintDefinition[];
 	transform: Mat4;
+	/** Fluid to paint into the bucket, from a fluid_container item model. */
+	fluid?: string;
 }
 
 export interface TintDefinition {
@@ -178,11 +180,37 @@ export function evaluateItemModel(
 			}
 			return [];
 		}
+		case 'neoforge:fluid_container':
+		case 'forge:fluid_container': {
+			// The loaders' bucket model type. The base is the plain bucket sprite
+			// and the fluid is a registry id, exactly as the equivalent *model*
+			// loader states it — so hand the renderer the vanilla bucket plus the
+			// fluid and let it paint the contents as it already does.
+			const fluid = typeof item.fluid === 'string' ? item.fluid : undefined;
+			const base = (item.textures as { base?: unknown; } | undefined)?.base;
+			return [{
+				model: typeof base === 'string' && base.includes('item/') ? base : 'minecraft:item/bucket',
+				tints: [],
+				transform,
+				...(fluid && !fluid.endsWith(':empty') && { fluid }),
+			}];
+		}
 		case 'minecraft:empty':
 		case 'minecraft:bundle/selected_item': {
 			return [];
 		}
 		default: {
+			// A mod model type that still names a model is the standard one with
+			// runtime behaviour bolted on (forbidden_arcanus:wand swaps the sprite
+			// for a charged variant). The named model is what an uncharged, freshly
+			// crafted item shows, so render it rather than failing the item.
+			// `base_model` is the same idea under the name mods reach for when the
+			// type layers a sprite over a plain model (ae2:memory_card_identity).
+			const named = typeof item.model === 'string' ? item.model : item.base_model;
+			if (typeof named === 'string') {
+				const tints = Array.isArray(item.tints) ? item.tints as TintDefinition[] : [];
+				return [{ model: named, tints, transform }];
+			}
 			throw new InvalidItemDefinitionError(`Unknown item model type: ${String(item.type)}`);
 		}
 	}

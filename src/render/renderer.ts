@@ -6,7 +6,7 @@
 
 import { blendPixel, tintTexture, toFloatTexture } from './blend.ts';
 import { combineFaceBuffers } from './compose.ts';
-import { faceMaxZ, renderFace } from './face.ts';
+import { createShadeCache, faceMaxZ, renderFace } from './face.ts';
 import { paintBucketFluid } from './fluid-bucket.ts';
 import { buildElementFaces } from './geometry.ts';
 import { lightsForProfile } from './lighting.ts';
@@ -449,7 +449,7 @@ function createSession(): ElementRenderSession {
 		order: null,
 		transformation: null,
 		scratch: null,
-		shadeCache: new WeakMap(),
+		shadeCache: createShadeCache(),
 		floatTextures: new Map(),
 		faceBuffers: [],
 	};
@@ -510,6 +510,7 @@ async function renderElementModelWith(
 	if (drawable === 0 && skippedFaces > 0) {
 		throw new ItemRenderError(`Every face texture unresolved in ${model.locator} (would render invisible)`);
 	}
+
 
 	if (!session.transformation) {
 		const gui = model.display.gui;

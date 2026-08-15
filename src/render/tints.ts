@@ -71,6 +71,33 @@ const DEFAULT_READING_TYPES = new Set([
 	'minecraft:team',
 ]);
 
+/**
+ * appeng.api.util.AEColor's dark/medium/bright variants, read out of the enum's
+ * static initialiser in AE2 26.1.10. Every `ae2:color` tint names one of these
+ * plus a variant, and nothing in the mod's assets states the values.
+ */
+const AE_COLORS: Record<string, [number, number, number]> = {
+	white: [0xB4_B4_B4, 0xE0_E0_E0, 0xF9_F9_F9],
+	light_gray: [0x7E_7E_7E, 0xA0_9F_A0, 0xC4_C4_C4],
+	gray: [0x4F_4F_4F, 0x6C_6B_6C, 0x94_92_94],
+	black: [0x13_13_13, 0x27_27_27, 0x3B_3B_3B],
+	lime: [0x4E_C0_4E, 0x70_E2_59, 0xB3_F8_6D],
+	yellow: [0xFF_CF_40, 0xFF_E3_59, 0xF4_FF_80],
+	orange: [0xD9_78_2F, 0xEC_A2_3C, 0xF2_BA_49],
+	brown: [0x6E_4A_12, 0x7E_5C_16, 0x8E_6E_1A],
+	red: [0xAA_21_2B, 0xD7_3E_42, 0xF0_76_65],
+	pink: [0xD8_6E_AA, 0xFF_99_BB, 0xFB_CA_D5],
+	magenta: [0xC1_51_89, 0xD5_71_9C, 0xE6_9E_BF],
+	purple: [0x6E_5C_B8, 0x91_5D_CD, 0xB0_6F_DD],
+	blue: [0x33_7F_F0, 0x38_94_FF, 0x40_C1_FF],
+	light_blue: [0x69_B9_FF, 0x70_D2_FF, 0x80_F7_FF],
+	cyan: [0x22_B0_AE, 0x2F_CC_B7, 0x65_E8_C9],
+	green: [0x07_9B_6B, 0x17_B8_6D, 0x32_D8_50],
+	fluix: [0x5A_47_9E, 0x91_5D_CD, 0xE2_A3_E3],
+};
+
+const VARIANT_INDEX: Record<string, number> = { dark: 0, medium: 1, bright: 2 };
+
 export interface TintContext {
 	textures: TextureLoader;
 	/** Deterministic replacement for upstream's random dye pick, keyed per item. */
@@ -98,6 +125,26 @@ export async function resolveTint(definition: TintDefinition, context: TintConte
 			const index = context.randomIndex ?? Math.floor(Math.random() * DYE_COLORS.length);
 			return hexColor(DYE_COLORS[index % DYE_COLORS.length]);
 		}
+		case 'ae2:storage_cell_state': {
+			// CellState.EMPTY.getStateColor() — a freshly crafted cell holds nothing.
+			return parseTintValue(0x00_FF_00);
+		}
+		case 'ae2:portable_cell_color': {
+			// DyedItemColor.getOrDefault(stack, defaultColor); an undyed cell takes
+			// the default AEItems passes to every PortableCellItem.
+			return parseTintValue(0x80_CF_FF);
+		}
+		case 'ae2:color': {
+			// AE2 tints its cables and terminals from AEColor, whose three
+			// brightness variants exist only in the enum's static initialiser.
+			const named = String((definition as { color?: unknown; }).color ?? '');
+			const palette = AE_COLORS[named];
+			if (!palette) {
+				throw new InvalidTinterDefinitionError(`Unknown ae2:color colour: ${named}`);
+			}
+			const variant = String((definition as { variant?: unknown; }).variant ?? 'medium');
+			return parseTintValue(palette[VARIANT_INDEX[variant] ?? 1]);
+		}
 		default: {
 			// Data-driven/modded tint sources use `default` as the static value to
 			// show when their runtime property cannot be resolved. The namespace is
@@ -106,7 +153,13 @@ export async function resolveTint(definition: TintDefinition, context: TintConte
 			if (DEFAULT_READING_TYPES.has(type) || Object.hasOwn(definition, 'default')) {
 				return parseTintValue(definition.default);
 			}
-			throw new InvalidTinterDefinitionError(`Unknown tint type: ${definition.type}`);
+			// A tint a mod computes in code with no stated default. It is a colour
+			// multiplier over a sprite that exists either way, so an unresolved one
+			// costs colour, not the icon — and the untinted render is still the
+			// mod's own artwork. Items told apart *only* by tint (mystical
+			// agriculture's augments all share one greyscale sprite) do come out
+			// alike; that is the price of having icons for them at all.
+			return null;
 		}
 	}
 }

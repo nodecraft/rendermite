@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/fire_resistance_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 16755263
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 6438478
+			}
+		]
+	}
+}

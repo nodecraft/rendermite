@@ -10,7 +10,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { blendPixel, toFloatTexture } from './blend.ts';
-import { renderDyedVariantFallback, renderEntityFallback, spawnEggTints } from './entity-fallback.ts';
+import {
+	dyeVariantName,
+	dyedVariantTint,
+	renderDyedVariantFallback,
+	renderEntityFallback,
+	spawnEggTints,
+} from './entity-fallback.ts';
 import { findGeoForItem, renderGeo } from './geo.ts';
 import { legacyTintsForChain } from './legacy-tints.ts';
 import {
@@ -22,6 +28,7 @@ import {
 import { resolveTints } from './tints.ts';
 import { loadAtlasResolver } from '../atlas/registry.ts';
 import { builtinDynamicResources } from '../dynamic/generators.ts';
+import { blockStateTransform, defaultBlockStateModel } from '../items/blockstate.ts';
 import { defaultProperties } from '../items/definition.ts';
 import { resolveItem } from '../items/discovery.ts';
 import { ModelLoader } from '../models/loader.ts';
@@ -33,7 +40,9 @@ import { TextureLoader } from '../textures/loader.ts';
 import type { FloatTexture } from './blend.ts';
 import type { LightingProfileName } from './lighting.ts';
 import type { AnimationLimits } from './renderer.ts';
+import type { ResolvedBlockState } from '../items/blockstate.ts';
 import type { ResourceManager } from '../resources/manager.ts';
+import type { Texture } from '../textures/loader.ts';
 
 export interface PipelineSettings {
 	builtin?: string;
@@ -100,14 +109,69 @@ export class ItemPipeline {
 	private async spriteFallback(id: string): Promise<FloatTexture | null> {
 		const { size, quality } = this.settings;
 		const locator = ResourceLocator.parse(id);
+		const draw = (texture: Texture): FloatTexture => {
+			const upscaled = pointResize(toFloatTexture(texture), size * quality, size * quality);
+			return quality === 1 ? upscaled : boxDownscale(upscaled, quality);
+		};
 		for (const directory of ['item', 'items']) {
 			const texture = await this.textures.load(new ResourceLocator(locator.namespace, `${directory}/${locator.path}`));
 			if (texture) {
-				const upscaled = pointResize(toFloatTexture(texture), size * quality, size * quality);
-				return quality === 1 ? upscaled : boxDownscale(upscaled, quality);
+				return draw(texture);
+			}
+		}
+		// Mods file sprites into their own subdirectories (draconicevolution keeps
+		// item/equipment/wyvern_bow.png, and its code-rendered machines only have
+		// block/reactor/reactor_injector.png), so fall back to an exact leaf-name
+		// match. Item sprites first, then block ones; equality rather than fuzzy
+		// matching keeps it from wandering onto an unrelated texture.
+		const leaf = locator.path.split('/').pop();
+		const candidates = await this.resources.listResources('texture', locator.namespace);
+		for (const prefix of [/^items?\//, /^blocks?\//]) {
+			let best: ResourceLocator | null = null;
+			for (const candidate of candidates) {
+				if (!prefix.test(candidate.path) || candidate.path.split('/').pop() !== leaf) {
+					continue;
+				}
+				if (best === null || candidate.path.length < best.path.length) {
+					best = candidate;
+				}
+			}
+			const nested = best ? await this.textures.load(best) : null;
+			if (nested) {
+				return draw(nested);
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * A blockstate-named block model, drawn the way a block-entity item renderer
+	 * draws it. The renderer runs inside the *item's* display transform, which the
+	 * block model does not carry — a block model that never chains to
+	 * `minecraft:block/block` has no gui transform at all and would otherwise fill
+	 * the frame flat-on (mekanism:block/fluid_tank).
+	 */
+	private async renderStatedBlock(stated: ResolvedBlockState, id: string): Promise<FloatTexture> {
+		const { size, quality, lightingProfile } = this.settings;
+		const { resources, models, textures } = this;
+		const blockModel = await models.load(stated.model);
+		const itemDisplay = await resolveItem(resources, id, defaultProperties())
+			.then(async ([instruction]) => {
+				if (!instruction) {
+					return null;
+				}
+				const itemModel = await models.load(instruction.model);
+				return itemModel.display;
+			})
+			.catch(() => null);
+		const model = itemDisplay?.gui ? { ...blockModel, display: itemDisplay } : blockModel;
+		return renderModel(model, textures, {
+			size,
+			quality,
+			lightingProfile,
+			resources,
+			itemTransform: blockStateTransform(stated),
+		});
 	}
 
 	/** Render an item's frames from its own model, without any fallback. */
@@ -118,7 +182,10 @@ export class ItemPipeline {
 		let frames: FloatTexture[];
 		let delaysMs: number[];
 		if (instructions.length === 1) {
-			const model = await models.load(instructions[0].model);
+			const loaded = await models.load(instructions[0].model);
+			// A fluid_container item model names its fluid on the instruction
+			// rather than in the model chain; the renderer paints from model.fluid.
+			const model = instructions[0].fluid ? { ...loaded, fluid: instructions[0].fluid } : loaded;
 			let tints = instructions[0].tints.length > 0
 				? await resolveTints(instructions[0].tints, { textures })
 				: await legacyTintsForChain(model.chain, textures);
@@ -126,6 +193,19 @@ export class ItemPipeline {
 			// derive them from the mob's entity texture instead.
 			if (!tints && model.chain.some(entry => entry.endsWith('item/template_spawn_egg'))) {
 				tints = await spawnEggTints(id, resources, textures).catch(() => null);
+			}
+			// A `<dye>_<thing>` mod item whose tint no release ever stated as data
+			// (waystones' sharestones registered theirs in client code). Only for
+			// variants sharing one uncoloured sprite: where the mod draws each
+			// colour its own texture the sprite is already right, and tinting it
+			// again multiplies the dye in — chipped's per-colour lanterns came out
+			// near black. The texture naming the colour is what tells them apart.
+			if (!tints) {
+				const dye = dyeVariantName(id);
+				const alreadyColoured = dye !== null
+					&& Object.values(model.textures).some(texture => texture.includes(dye));
+				const dyed = alreadyColoured ? null : dyedVariantTint(id);
+				tints = dyed === null ? null : [dyed];
 			}
 			tints ??= [];
 			const result = await renderModelFrames(model, textures, {
@@ -172,9 +252,11 @@ export class ItemPipeline {
 	}
 
 	/**
-	 * Frames for an item, falling back through the same-name block model,
-	 * GeckoLib geometry, builtin entity geometry, dyed variants, and finally the
-	 * flat sprite. Rethrows the item's own error when nothing draws it.
+	 * Frames for an item that its own model cannot draw. The first step is not a
+	 * guess: a BlockItem's blockstate names the model the game's own block-entity
+	 * item renderers draw, so that is consulted before the same-name heuristic.
+	 * After it come GeckoLib geometry, builtin entity geometry, dyed variants and
+	 * finally the flat sprite. Rethrows the item's own error when nothing draws it.
 	 */
 	async renderFramesWithFallback(id: string): Promise<RenderedFrames & { usedFallback: boolean; }> {
 		try {
@@ -182,10 +264,17 @@ export class ItemPipeline {
 		} catch (err) {
 			const { size, quality, lightingProfile, builtin } = this.settings;
 			const { resources, models, textures } = this;
+			// The item's own blockstate, which is where a block-entity item
+			// renderer gets the model it draws (mekanism:basic_energy_cube names
+			// mekanism:block/energy_cube/basic — no name guess would find it).
+			const stated = await defaultBlockStateModel(resources, id).catch(() => null);
+			const statedRender = stated
+				? await this.renderStatedBlock(stated, id).catch(() => null)
+				: null;
 			// A same-name block model is what the game itself draws for most
 			// block items whose item model is a code loader (IE's coresample).
 			const blockLocator = ResourceLocator.parse(id);
-			const blockRender = await models.load(new ResourceLocator(blockLocator.namespace, `block/${blockLocator.path}`))
+			const blockRender = statedRender ?? await models.load(new ResourceLocator(blockLocator.namespace, `block/${blockLocator.path}`))
 				.then(model => renderModel(model, textures, { size, quality, lightingProfile, resources }))
 				.catch(() => null);
 			// GeckoLib-style items keep their geometry in Bedrock .geo.json files
