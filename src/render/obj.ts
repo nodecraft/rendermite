@@ -41,6 +41,8 @@ interface ObjTriangle {
 	positions: [Vec3, Vec3, Vec3];
 	uvs: [[number, number], [number, number], [number, number]];
 	material: string;
+	/** The `o`/`g` name in effect, so a loader can draw one state of many. */
+	object: string;
 }
 
 interface ParsedObj {
@@ -56,6 +58,7 @@ export function parseObj(text: string, flipV: boolean): ParsedObj {
 	const triangles: ObjTriangle[] = [];
 	const materialLibs: string[] = [];
 	let material = '';
+	let object = '';
 
 	for (const rawLine of text.split('\n')) {
 		const line = rawLine.trim();
@@ -76,6 +79,11 @@ export function parseObj(text: string, flipV: boolean): ParsedObj {
 			}
 			case 'usemtl': {
 				material = parts.slice(1).join(' ');
+				break;
+			}
+			case 'o':
+			case 'g': {
+				object = parts.slice(1).join(' ');
 				break;
 			}
 			case 'mtllib': {
@@ -103,6 +111,7 @@ export function parseObj(text: string, flipV: boolean): ParsedObj {
 						positions: [corners[0].position, corners[i - 1].position, corners[i].position],
 						uvs: [corners[0].uv, corners[i - 1].uv, corners[i].uv],
 						material,
+						object,
 					});
 				}
 				break;
@@ -161,6 +170,13 @@ export async function renderObjModel(
 		throw new ItemRenderError(`OBJ file not found: ${model.obj.model} for ${model.locator}`);
 	}
 	const parsed = parseObj(objSource.toString('utf8'), model.obj.flipV);
+	// A loader that packs every state of a connectable block into one OBJ names
+	// them per object; `objects` keeps only the state an item should show.
+	const wanted = model.obj.objects;
+	if (wanted) {
+		const allowed = new Set(wanted);
+		parsed.triangles = parsed.triangles.filter(triangle => allowed.has(triangle.object));
+	}
 	if (parsed.triangles.length === 0) {
 		throw new ItemRenderError(`OBJ has no faces: ${model.obj.model}`);
 	}

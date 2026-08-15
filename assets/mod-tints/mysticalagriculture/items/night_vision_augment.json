@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/night_vision_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 15654992
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 2825844
+			}
+		]
+	}
+}

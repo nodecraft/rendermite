@@ -1,8 +1,8 @@
 import sharp from 'sharp';
 
 import { LruCache } from '../resources/cache.ts';
+import { ResourceLocator } from '../resources/locator.ts';
 
-import type { ResourceLocator } from '../resources/locator.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 
 /** Structural interface for atlas resolvers (avoids a circular module edge). */
@@ -55,19 +55,25 @@ export class AnimatedTexture {
 	constructor(full: Texture, meta: TextureMeta | null) {
 		this.full = full;
 		this.meta = meta;
-		const metaWidth = meta?.animation?.width ?? 16;
-		const metaHeight = meta?.animation?.height ?? 16;
+		if (!meta?.animation) {
+			// One frame, sized exactly as TextureLoader.decode sizes it, so at(0)
+			// and load() return the same pixels. Deriving the height from the width
+			// instead would crop a wider-than-tall sheet (a mod's 64x32 entity
+			// texture) to a square and shift every V coordinate.
+			const stacked = full.height > full.width && full.height % full.width === 0;
+			this.columns = 1;
+			this.frameWidth = full.width;
+			this.frameHeight = stacked ? full.width : full.height;
+			this.frameCount = 1;
+			return;
+		}
+		const metaWidth = meta.animation.width ?? 16;
+		const metaHeight = meta.animation.height ?? 16;
 		this.columns = Math.max(1, Math.trunc(16 / metaWidth));
 		this.frameWidth = Math.round(full.width * (metaWidth / 16));
 		this.frameHeight = Math.round(this.frameWidth * (metaHeight / 16));
-		const frames = meta?.animation?.frames;
-		if (!meta?.animation) {
-			this.frameCount = 1;
-		} else if (frames?.length) {
-			this.frameCount = frames.length;
-		} else {
-			this.frameCount = Math.max(1, Math.round(full.height / this.frameHeight * this.columns));
-		}
+		this.frameCount = meta.animation.frames?.length
+			|| Math.max(1, Math.round(full.height / this.frameHeight * this.columns));
 	}
 
 	get interpolated(): boolean {
@@ -200,6 +206,12 @@ export class TextureLoader {
 			if (sprite?.kind === 'file') {
 				raw = await this.resources.getResource('texture', sprite.locator);
 			}
+		}
+		if (raw === null) {
+			// Sheets a mod only ever draws from code need not live under textures/
+			// (Mekanism keeps its entity sheets in assets/mekanism/render/). Only
+			// consulted once the normal lookup has already missed.
+			raw = await this.resources.getResource('raw', new ResourceLocator(locator.namespace, `${locator.path}.png`));
 		}
 		if (raw === null) {
 			return null;

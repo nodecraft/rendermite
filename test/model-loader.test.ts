@@ -119,3 +119,183 @@ describe('shared model parents', () => {
 		expect(first.elements).toBe(second.elements);
 	});
 });
+
+describe('custom loaders wrapping OBJ geometry', () => {
+	async function load(json: unknown): Promise<{ obj?: { model: string; flipV: boolean; objects?: string[]; }; }> {
+		const resources = new MapResourceManager().set('model', 'test:item/thing', JSON.stringify(json));
+		return new ModelLoader(resources).load('test:item/thing');
+	}
+
+	it('recognises a mod loader that states the OBJ loader\'s own keys', async () => {
+		// Mekanism's transmitter loader is not named `obj`, but points at one.
+		const model = await load({
+			loader: 'mekanism:transmitter',
+			model: 'mekanism:models/block/transmitter_small.obj.mek',
+			flip_v: true,
+		});
+		expect(model.obj?.model).toBe('mekanism:models/block/transmitter_small.obj.mek');
+		expect(model.obj?.flipV).toBe(true);
+	});
+
+	it('narrows the transmitter OBJ to the unconnected state', async () => {
+		// One OBJ holds every connection state; an item has no neighbours, so
+		// drawing them all would give a spiked ball of overlapping sides.
+		const model = await load({
+			loader: 'mekanism:transmitter',
+			model: 'mekanism:models/block/transmitter_small.obj.mek',
+		});
+		expect(model.obj?.objects).toEqual([
+			'downNONE',
+			'upNONE',
+			'northNONE',
+			'southNONE',
+			'eastNONE',
+			'westNONE',
+		]);
+	});
+
+	it('leaves an unknown loader with no OBJ reference alone', async () => {
+		const model = await load({ loader: 'somemod:widget', textures: { layer0: 'somemod:item/widget' } });
+		expect(model.obj).toBeUndefined();
+	});
+
+	it('does not mistake a non-OBJ model reference for geometry', async () => {
+		const model = await load({ loader: 'somemod:wrapper', model: 'somemod:block/inner' });
+		expect(model.obj).toBeUndefined();
+	});
+});
+
+describe('loader-provided parent models', () => {
+	it('rebases the loaders\' own default models onto vanilla', async () => {
+		// Blockbench writes `neoforge:block/default` into every block it exports,
+		// and no jar we read contains it — the loader registers it at runtime.
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/thing', JSON.stringify({ parent: 'neoforge:block/default' }))
+			.set('model', 'minecraft:block/block', JSON.stringify({
+				display: { gui: { rotation: [30, 225, 0], translation: [0, 0, 0], scale: [0.625, 0.625, 0.625] } },
+			}));
+		const model = await new ModelLoader(resources).load('test:item/thing');
+		expect(model.chain).toContain('minecraft:block/block');
+		expect(model.display.gui).toBeDefined();
+	});
+});
+
+describe('composed loader models', () => {
+	it('merges a botania floating flower onto its island', async () => {
+		const island = { elements: [{ from: [0, 0, 0], to: [16, 4, 16], faces: { up: { texture: '#grass' } } }], textures: { grass: 'botania:block/dirt' } };
+		const flower = { elements: [{ from: [7, 4, 7], to: [9, 12, 9], faces: { north: { texture: '#petal' } } }], textures: { petal: 'botania:block/rose' } };
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/floating', JSON.stringify({ loader: 'botania:floating_flower', flower: { parent: 'botania:block/rose_flower' } }))
+			.set('model', 'botania:block/islands/island_grass', JSON.stringify(island))
+			.set('model', 'botania:block/rose_flower', JSON.stringify(flower));
+		const model = await new ModelLoader(resources).load('test:item/floating');
+		expect(model.elements).toHaveLength(2);
+		// Each merged model keeps its own textures, resolved before the merge so
+		// two models cannot fight over the same `#name`.
+		const bound = model.elements.flatMap(element => Object.values(element.faces).map(face => face?.texture));
+		expect(bound).toContain('botania:block/dirt');
+		expect(bound).toContain('botania:block/rose');
+	});
+});
+
+describe('sprite loaders that skip layer0', () => {
+	async function textures(json: unknown): Promise<Record<string, string>> {
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/thing', JSON.stringify(json))
+			.set('model', 'minecraft:item/generated', JSON.stringify({ parent: 'builtin/generated' }));
+		const model = await new ModelLoader(resources).load('test:item/thing');
+		return model.textures;
+	}
+
+	it('treats a lone `texture` as the sprite layer', async () => {
+		// Tinkers' material loader tints this sprite per material; untinted beats
+		// the "generated model without layers" failure it used to cause.
+		const bound = await textures({
+			loader: 'tconstruct:material',
+			parent: 'minecraft:item/generated',
+			textures: { texture: 'tconstruct:item/tool/pickadze/adze' },
+		});
+		expect(bound.layer0).toBe('tconstruct:item/tool/pickadze/adze');
+	});
+
+	it('never overwrites a layer0 the model already states', async () => {
+		const bound = await textures({
+			loader: 'somemod:thing',
+			parent: 'minecraft:item/generated',
+			textures: { texture: 'somemod:item/other', layer0: 'somemod:item/real' },
+		});
+		expect(bound.layer0).toBe('somemod:item/real');
+	});
+
+	it('stacks tinkers tool parts in declaration order, skipping broad variants', async () => {
+		const bound = await textures({
+			loader: 'tconstruct:tool',
+			parent: 'forge:item/default',
+			textures: {
+				head: 'tconstruct:item/tool/broad_axe/blade',
+				handle: 'tconstruct:item/tool/broad_axe/handle',
+				large_head: 'tconstruct:item/tool/broad_axe/large/blade',
+				particle: 'tconstruct:item/particle',
+			},
+		});
+		expect(bound.layer0).toBe('tconstruct:item/tool/broad_axe/blade');
+		expect(bound.layer1).toBe('tconstruct:item/tool/broad_axe/handle');
+		expect(bound.layer2).toBeUndefined();
+	});
+});
+
+describe('machine models assembled from a casing', () => {
+	it('merges the named casing under overlay faces', async () => {
+		// MI names its casing rather than inlining it, and states overlays as full
+		// texture ids: "casing": "lv" ↔ machine_casing/lv.
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/machine', JSON.stringify({
+				loader: 'modern_industrialization:machine',
+				casing: 'lv',
+				default_overlays: {
+					front: 'modern_industrialization:block/machines/furnace/overlay_front',
+					side: 'modern_industrialization:block/machines/overlay_side',
+					front_active: 'modern_industrialization:block/machines/furnace/overlay_front_active',
+					output: 'modern_industrialization:block/overlays/output',
+				},
+			}))
+			.set('model', 'modern_industrialization:machine_casing/lv', JSON.stringify({
+				elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: { north: { texture: '#all' } } }],
+				textures: { all: 'modern_industrialization:block/basic_machine_hull' },
+			}))
+			.set('model', 'minecraft:block/block', JSON.stringify({ display: { gui: { rotation: [30, 225, 0] } } }));
+		const model = await new ModelLoader(resources).load('test:item/machine');
+
+		// The casing cube plus one overlay cube.
+		expect(model.elements).toHaveLength(2);
+		const overlay = model.elements.find(element => element.faces.north?.texture === '#front');
+		expect(overlay).toBeDefined();
+		expect(overlay?.faces.east?.texture).toBe('#side');
+		// Running and auto-IO overlays are runtime state, not part of the icon.
+		expect(JSON.stringify(model.elements)).not.toContain('front_active');
+		expect(model.textures.output).toBeUndefined();
+	});
+
+	it('resolves a casing that imitates another block', async () => {
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/casing', JSON.stringify({
+				loader: 'modern_industrialization:use_block_model',
+				block: 'modern_industrialization:basic_machine_hull',
+			}))
+			.set('model', 'modern_industrialization:block/basic_machine_hull', JSON.stringify({
+				elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: {} }],
+			}));
+		const model = await new ModelLoader(resources).load('test:item/casing');
+		expect(model.chain).toContain('modern_industrialization:block/basic_machine_hull');
+	});
+
+	it('follows a loader that delegates to one other model', async () => {
+		const resources = new MapResourceManager()
+			.set('model', 'test:item/pipe', JSON.stringify({ loader: 'somemod:wrapper', delegate: 'somemod:block/pipe' }))
+			.set('model', 'somemod:block/pipe', JSON.stringify({
+				elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: {} }],
+			}));
+		const model = await new ModelLoader(resources).load('test:item/pipe');
+		expect(model.chain).toContain('somemod:block/pipe');
+	});
+});

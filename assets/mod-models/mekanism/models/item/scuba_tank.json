@@ -1,0 +1,833 @@
+{
+	"gui_light": "side",
+	"textures": {
+		"texture": "mekanism:render/scuba_set"
+	},
+	"display": {
+		"gui": {
+			"rotation": [
+				30,
+				45,
+				0
+			],
+			"translation": [
+				-2,
+				7,
+				0
+			],
+			"scale": [
+				1,
+				1,
+				1
+			]
+		},
+		"ground": {
+			"rotation": [
+				0,
+				90,
+				0
+			],
+			"translation": [
+				0,
+				3.5,
+				0
+			],
+			"scale": [
+				0.4,
+				0.4,
+				0.4
+			]
+		},
+		"thirdperson_righthand": {
+			"rotation": [
+				75,
+				135,
+				0
+			],
+			"translation": [
+				0,
+				1,
+				3
+			],
+			"scale": [
+				0.6,
+				0.6,
+				0.6
+			]
+		},
+		"firstperson_righthand": {
+			"rotation": [
+				0,
+				135,
+				0
+			],
+			"translation": [
+				0,
+				2,
+				0
+			],
+			"scale": [
+				0.64,
+				0.64,
+				0.64
+			]
+		},
+		"thirdperson_lefthand": {
+			"rotation": [
+				75,
+				135,
+				0
+			],
+			"translation": [
+				0,
+				1,
+				3
+			],
+			"scale": [
+				0.6,
+				0.6,
+				0.6
+			]
+		},
+		"firstperson_lefthand": {
+			"rotation": [
+				0,
+				135,
+				0
+			],
+			"translation": [
+				0,
+				2,
+				0
+			],
+			"scale": [
+				0.64,
+				0.64,
+				0.64
+			]
+		},
+		"fixed": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"translation": [
+				0,
+				8,
+				2
+			],
+			"scale": [
+				1.6,
+				1.6,
+				1.6
+			]
+		}
+	},
+	"elements": [
+		{
+			"name": "tankL",
+			"from": [
+				7,
+				10,
+				12
+			],
+			"to": [
+				10,
+				17,
+				15
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": -14,
+				"y": 30,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						3.25,
+						13.5,
+						3.625,
+						14.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						3.625,
+						13.5,
+						4,
+						14.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						2.875,
+						14.25,
+						3.25,
+						16
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						3.25,
+						14.25,
+						3.625,
+						16
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						3.625,
+						14.25,
+						4,
+						16
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						14.25,
+						4.375,
+						16
+					]
+				}
+			}
+		},
+		{
+			"name": "tankR",
+			"from": [
+				6,
+				10,
+				12
+			],
+			"to": [
+				9,
+				17,
+				15
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": -14,
+				"y": -30,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						3.25,
+						13.5,
+						3.625,
+						14.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						3.625,
+						13.5,
+						4,
+						14.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						2.875,
+						14.25,
+						3.25,
+						16
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						3.25,
+						14.25,
+						3.625,
+						16
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						3.625,
+						14.25,
+						4,
+						16
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						14.25,
+						4.375,
+						16
+					]
+				}
+			}
+		},
+		{
+			"name": "tankDock",
+			"from": [
+				6,
+				13,
+				9
+			],
+			"to": [
+				10,
+				17,
+				14
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.625,
+						13.75,
+						1.125,
+						15
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						1.125,
+						13.75,
+						1.625,
+						15
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						15,
+						0.625,
+						16
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.625,
+						15,
+						1.125,
+						16
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						1.125,
+						15,
+						1.75,
+						16
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						1.75,
+						15,
+						2.25,
+						16
+					]
+				}
+			}
+		},
+		{
+			"name": "capL",
+			"from": [
+				7.5,
+				9,
+				12.5
+			],
+			"to": [
+				9.5,
+				10,
+				14.5
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": -14,
+				"y": 30,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						3.125,
+						12.75,
+						3.375,
+						13.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						3.375,
+						12.75,
+						3.625,
+						13.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						2.875,
+						13.25,
+						3.125,
+						13.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						3.125,
+						13.25,
+						3.375,
+						13.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						3.375,
+						13.25,
+						3.625,
+						13.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						3.625,
+						13.25,
+						3.875,
+						13.5
+					]
+				}
+			}
+		},
+		{
+			"name": "capR",
+			"from": [
+				6.5,
+				9,
+				12.5
+			],
+			"to": [
+				8.5,
+				10,
+				14.5
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": -14,
+				"y": -30,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						3.125,
+						12.75,
+						3.375,
+						13.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						3.375,
+						12.75,
+						3.625,
+						13.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						2.875,
+						13.25,
+						3.125,
+						13.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						3.125,
+						13.25,
+						3.375,
+						13.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						3.375,
+						13.25,
+						3.625,
+						13.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						3.625,
+						13.25,
+						3.875,
+						13.5
+					]
+				}
+			}
+		},
+		{
+			"name": "tankBridge",
+			"from": [
+				7,
+				11,
+				6.5
+			],
+			"to": [
+				9,
+				16,
+				9.5
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": 34,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.375,
+						11.75,
+						0.625,
+						12.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						0.625,
+						11.75,
+						0.875,
+						12.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						12.5,
+						0.375,
+						13.75
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.375,
+						12.5,
+						0.625,
+						13.75
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						0.625,
+						12.5,
+						1,
+						13.75
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						1,
+						12.5,
+						1.25,
+						13.75
+					]
+				}
+			}
+		},
+		{
+			"name": "tankPipeLower",
+			"from": [
+				7.5,
+				10,
+				11
+			],
+			"to": [
+				8.5,
+				14,
+				12
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": 12,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.125,
+						9.25,
+						0.25,
+						9.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						0.25,
+						9.25,
+						0.375,
+						9.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						9.5,
+						0.125,
+						10.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.125,
+						9.5,
+						0.25,
+						10.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						0.25,
+						9.5,
+						0.375,
+						10.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						0.375,
+						9.5,
+						0.5,
+						10.5
+					]
+				}
+			}
+		},
+		{
+			"name": "tankPipeUpper",
+			"from": [
+				7.5,
+				9,
+				9.5
+			],
+			"to": [
+				8.5,
+				10,
+				12.5
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.875,
+						9.5,
+						1,
+						10.25
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						1,
+						9.5,
+						1.125,
+						10.25
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0.5,
+						10.25,
+						0.875,
+						10.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.875,
+						10.25,
+						1,
+						10.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						1,
+						10.25,
+						1.375,
+						10.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						1.375,
+						10.25,
+						1.5,
+						10.5
+					]
+				}
+			}
+		},
+		{
+			"name": "tankBackBrace",
+			"from": [
+				5,
+				10,
+				8.5
+			],
+			"to": [
+				11,
+				13,
+				10.5
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8,
+					8
+				],
+				"x": 14,
+				"z": 180
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.25,
+						10.5,
+						1,
+						11
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						1,
+						10.5,
+						1.75,
+						11
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						11,
+						0.25,
+						11.75
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.25,
+						11,
+						1,
+						11.75
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						1,
+						11,
+						1.25,
+						11.75
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						11,
+						2,
+						11.75
+					]
+				}
+			}
+		}
+	]
+}

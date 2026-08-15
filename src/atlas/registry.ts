@@ -55,9 +55,17 @@ class InferredItemTrimSource implements AtlasSource {
 				new ResourceLocator(locator.namespace, 'trims/color_palettes/trim_palette'),
 				ResourceLocator.parse('minecraft:trims/color_palettes/trim_palette'),
 			]);
+			// A trim material from a mod carries its namespace in the sprite name
+			// as `<namespace>-<path>`, but keeps its palette under its own
+			// namespace: blue_skies-moonstone lives at
+			// blue_skies:trims/color_palettes/moonstone.
+			const separator = variant.indexOf('-');
 			const palette = await this.firstTexture([
 				new ResourceLocator(locator.namespace, `trims/color_palettes/${variant}`),
 				ResourceLocator.parse(`minecraft:trims/color_palettes/${variant}`),
+				...(separator > 0
+					? [new ResourceLocator(variant.slice(0, separator), `trims/color_palettes/${variant.slice(separator + 1)}`)]
+					: []),
 			]);
 			if (!key || !palette) {
 				return null;

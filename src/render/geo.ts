@@ -198,6 +198,8 @@ export function geoToFaces(geo: ParsedGeo): FaceGeometry[] {
 					rotation: 0,
 					tintIndex: null,
 					shadeDirectionOverride: null,
+					emissive: false,
+					alpha: 1,
 				});
 			}
 		}
@@ -268,8 +270,36 @@ export async function findGeoForItem(
 				return { geo, texture };
 			}
 		}
+		// Mods just as often file the skin by name under a directory of their own
+		// choosing (ars_nouveau keeps geo/<name>.geo.json beside
+		// textures/block/<name>.png), so fall back to matching the leaf name.
+		const named = await findTextureByName(resources, locator.namespace, geoPath.split('/').pop()?.replace(/\.geo\.json$/, '') ?? '');
+		if (named) {
+			return { geo, texture: named };
+		}
 	}
 	return null;
+}
+
+/** The shortest-path texture whose file name is exactly `name`. */
+async function findTextureByName(
+	resources: ResourceManager,
+	namespace: string,
+	name: string,
+): Promise<ResourceLocator | null> {
+	if (name === '') {
+		return null;
+	}
+	let best: ResourceLocator | null = null;
+	for (const locator of await resources.listResources('texture', namespace)) {
+		if (locator.path.split('/').pop() !== name) {
+			continue;
+		}
+		if (best === null || locator.path.length < best.path.length) {
+			best = locator;
+		}
+	}
+	return best;
 }
 
 /** Render a parsed geo with the standard block gui pose. */

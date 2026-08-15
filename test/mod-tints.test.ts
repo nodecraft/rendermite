@@ -4,6 +4,7 @@ import { modTintPackPath } from '../src/builtin.ts';
 import { defaultProperties } from '../src/items/definition.ts';
 import { resolveItem } from '../src/items/discovery.ts';
 import { curatedTintOverrides, harvestTintOverrides } from '../src/mods/tints.ts';
+import { dyedVariantTint } from '../src/render/entity-fallback.ts';
 import { resolveTints } from '../src/render/tints.ts';
 import { ResourceLocator } from '../src/resources/locator.ts';
 import { FolderResourceManager } from '../src/resources/manager.ts';
@@ -127,6 +128,20 @@ describe('curated tint overrides', () => {
 		}
 	});
 
+	it('colours every mystical agriculture augment distinctly', async () => {
+		// They share one greyscale sprite, so without these the whole set renders
+		// alike. Two constants each, read out of the mod's own augment classes.
+		const resources = curatedTintOverrides();
+		const seen = new Set<string>();
+		for (const item of ['absorption_i', 'luck_i', 'night_vision', 'fire_resistance', 'blindness_resistance']) {
+			const instructions = await resolveItem(resources, `mysticalagriculture:${item}_augment`, defaultProperties());
+			const tints = await resolveTints(instructions[0].tints, { textures: {} as TextureLoader });
+			expect(tints).toHaveLength(2);
+			seen.add(JSON.stringify(tints));
+		}
+		expect(seen.size).toBe(5);
+	});
+
 	it('holds only item definitions, one namespace directory per mod', async () => {
 		const pack = new FolderResourceManager(modTintPackPath());
 		const namespaces = await pack.listNamespaces();
@@ -135,5 +150,30 @@ describe('curated tint overrides', () => {
 			const entries = await pack.listResources('itemDefinition', namespace);
 			expect(entries.length).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe('dye-named variant tints', () => {
+	it('reads the dye colour out of a mod item name', () => {
+		// waystones' sharestones register DyeColor.getTextColor() in client code,
+		// so on those releases the name is the only record of the colour left.
+		expect(dyedVariantTint('waystones:red_sharestone')).toEqual({
+			r: 0xB0 / 255,
+			g: 0x2E / 255,
+			b: 0x26 / 255,
+		});
+		expect(dyedVariantTint('waystones:light_blue_portstone')).toEqual({
+			r: 0x3A / 255,
+			g: 0xB3 / 255,
+			b: 0xDA / 255,
+		});
+	});
+
+	it('leaves vanilla and undyed names alone', () => {
+		// Vanilla states its own tints; guessing from a name would override them.
+		expect(dyedVariantTint('minecraft:red_bed')).toBeNull();
+		expect(dyedVariantTint('waystones:warp_stone')).toBeNull();
+		// `redstone` starts with a dye name but is not `<dye>_<thing>`.
+		expect(dyedVariantTint('waystones:redstone')).toBeNull();
 	});
 });

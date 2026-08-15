@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/blindness_resistance_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 5243008
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 2555968
+			}
+		]
+	}
+}

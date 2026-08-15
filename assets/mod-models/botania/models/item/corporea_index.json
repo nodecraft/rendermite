@@ -1,0 +1,349 @@
+{
+	"gui_light": "side",
+	"textures": {
+		"texture": "botania:model/corporea_index"
+	},
+	"display": {
+		"firstperson_righthand": {
+			"rotation": [
+				0,
+				315,
+				0
+			],
+			"scale": [
+				0.4,
+				0.4,
+				0.4
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"fixed": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"scale": [
+				0.5,
+				0.5,
+				0.5
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"ground": {
+			"rotation": [
+				0,
+				0,
+				0
+			],
+			"scale": [
+				0.25,
+				0.25,
+				0.25
+			],
+			"translation": [
+				0,
+				3,
+				0
+			]
+		},
+		"gui": {
+			"rotation": [
+				30,
+				45,
+				0
+			],
+			"scale": [
+				0.625,
+				0.625,
+				0.625
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"head": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"scale": [
+				1,
+				1,
+				1
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"thirdperson_righthand": {
+			"rotation": [
+				75,
+				315,
+				0
+			],
+			"scale": [
+				0.375,
+				0.375,
+				0.375
+			],
+			"translation": [
+				0,
+				2.5,
+				0
+			]
+		}
+	},
+	"elements": [
+		{
+			"name": "ring",
+			"from": [
+				2.8,
+				3.12,
+				2.8
+			],
+			"to": [
+				13.2,
+				13.52,
+				13.2
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8.32,
+					8
+				],
+				"x": 39.23152,
+				"y": -14.47751,
+				"z": 39.23152
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						0,
+						4,
+						4
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						0,
+						6,
+						4
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						4,
+						2,
+						8
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						4,
+						4,
+						8
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						4,
+						6,
+						8
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						6,
+						4,
+						8,
+						8
+					]
+				}
+			}
+		},
+		{
+			"name": "ring",
+			"from": [
+				3.45,
+				3.77,
+				3.45
+			],
+			"to": [
+				12.55,
+				12.87,
+				12.55
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8.32,
+					8
+				],
+				"x": 67.79235,
+				"y": -48.59038,
+				"z": 67.79235
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						0,
+						4,
+						4
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						0,
+						6,
+						4
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						4,
+						2,
+						8
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						2,
+						4,
+						4,
+						8
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						4,
+						4,
+						6,
+						8
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						6,
+						4,
+						8,
+						8
+					]
+				}
+			}
+		},
+		{
+			"name": "cube",
+			"from": [
+				4.01875,
+				4.33875,
+				4.01875
+			],
+			"to": [
+				11.98125,
+				12.30125,
+				11.98125
+			],
+			"rotation": {
+				"origin": [
+					8,
+					8.32,
+					8
+				],
+				"x": 180,
+				"y": -90,
+				"z": 0
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						10,
+						0,
+						12,
+						4
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						12,
+						0,
+						14,
+						4
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						8,
+						4,
+						10,
+						8
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						10,
+						4,
+						12,
+						8
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						12,
+						4,
+						14,
+						8
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						14,
+						4,
+						16,
+						8
+					]
+				}
+			}
+		}
+	]
+}

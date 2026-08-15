@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/jump_boost_ii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 16448250
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 4558763
+			}
+		]
+	}
+}

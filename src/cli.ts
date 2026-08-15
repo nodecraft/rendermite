@@ -11,6 +11,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 import { bedCompatPath, builtinPackPath } from './builtin.ts';
+import { curatedModelOverrides } from './mods/models.ts';
 import { curatedTintOverrides, harvestTintOverrides } from './mods/tints.ts';
 import { JarResourceManager } from './resources/jar.ts';
 import { FolderResourceManager, LayeredResourceManager } from './resources/manager.ts';
@@ -128,6 +129,7 @@ if (values.mod?.length) {
 	const base = new LayeredResourceManager([
 		resources,
 		curatedTintOverrides(),
+		curatedModelOverrides(),
 		...values.mod.map(jar => new JarResourceManager(jar)),
 	]);
 	resources = base;

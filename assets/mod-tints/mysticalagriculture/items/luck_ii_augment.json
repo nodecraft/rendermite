@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/luck_ii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 4185088
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 3381504
+			}
+		]
+	}
+}

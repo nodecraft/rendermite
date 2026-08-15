@@ -108,23 +108,43 @@ export function tintTexture(texture: FloatTexture, tintR: number, tintG: number,
 }
 
 /**
+ * Scale the alpha channel by a constant, over the same 1px-expanded UV window
+ * darkenTexture uses. Straight alpha, so colour is left alone.
+ */
+export function scaleTextureAlpha(texture: FloatTexture, factor: number, u1: number, v1: number, u2: number, v2: number): void {
+	const { data } = texture;
+	forEachUvPixel(texture, u1, v1, u2, v2, (offset) => {
+		data[offset + 3] = q16(data[offset + 3] * factor);
+	});
+}
+
+/**
  * Upstream darkenTexture: blend pure black with alpha = amount * pixel.alpha,
  * restricted to the UV bounding box expanded by 1px on each side.
  */
 export function darkenTexture(texture: FloatTexture, amount: number, u1: number, v1: number, u2: number, v2: number): void {
-	let startX = Math.floor(Math.min(u1, u2));
-	let endX = Math.ceil(Math.max(u1, u2));
-	let startY = Math.floor(Math.min(v1, v2));
-	let endY = Math.ceil(Math.max(v1, v2));
-	startX = Math.max(0, startX - 1);
-	startY = Math.max(0, startY - 1);
-	endX = Math.min(texture.width - 1, endX + 1);
-	endY = Math.min(texture.height - 1, endY + 1);
 	const { data } = texture;
+	forEachUvPixel(texture, u1, v1, u2, v2, (offset) => {
+		blendPixel(data, offset, 0, 0, 0, amount * data[offset + 3]);
+	});
+}
+
+/** The UV bounding box expanded by 1px on each side, clamped to the texture. */
+function forEachUvPixel(
+	texture: FloatTexture,
+	u1: number,
+	v1: number,
+	u2: number,
+	v2: number,
+	visit: (offset: number) => void,
+): void {
+	const startX = Math.max(0, Math.floor(Math.min(u1, u2)) - 1);
+	const startY = Math.max(0, Math.floor(Math.min(v1, v2)) - 1);
+	const endX = Math.min(texture.width - 1, Math.ceil(Math.max(u1, u2)) + 1);
+	const endY = Math.min(texture.height - 1, Math.ceil(Math.max(v1, v2)) + 1);
 	for (let y = startY; y <= endY; y++) {
 		for (let x = startX; x <= endX; x++) {
-			const offset = (y * texture.width + x) * 4;
-			blendPixel(data, offset, 0, 0, 0, amount * data[offset + 3]);
+			visit((y * texture.width + x) * 4);
 		}
 	}
 }

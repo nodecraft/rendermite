@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/haste_iii_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 12234496
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 8418560
+			}
+		]
+	}
+}

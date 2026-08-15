@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/weakness_resistance_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 12517500
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 8388691
+			}
+		]
+	}
+}

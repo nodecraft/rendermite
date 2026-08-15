@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { legacyTintsForChain } from '../src/render/legacy-tints.ts';
+import { resolveTint } from '../src/render/tints.ts';
 
 import type { Texture, TextureLoader } from '../src/textures/loader.ts';
 
@@ -70,5 +71,56 @@ describe('legacy vanilla tints', () => {
 		expect(await legacyTintsForChain(['minecraft:item/stone', 'minecraft:item/generated'], noTextures)).toBeNull();
 		// Mod tints are sourced as item definitions instead (src/mods/tints.ts).
 		expect(await legacyTintsForChain(['advanced_ae:item/quantum_helmet', 'minecraft:item/generated'], noTextures)).toBeNull();
+	});
+});
+
+describe('AE2 tint sources', () => {
+	const context = { textures: {} as never };
+
+	it('resolves an ae2:color variant from the AEColor palette', async () => {
+		// AEColor states dark/medium/bright only in its static initialiser.
+		expect(await resolveTint({ type: 'ae2:color', color: 'fluix', variant: 'dark' } as never, context))
+			.toEqual({ r: 0x5A / 255, g: 0x47 / 255, b: 0x9E / 255 });
+		expect(await resolveTint({ type: 'ae2:color', color: 'fluix', variant: 'bright' } as never, context))
+			.toEqual({ r: 0xE2 / 255, g: 0xA3 / 255, b: 0xE3 / 255 });
+	});
+
+	it('defaults an ae2:color with no variant to medium', async () => {
+		expect(await resolveTint({ type: 'ae2:color', color: 'green' } as never, context))
+			.toEqual({ r: 0x17 / 255, g: 0xB8 / 255, b: 0x6D / 255 });
+	});
+
+	it('rejects a colour AEColor does not define', async () => {
+		await expect(resolveTint({ type: 'ae2:color', color: 'chartreuse' } as never, context))
+			.rejects.toThrow(/ae2:color/);
+	});
+
+	it('shows a storage cell as empty and a portable cell in its stock colour', async () => {
+		expect(await resolveTint({ type: 'ae2:storage_cell_state' } as never, context))
+			.toEqual({ r: 0, g: 1, b: 0 });
+		expect(await resolveTint({ type: 'ae2:portable_cell_color' } as never, context))
+			.toEqual({ r: 0x80 / 255, g: 0xCF / 255, b: 0xFF / 255 });
+	});
+});
+
+describe('tint types no release states', () => {
+	const context = { textures: {} as never };
+
+	it('costs the colour, not the icon, when a mod computes its tint in code', async () => {
+		// mysticalagriculture:augment and silentgear:material are resolved from the
+		// registry at runtime with no stated default. The sprite exists either way,
+		// so an unresolved tint must not fail the item.
+		expect(await resolveTint({ type: 'mysticalagriculture:augment', id: 'x', index: 0 } as never, context)).toBeNull();
+		expect(await resolveTint({ type: 'silentgear:material' } as never, context)).toBeNull();
+	});
+
+	it('still prefers a stated default over dropping the tint', async () => {
+		expect(await resolveTint({ type: 'somemod:custom', default: 0xFF_00_00 } as never, context))
+			.toEqual({ r: 1, g: 0, b: 0 });
+	});
+
+	it('still rejects a value it cannot parse', async () => {
+		await expect(resolveTint({ type: 'minecraft:constant', value: 'nonsense' } as never, context))
+			.rejects.toThrow(/Unparseable/);
 	});
 });

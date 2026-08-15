@@ -16,5 +16,9 @@ generators).
 Layout is `<namespace>/<models|textures|items|atlases>/…` (no `assets/` nesting) — mount with
 `FolderResourceManager` above the version's own assets.
 
-`mod-tints/` is ours rather than vendored: curated item definitions for mod items that
-register their tint colors in client code. See `mod-tints/README.md`.
+Two packs here are ours rather than vendored, both layered above the mod jars:
+
+- `mod-tints/` — curated item definitions for mod items that register their tint colors in
+  client code. See `mod-tints/README.md`.
+- `mod-models/` — curated geometry for mod items the game draws in code, ported from the
+  mod's own Java model classes. See `mod-models/README.md`.

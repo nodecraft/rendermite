@@ -1,0 +1,502 @@
+{
+	"gui_light": "side",
+	"textures": {
+		"texture": "botania:model/hourglass"
+	},
+	"display": {
+		"firstperson_righthand": {
+			"rotation": [
+				0,
+				315,
+				0
+			],
+			"scale": [
+				0.4,
+				0.4,
+				0.4
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"fixed": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"scale": [
+				0.5,
+				0.5,
+				0.5
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"ground": {
+			"rotation": [
+				0,
+				0,
+				0
+			],
+			"scale": [
+				0.25,
+				0.25,
+				0.25
+			],
+			"translation": [
+				0,
+				3,
+				0
+			]
+		},
+		"gui": {
+			"rotation": [
+				30,
+				45,
+				0
+			],
+			"scale": [
+				0.625,
+				0.625,
+				0.625
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"head": {
+			"rotation": [
+				0,
+				180,
+				0
+			],
+			"scale": [
+				1,
+				1,
+				1
+			],
+			"translation": [
+				0,
+				0,
+				0
+			]
+		},
+		"thirdperson_righthand": {
+			"rotation": [
+				75,
+				315,
+				0
+			],
+			"scale": [
+				0.375,
+				0.375,
+				0.375
+			],
+			"translation": [
+				0,
+				2.5,
+				0
+			]
+		}
+	},
+	"elements": [
+		{
+			"name": "top",
+			"from": [
+				5.4,
+				3.1,
+				5
+			],
+			"to": [
+				11.4,
+				4.1,
+				11
+			],
+			"rotation": {
+				"origin": [
+					8.4,
+					9.6,
+					8
+				],
+				"x": 180,
+				"z": 1
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						6.5,
+						0,
+						8,
+						3
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						8,
+						0,
+						9.5,
+						3
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						5,
+						3,
+						6.5,
+						3.5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						6.5,
+						3,
+						8,
+						3.5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						8,
+						3,
+						9.5,
+						3.5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						3,
+						11,
+						3.5
+					]
+				}
+			}
+		},
+		{
+			"name": "glass_top",
+			"from": [
+				5.9,
+				4.1,
+				5.5
+			],
+			"to": [
+				10.9,
+				9.1,
+				10.5
+			],
+			"rotation": {
+				"origin": [
+					8.4,
+					9.6,
+					8
+				],
+				"x": 180,
+				"z": 1
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						0,
+						2.5,
+						2.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						2.5,
+						0,
+						3.75,
+						2.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						2.5,
+						1.25,
+						5
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						2.5,
+						2.5,
+						5
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						2.5,
+						2.5,
+						3.75,
+						5
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						3.75,
+						2.5,
+						5,
+						5
+					]
+				}
+			}
+		},
+		{
+			"name": "ring",
+			"from": [
+				6.9,
+				9.1,
+				6.5
+			],
+			"to": [
+				9.9,
+				10.1,
+				9.5
+			],
+			"rotation": {
+				"origin": [
+					8.4,
+					9.6,
+					8
+				],
+				"x": 180,
+				"z": 1
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						0.75,
+						10,
+						1.5,
+						11.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						1.5,
+						10,
+						2.25,
+						11.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						11.5,
+						0.75,
+						12
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						0.75,
+						11.5,
+						1.5,
+						12
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						1.5,
+						11.5,
+						2.25,
+						12
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						2.25,
+						11.5,
+						3,
+						12
+					]
+				}
+			}
+		},
+		{
+			"name": "glass_bottom",
+			"from": [
+				5.9,
+				10.1,
+				5.5
+			],
+			"to": [
+				10.9,
+				15.1,
+				10.5
+			],
+			"rotation": {
+				"origin": [
+					8.4,
+					9.6,
+					8
+				],
+				"x": 180,
+				"z": 1
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						5,
+						2.5,
+						7.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						2.5,
+						5,
+						3.75,
+						7.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						0,
+						7.5,
+						1.25,
+						10
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						1.25,
+						7.5,
+						2.5,
+						10
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						2.5,
+						7.5,
+						3.75,
+						10
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						3.75,
+						7.5,
+						5,
+						10
+					]
+				}
+			}
+		},
+		{
+			"name": "bottom",
+			"from": [
+				5.4,
+				15.1,
+				5
+			],
+			"to": [
+				11.4,
+				16.1,
+				11
+			],
+			"rotation": {
+				"origin": [
+					8.4,
+					9.6,
+					8
+				],
+				"x": 180,
+				"z": 1
+			},
+			"faces": {
+				"down": {
+					"texture": "#texture",
+					"uv": [
+						6.5,
+						3.5,
+						8,
+						6.5
+					]
+				},
+				"up": {
+					"texture": "#texture",
+					"uv": [
+						8,
+						3.5,
+						9.5,
+						6.5
+					]
+				},
+				"west": {
+					"texture": "#texture",
+					"uv": [
+						5,
+						6.5,
+						6.5,
+						7
+					]
+				},
+				"north": {
+					"texture": "#texture",
+					"uv": [
+						6.5,
+						6.5,
+						8,
+						7
+					]
+				},
+				"east": {
+					"texture": "#texture",
+					"uv": [
+						8,
+						6.5,
+						9.5,
+						7
+					]
+				},
+				"south": {
+					"texture": "#texture",
+					"uv": [
+						9.5,
+						6.5,
+						11,
+						7
+					]
+				}
+			}
+		}
+	]
+}

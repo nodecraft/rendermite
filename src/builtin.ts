@@ -20,3 +20,8 @@ export function bedCompatPath(): string {
 export function modTintPackPath(): string {
 	return path.join(assetsRoot, 'mod-tints');
 }
+
+/** Curated geometry for mod items the game draws in code (builtin/entity). */
+export function modModelPackPath(): string {
+	return path.join(assetsRoot, 'mod-models');
+}

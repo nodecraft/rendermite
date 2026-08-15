@@ -5,6 +5,7 @@
  * jar already held), plus synthesized item models per namespace.
  */
 
+import { curatedModelOverrides } from './models.ts';
 import { synthesizeItemModels } from './synthesize.ts';
 import { curatedTintOverrides, harvestTintOverrides } from './tints.ts';
 import { JarResourceManager, UnsafeJarError } from '../resources/jar.ts';
@@ -81,9 +82,14 @@ export async function prepareModResources(options: PrepareModsOptions): Promise<
 	}
 
 	// Vanilla wins minecraft:, jars win their own namespaces and backfill
-	// mod-added vanilla paths. Curated tints sit above the jars on purpose —
-	// see src/mods/tints.ts.
-	const base = new LayeredResourceManager([options.vanilla, curatedTintOverrides(), ...jarLayers]);
+	// mod-added vanilla paths. Curated tints and models sit above the jars on
+	// purpose — see src/mods/tints.ts and src/mods/models.ts.
+	const base = new LayeredResourceManager([
+		options.vanilla,
+		curatedTintOverrides(),
+		curatedModelOverrides(),
+		...jarLayers,
+	]);
 
 	const namespaces: string[] = [];
 	let synthesized = 0;

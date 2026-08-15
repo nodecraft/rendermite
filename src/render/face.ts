@@ -3,7 +3,12 @@
  * port of upstream Face::render (docs/research/renderchest-spec.md §4).
  */
 
-import { cloneFloatTexture, darkenTexture, tintTexture } from './blend.ts';
+import {
+	cloneFloatTexture,
+	darkenTexture,
+	scaleTextureAlpha,
+	tintTexture,
+} from './blend.ts';
 import {
 	RowCursor,
 	clearFaceBuffer,
@@ -116,13 +121,15 @@ export function renderFace(
 	const absU2 = geometry.uv2[0] * face.texture.width;
 	const absV2 = geometry.uv2[1] * face.texture.height;
 	const tint = geometry.tintIndex !== null ? face.tint : null;
-	const darkness = 1 - face.light.lightLevelForNormal(shadeDirection);
+	// Emissive elements stand in for a mod's fullbright render type, where the
+	// game ignores the light source entirely.
+	const darkness = geometry.emissive ? 0 : 1 - face.light.lightLevelForNormal(shadeDirection);
 
 	// Shading depends only on the source texture, the tint, the light level and
 	// the UV window, and a block model's elements repeat those combinations
 	// constantly (every top face of a fence shares one). Cloning and re-darkening
 	// a whole texture per face was pure repeat work.
-	const shadeKey = `${tint ? `${tint.r},${tint.g},${tint.b}` : '-'}|${darkness}|${absU1},${absV1},${absU2},${absV2}`;
+	const shadeKey = `${tint ? `${tint.r},${tint.g},${tint.b}` : '-'}|${darkness}|${geometry.alpha}|${absU1},${absV1},${absU2},${absV2}`;
 	let byKey = shadeCache?.get(face.texture);
 	let texture = byKey?.get(shadeKey);
 	if (!texture) {
@@ -132,6 +139,9 @@ export function renderFace(
 			tintTexture(texture, tint.r, tint.g, tint.b);
 		}
 		darkenTexture(texture, darkness, absU1, absV1, absU2, absV2);
+		if (geometry.alpha < 1) {
+			scaleTextureAlpha(texture, geometry.alpha, absU1, absV1, absU2, absV2);
+		}
 		if (shadeCache) {
 			byKey ??= new Map();
 			byKey.set(shadeKey, texture);

@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/slow_falling_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 16773073
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 10851706
+			}
+		]
+	}
+}

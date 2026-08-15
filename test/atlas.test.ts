@@ -36,3 +36,29 @@ describe('inferred flat item trims', () => {
 		expect(await textures.load(ResourceLocator.parse('example:trims/items/gloves_trim_unknown'))).toBeNull();
 	});
 });
+
+describe('trim materials from mods', () => {
+	it('finds a namespaced material\'s palette under its own namespace', async () => {
+		// A mod trim material's asset_name is `<namespace>-<path>`, but its palette
+		// stays in the mod: blue_skies-moonstone ↔ blue_skies:.../moonstone.
+		const resources = new MapResourceManager()
+			.set('texture', 'minecraft:trims/items/boots_trim', await pixel(128, 128, 128))
+			.set('texture', 'minecraft:trims/color_palettes/trim_palette', await pixel(128, 128, 128))
+			.set('texture', 'blue_skies:trims/color_palettes/moonstone', await pixel(217, 238, 247));
+		const textures = new TextureLoader(resources);
+		textures.setAtlasResolver(await loadAtlasResolver(resources, locator => textures.load(locator)));
+
+		const resolved = await textures.load(ResourceLocator.parse('minecraft:trims/items/boots_trim_blue_skies-moonstone'));
+		expect(resolved).not.toBeNull();
+		expect([...resolved!.data]).toEqual([217, 238, 247, 255]);
+	});
+
+	it('still refuses when the mod ships no palette for the material', async () => {
+		const resources = new MapResourceManager()
+			.set('texture', 'minecraft:trims/items/boots_trim', await pixel(128, 128, 128))
+			.set('texture', 'minecraft:trims/color_palettes/trim_palette', await pixel(128, 128, 128));
+		const textures = new TextureLoader(resources);
+		textures.setAtlasResolver(await loadAtlasResolver(resources, locator => textures.load(locator)));
+		expect(await textures.load(ResourceLocator.parse('minecraft:trims/items/boots_trim_blue_skies-moonstone'))).toBeNull();
+	});
+});

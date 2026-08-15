@@ -1,0 +1,16 @@
+{
+	"model": {
+		"type": "minecraft:model",
+		"model": "mysticalagriculture:item/absorption_iv_augment",
+		"tints": [
+			{
+				"type": "minecraft:constant",
+				"value": 8295845
+			},
+			{
+				"type": "minecraft:constant",
+				"value": 3844804
+			}
+		]
+	}
+}
