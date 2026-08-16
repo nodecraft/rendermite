@@ -136,7 +136,8 @@ Plus per-era shims from the ui pipeline: synthesized `atlases/blocks.json` below
   rather than an image-sized pair per face.
 - Face shading (clone + tint + darken) memoized per texture/tint/light/UV window; animated
   models reuse geometry, matrices, paint order and any face whose texture did not change
-  that tick.
+  that tick. **The memo is bounded by bytes and every user has a per-sample fallback — see
+  below.**
 - Texture decode and models cached per worker, both LRU-bounded (textures by decoded bytes)
   so a run across thousands of namespaces does not grow without limit.
 - Client jars index with their central directory read in one go; per-record reads cost more
@@ -145,6 +146,41 @@ Plus per-era shims from the ui pipeline: synthesized `atlases/blocks.json` below
   (`src/resources/descriptor.ts`); otherwise the same `ItemPipeline` runs in-process.
 - Animated timelines are bounded: a combined cycle beyond the frame cap is sampled evenly
   across its whole length, never truncated, and identical neighbours coalesce.
+
+### Never pre-shade a texture without a budget
+
+Shading a face by cloning its texture and darkening the clone is the fast path when faces
+reuse the same (texture, tint, light, UV window) — a block model's do, constantly. It is
+catastrophic when they do not, because the cost is `faces x texels` and nothing bounds it.
+Three separate call sites have hit this, each found only after a process died:
+
+| path | model | cost for one 64px icon |
+| --- | --- | ---: |
+| `renderFace` (geo) | 1,208-cube GeckoLib gun, 6,136 unique-UV faces | 20 GB |
+| `renderElementModelWith` | 1,280-element prop over five sheets | ~1 GB/frame |
+| `renderObjModel` | 1,493-triangle OBJ across 65 light buckets | 1.3 GB |
+
+The rule for any new path that shades a face:
+
+1. **Bound the memo by bytes**, not by entry count. Entry count says nothing about a 1024x1024
+   sheet, and detailed models produce a distinct key per face.
+2. **Fall through to `shadeTexel`** once the budget is spent, rather than refusing the item or
+   dropping the memo. Per-sample shading costs pixels drawn (hundreds) instead of atlas texels
+   (millions) and is exactly equivalent.
+3. **Derive the shading parameters once** and share them between the memo and the fallback.
+   Writing `1 - bucket / 64` in both branches invites a drift that renders plausibly either
+   way and is therefore nearly impossible to spot.
+
+`test/shading.test.ts` pins the equivalence the fallback depends on. It is the load-bearing
+test for all three paths: if `shadeTexel` and `darkenTexture` ever disagree, every model past
+its budget renders subtly wrong, and only those models.
+
+Two failure modes are NOT solved by bounding, and were each tried and reverted:
+
+- **Refusing the item** when it is too costly. It dropped ~70 icons including curated ones we
+  ship ourselves.
+- **Downscaling the texture** to fit. It works, but it loses authored detail for a problem the
+  per-sample path solves outright.
 
 ## Testing
 
