@@ -416,3 +416,38 @@ describe('barrels composed from part models', () => {
 		expect(model.display.gui).toBeDefined();
 	});
 });
+
+describe('unresolvable parents', () => {
+	it('draws a model that has its own geometry despite a missing parent', async () => {
+		// Blockbench writes stray bare parents: heralds_luna's 5,000 banners all
+		// declare `"parent": "flag"`, resolving to a minecraft:flag nothing ships,
+		// while carrying every element and texture they need.
+		const resources = new MapResourceManager()
+			.set('model', 'example:custom/banner', JSON.stringify({
+				parent: 'flag',
+				textures: { all: 'example:block/banner' },
+				elements: [{ from: [0, 0, 0], to: [16, 16, 16], faces: { north: { texture: '#all', uv: [0, 0, 16, 16] } } }],
+			}));
+		const model = await new ModelLoader(resources).load('example:custom/banner');
+		expect(model.elements).toHaveLength(1);
+		expect(model.textures.all).toBe('example:block/banner');
+		// The dead link is simply not in the chain.
+		expect(model.chain).toEqual(['example:custom/banner']);
+	});
+
+	it('still fails when the model itself is missing', async () => {
+		// Only a PARENT may be absent; the model asked for has to exist.
+		const resources = new MapResourceManager();
+		await expect(new ModelLoader(resources).load('example:item/nope')).rejects.toThrow('Model not found');
+	});
+
+	it('leaves a parentless model with nothing to draw undrawable', async () => {
+		// Tolerating the dead link must not invent geometry: this one still has
+		// no elements and no layers, and the render-side checks catch it.
+		const resources = new MapResourceManager()
+			.set('model', 'example:item/empty', JSON.stringify({ parent: 'flag' }));
+		const model = await new ModelLoader(resources).load('example:item/empty');
+		expect(model.elements).toEqual([]);
+		expect(model.builtinParent).toBeNull();
+	});
+});

@@ -136,3 +136,46 @@ describe('minifyStylesheet', () => {
 		expect(result === broken || result.length > 0).toBe(true);
 	});
 });
+
+describe('frame delays stay encodable', () => {
+	/** An animated sprite whose mcmeta declares `frametime`. */
+	async function animated(frametime: number): Promise<MapResourceManager> {
+		const strip = await sharp({ create: { width: 4, height: 8, channels: 4, background: { r: 90, g: 140, b: 200, alpha: 1 } } })
+			.png()
+			.toBuffer();
+		return new MapResourceManager()
+			.set('texture', 'mod:item/blinker', strip)
+			.set('textureMeta', 'mod:item/blinker', Buffer.from(JSON.stringify({ animation: { frametime } })))
+			.set('model', 'minecraft:item/generated', JSON.stringify({ parent: 'builtin/generated' }))
+			.set('model', 'mod:item/blinker', JSON.stringify({
+				parent: 'minecraft:item/generated',
+				textures: { layer0: 'mod:item/blinker' },
+			}));
+	}
+
+	async function delays(frametime: number): Promise<number[]> {
+		const resources = await animated(frametime);
+		const model = await new ModelLoader(resources).load('mod:item/blinker');
+		const { delaysMs } = await renderModelFrames(model, new TextureLoader(resources), {
+			size: 8,
+			quality: 1,
+			lightingProfile: 'modern',
+		});
+		return delaysMs;
+	}
+
+	it('rounds a fractional frametime to whole milliseconds', async () => {
+		// ltc2 ships frametime 1.75, which is 87.5ms — sharp takes a uint16.
+		for (const delay of await delays(1.75)) {
+			expect(Number.isInteger(delay)).toBe(true);
+		}
+	});
+
+	it('clamps a frametime longer than the encoder can express', async () => {
+		// mikedongles holds a frame for 1500 ticks: 75s, past the 65535ms field.
+		for (const delay of await delays(1500)) {
+			expect(delay).toBeLessThanOrEqual(65535);
+			expect(delay).toBeGreaterThanOrEqual(50);
+		}
+	});
+});
