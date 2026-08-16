@@ -604,7 +604,23 @@ export class ModelLoader {
 				throw new ModelResolutionError(`Model parent chain exceeds ${MAX_PARENT_DEPTH} at ${locator}`);
 			}
 			seen.add(key);
-			const json = await this.readModelJson(current);
+			let json: ModelJson;
+			try {
+				json = await this.readModelJson(current);
+			} catch (err) {
+				// The model asked for itself must exist; a PARENT that does not is
+				// survivable. Blockbench writes stray bare parents — heralds_luna's
+				// 5,000 banners all inherit `"parent": "flag"`, which resolves to a
+				// `minecraft:flag` nothing ships — while carrying their own elements,
+				// textures and display. Treating the missing link as the end of the
+				// chain draws them; a model that really needed the parent still has
+				// nothing to draw and fails on the drawability checks below, so this
+				// can substitute a blank icon for a loud error but never a wrong one.
+				if (chain.length === 0 || !(err instanceof ModelResolutionError)) {
+					throw err;
+				}
+				break;
+			}
 			chain.push({ locator: current, json });
 			if (json.parent === undefined) {
 				current = null;

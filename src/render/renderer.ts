@@ -68,6 +68,9 @@ export interface AnimationDiagnostics {
 const TICK_MS = 50;
 const MAX_ANIMATION_FRAMES = 128;
 
+/** Per-frame delay is a uint16 of milliseconds in both WebP and GIF. */
+const MAX_FRAME_DELAY_MS = 65535;
+
 function gcd(left: number, right: number): number {
 	return right === 0 ? left : gcd(right, left % right);
 }
@@ -173,7 +176,14 @@ export async function renderModelFrames(
 
 	const delaysMs = emitTicks.map((tick, index) => {
 		const next = index + 1 < emitTicks.length ? emitTicks[index + 1] : ticks;
-		return Math.max(TICK_MS, (next - tick) * TICK_MS);
+		// Encoders take the per-frame delay as a uint16 of whole milliseconds, and
+		// mods ship mcmeta that lands outside that both ways: a fractional
+		// `frametime` gives 87.5 ms a frame (ltc2), and a frametime of 1500 gives
+		// 75 s (mikedongles). Make it encodable here rather than losing the icon at
+		// the encoder — a frame held for 65 s instead of 100 s is imperceptible
+		// next to no icon at all.
+		const raw = (next - tick) * TICK_MS;
+		return Math.min(MAX_FRAME_DELAY_MS, Math.max(TICK_MS, Math.round(raw)));
 	});
 	return {
 		frames,
