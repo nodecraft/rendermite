@@ -30,12 +30,18 @@ import {
 import { resolveTexture } from '../models/loader.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
-import type { FloatTexture } from './blend.ts';
+import type { FaceShading, FloatTexture } from './blend.ts';
 import type { RenderOptions } from './renderer.ts';
 import type { Vec3 } from './vector.ts';
 import type { ResolvedModel } from '../models/loader.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 import type { TextureLoader } from '../textures/loader.ts';
+
+/** RGBA float channels, 8 bytes each. */
+const FLOAT_BYTES_PER_TEXEL = 32;
+
+/** Clone budget for one OBJ render; past it samples are shaded individually. */
+const MAX_OBJ_SHADE_BYTES = 64 * 1024 * 1024;
 
 interface ObjTriangle {
 	positions: [Vec3, Vec3, Vec3];
@@ -208,8 +214,13 @@ export async function renderObjModel(
 	const out = createFaceBuffer(renderSize, renderSize);
 	const scratch = createFaceBuffer(renderSize, renderSize);
 	// Darkened texture variants per material+light bucket, so shading matches
-	// the JSON-element pipeline without re-darkening per triangle.
+	// the JSON-element pipeline without re-darkening per triangle. Bounded by
+	// bytes: a mesh with varied normals fills all 65 light buckets, and against a
+	// large sheet that is gigabytes of clones for one icon (bloodandmadness'
+	// 1,493-triangle burial_blade reached 1.3 GB). Past the budget each sample is
+	// shaded as it is written instead, which is the same arithmetic.
 	const shaded = new Map<string, FloatTexture>();
+	let shadedBytes = 0;
 
 	for (const triangle of parsed.triangles) {
 		const transformed = triangle.positions.map(position => transformVector(transformation, position)) as [Vec3, Vec3, Vec3];
@@ -223,6 +234,10 @@ export async function renderObjModel(
 		}
 		const level = light.lightLevelForNormal(normal);
 		const bucket = Math.round(level * 64);
+		// Derived once and shared by both shading branches below. Writing it twice
+		// invites them to drift, and a drift would be invisible: each branch renders
+		// correctly on its own, just differently from the other.
+		const darkness = 1 - bucket / 64;
 
 		const locator = materialTexture(model, materials, triangle.material);
 		if (!locator) {
@@ -230,6 +245,7 @@ export async function renderObjModel(
 		}
 		const key = `${locator} ${bucket}`;
 		let texture = shaded.get(key);
+		let shading: FaceShading | null = null;
 		if (!texture) {
 			// IE's IEOBJ materials reference sheets relative to textures/item/
 			// (revolvers/revolver) — retry there before giving up.
@@ -238,9 +254,25 @@ export async function renderObjModel(
 			if (!base) {
 				throw new ItemRenderError(`Missing texture ${locator} referenced by ${model.obj.model}`);
 			}
-			texture = cloneFloatTexture(toFloatTexture(base));
-			darkenTexture(texture, 1 - bucket / 64, 0, 0, texture.width, texture.height);
-			shaded.set(key, texture);
+			const float = toFloatTexture(base);
+			const bytes = float.width * float.height * FLOAT_BYTES_PER_TEXEL;
+			if (shadedBytes + bytes <= MAX_OBJ_SHADE_BYTES) {
+				texture = cloneFloatTexture(float);
+				darkenTexture(texture, darkness, 0, 0, texture.width, texture.height);
+				shaded.set(key, texture);
+				shadedBytes += bytes;
+			} else {
+				texture = float;
+				shading = {
+					tint: null,
+					darkness,
+					alpha: 1,
+					windowX1: 0,
+					windowY1: 0,
+					windowX2: float.width - 1,
+					windowY2: float.height - 1,
+				};
+			}
 		}
 
 		// Rasterize into a reused scratch buffer, then z-merge into the shared one:
@@ -256,7 +288,7 @@ export async function renderObjModel(
 				depth: (transformed[index][2] + 1) / 3,
 			};
 		};
-		drawTexturedTriangle(point(0), point(1), point(2), scratch, texture, cursor);
+		drawTexturedTriangle(point(0), point(1), point(2), scratch, texture, cursor, shading);
 		// Only the triangle's own span can differ from the shared buffer.
 		for (let y = Math.max(scratch.dirty.minY, 0); y <= Math.min(scratch.dirty.maxY, renderSize - 1); y++) {
 			for (let x = Math.max(scratch.dirty.minX, 0); x <= Math.min(scratch.dirty.maxX, renderSize - 1); x++) {
