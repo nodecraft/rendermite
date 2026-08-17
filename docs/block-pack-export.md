@@ -116,8 +116,9 @@ parsing is already done and ordering is preserved. `multipart` predicates are a 
 { "op": "and",    "terms": [ … ] }
 ```
 
-An unconditional part has `"when": null`. `apply` is always an array — the weighted list, whole —
-and `x`, `y`, `z`, `uvlock` and `weight` are omitted at their defaults (`0`, `0`, `0`, `false`, `1`).
+An unconditional part has `"when": null`. `apply` is always an array — the weighted list, whole,
+minus any `weight: 0` entry the game could never pick — and `x`, `y`, `z`, `uvlock` and `weight` are
+omitted at their defaults (`0`, `0`, `0`, `false`, `1`).
 `z` is a loader extension rather than vanilla: AE2 writes `ae2:z` so a wall-mounted charger can spin
 about the face it is on. Apply it after `x` and `y`.
 
@@ -179,11 +180,14 @@ bind; the game draws them the same way, so the pack does too rather than leaving
   `blur`/`clamp`) does not affect geometry or atlas placement. `TextureLoader` already ignores it.
 - **Modded texture sizes.** The packer's multi-page path works and is covered by a test at a forced
   128px page ceiling. Create + Immersive Engineering together still fit one 1024² page; a sprite
-  too large for any page is reported rather than dropped.
+  too large for any page is reported in `failures.json`, and every face naming it is repointed at
+  the missing-texture sprite, so no model names an id `atlas.json` has no entry for.
 - **Atlas page size.** 4px padding inflates a 16×16 sprite to 24×24, which more than doubles the
   packed area — but vanilla still lands on a single page across the whole range (2048×1024 at 26.2,
   1024×1024 or smaller below it). The doc's earlier "single 1024×1024" estimate did not account for
   padding; the packer picks the smallest power-of-two that fits and only spills at the ceiling.
+  Both page dimensions are always powers of two, so a `--max-page-size` that is not one is rounded
+  down to the largest that is.
 
 ## Publishing, and consuming from `ui`
 

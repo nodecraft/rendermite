@@ -14,12 +14,14 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import { ensureModrinthJar, vanillaJar } from './fixtures/index.ts';
 import { exportBlockPack } from '../src/blocks/export.ts';
 import { builtinPackPath } from '../src/builtin.ts';
 import { prepareModResources } from '../src/mods/prepare.ts';
+import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { prepareVersionResources } from '../src/versions/prepare.ts';
 
 import type { BlockPackResult } from '../src/blocks/export.ts';
@@ -429,6 +431,40 @@ describe('block pack contents', () => {
 		const models = JSON.parse(await readFile(path.join(directory, 'models.json'), 'utf8')) as ModelsJson;
 		expect(Object.keys(models).some(id => id.startsWith('rendermite:'))).toBe(false);
 		expect(result.failures.some(failure => failure.reason === 'model has no drawable elements')).toBe(true);
+	});
+});
+
+describe('atlas ceiling', () => {
+	it('points faces at the missing sprite when one is too large to pack', async () => {
+		// The consumer only has atlas.json to resolve a sprite id with, so a sprite
+		// that never got a rect has to stop being named by any model.
+		const texture = await sharp({ create: { width: 64, height: 64, channels: 4, background: { r: 20, g: 30, b: 40, alpha: 1 } } })
+			.png()
+			.toBuffer();
+		const resources = new MapResourceManager()
+			.set('blockstate', 'test:big', JSON.stringify({ variants: { '': { model: 'test:block/big' } } }))
+			.set('model', 'test:block/big', JSON.stringify({
+				textures: { all: 'test:block/big' },
+				elements: [{
+					from: [0, 0, 0],
+					to: [16, 16, 16],
+					faces: Object.fromEntries(['down', 'up', 'north', 'south', 'west', 'east'].map(name => [name, { texture: '#all' }])),
+				}],
+			}))
+			.set('texture', 'test:block/big', texture);
+
+		const directory = path.join(packRoot, 'oversized');
+		// 64 leaves room for the 16x16 missing sprite and its padding, nothing more.
+		const result = await exportBlockPack({ resources, output: directory, version: 'oversized', namespaces: ['test'], maxPageSize: 64 });
+		const atlas = JSON.parse(await readFile(path.join(directory, 'atlas.json'), 'utf8')) as AtlasJson;
+		const models = JSON.parse(await readFile(path.join(directory, 'models.json'), 'utf8')) as ModelsJson;
+
+		expect(result.failures.some(failure => failure.id === 'test:block/big' && failure.reason.startsWith('sprite is larger'))).toBe(true);
+		expect(atlas.sprites['test:block/big']).toBeUndefined();
+		for (const face of Object.values(models['test:block/big'].elements[0].faces)) {
+			expect(face.sprite).toBe('minecraft:missingno');
+		}
+		expect(atlas.sprites['minecraft:missingno']).toBeDefined();
 	});
 });
 

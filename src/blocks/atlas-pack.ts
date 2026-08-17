@@ -47,7 +47,10 @@ export interface PackedAtlas {
 export interface PackOptions {
 	/** Edge-extended border per side, in pixels. */
 	padding?: number;
-	/** Hard ceiling on a page's dimensions; GPUs and browsers both cap this. */
+	/**
+	 * Hard ceiling on a page's dimensions; GPUs and browsers both cap this.
+	 * Pages stay power-of-two, so a ceiling that is not one is rounded down.
+	 */
 	maxPageSize?: number;
 }
 
@@ -57,6 +60,26 @@ const DEFAULT_MAX_PAGE_SIZE = 4096;
 function nextPowerOfTwo(value: number): number {
 	let size = 1;
 	while (size < value) {
+		size *= 2;
+	}
+	return size;
+}
+
+/**
+ * A NaN or negative option would otherwise classify every sprite oversized and
+ * write an empty atlas that looks like a successful export.
+ */
+function requireSize(value: number, name: string, minimum: number): number {
+	if (!Number.isSafeInteger(value) || value < minimum) {
+		throw new RangeError(`${name} must be an integer of at least ${minimum}, got ${value}`);
+	}
+	return value;
+}
+
+/** Largest power of two that still fits under `value`, floored at 1. */
+function previousPowerOfTwo(value: number): number {
+	let size = 1;
+	while (size * 2 <= value) {
 		size *= 2;
 	}
 	return size;
@@ -129,14 +152,17 @@ function blit(page: PackedPage, texture: Texture, left: number, top: number, pad
 }
 
 export function packAtlas(entries: PackEntry[], options: PackOptions = {}): PackedAtlas {
-	const padding = options.padding ?? DEFAULT_PADDING;
-	const maxPageSize = options.maxPageSize ?? DEFAULT_MAX_PAGE_SIZE;
+	const padding = requireSize(options.padding ?? DEFAULT_PADDING, 'padding', 0);
+	const maxPageSize = requireSize(options.maxPageSize ?? DEFAULT_MAX_PAGE_SIZE, 'maxPageSize', 1);
+	// Every page dimension is a power of two, so the ceiling has to be one too;
+	// rounding down is what keeps a page from overrunning the caller's cap.
+	const pageCeiling = previousPowerOfTwo(maxPageSize);
 
 	const oversized: string[] = [];
 	const packable: PackEntry[] = [];
 	for (const entry of entries) {
-		const fits = entry.texture.width + padding * 2 <= maxPageSize
-			&& entry.texture.height + padding * 2 <= maxPageSize;
+		const fits = entry.texture.width + padding * 2 <= pageCeiling
+			&& entry.texture.height + padding * 2 <= pageCeiling;
 		if (fits) {
 			packable.push(entry);
 		} else {
@@ -156,16 +182,17 @@ export function packAtlas(entries: PackEntry[], options: PackOptions = {}): Pack
 		area += (entry.texture.width + padding * 2) * (entry.texture.height + padding * 2);
 		widest = Math.max(widest, entry.texture.width + padding * 2);
 	}
-	let pageSize = Math.min(maxPageSize, Math.max(nextPowerOfTwo(widest), nextPowerOfTwo(Math.ceil(Math.sqrt(area)))));
+	let pageSize = Math.min(pageCeiling, Math.max(nextPowerOfTwo(widest), nextPowerOfTwo(Math.ceil(Math.sqrt(area)))));
 	let layout = shelvePlacements(packable, pageSize, padding);
-	while (layout.usedHeights.length > 1 && pageSize < maxPageSize) {
+	while (layout.usedHeights.length > 1 && pageSize < pageCeiling) {
 		pageSize *= 2;
 		layout = shelvePlacements(packable, pageSize, padding);
 	}
 
 	const pages: PackedPage[] = layout.usedHeights.map((used) => {
 		// Trim to the shortest power-of-two that holds the shelves actually used;
-		// the last page of a spilled run is usually mostly empty.
+		// the last page of a spilled run is usually mostly empty. Never exceeds
+		// the ceiling: no page holds more than one over-tall entry.
 		const height = Math.max(1, nextPowerOfTwo(used));
 		return { width: pageSize, height, data: new Uint8ClampedArray(pageSize * height * 4) };
 	});

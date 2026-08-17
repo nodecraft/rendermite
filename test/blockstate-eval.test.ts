@@ -99,6 +99,20 @@ describe('variants', () => {
 		expect(evaluateBlockState(parse(json), {})[0]).toHaveLength(3);
 	});
 
+	it('drops a variant the game can never pick', () => {
+		const json = {
+			variants: {
+				'': [
+					{ model: 'example:block/never', weight: 0 },
+					{ model: 'example:block/always', weight: 5 },
+				],
+			},
+		};
+		expect(drawn(json, {}, 'example')).toEqual(['example:block/always']);
+		expect(() => parse({ variants: { '': [{ model: 'example:block/never', weight: 0 }] } }, 'example'))
+			.toThrow(BlockStateError);
+	});
+
 	it('resolves an unqualified model against the block namespace', () => {
 		const json = { variants: { '': { model: 'block/widget' } } };
 		expect(drawn(json, {}, 'example')).toEqual(['example:block/widget']);

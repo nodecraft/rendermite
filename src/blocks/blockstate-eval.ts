@@ -83,7 +83,8 @@ function zRotation(entry: Record<string, unknown>): number {
 	return 0;
 }
 
-function parseVariant(namespace: string, raw: unknown, context: string): BlockModelVariant {
+/** Null for an explicit `weight: 0`, which the game can never pick. */
+function parseVariant(namespace: string, raw: unknown, context: string): BlockModelVariant | null {
 	if (typeof raw !== 'object' || raw === null) {
 		throw new BlockStateError(`${context}: variant is not an object`);
 	}
@@ -95,15 +96,17 @@ function parseVariant(namespace: string, raw: unknown, context: string): BlockMo
 	if (model === null) {
 		throw new BlockStateError(`${context}: unparseable model ${entry.model}`);
 	}
+	const weight = typeof entry.weight === 'number' ? entry.weight : 1;
+	if (!Number.isFinite(weight) || weight <= 0) {
+		return null;
+	}
 	return {
 		model: model.toString(),
 		x: typeof entry.x === 'number' ? entry.x : 0,
 		y: typeof entry.y === 'number' ? entry.y : 0,
 		z: zRotation(raw as Record<string, unknown>),
 		uvlock: entry.uvlock === true,
-		// A weight of 0 is a variant the game can never pick; keep it out of the
-		// list rather than emitting a total the consumer has to guard against.
-		weight: typeof entry.weight === 'number' && entry.weight > 0 ? entry.weight : 1,
+		weight,
 	};
 }
 
@@ -112,7 +115,13 @@ function parseApply(namespace: string, raw: unknown, context: string): BlockMode
 	if (entries.length === 0) {
 		throw new BlockStateError(`${context}: empty variant list`);
 	}
-	return entries.map(entry => parseVariant(namespace, entry, context));
+	// Dropping the unpickable ones rather than emitting a weight total the
+	// consumer has to guard against; nothing left to draw is a broken state.
+	const variants = entries.map(entry => parseVariant(namespace, entry, context)).filter(variant => variant !== null);
+	if (variants.length === 0) {
+		throw new BlockStateError(`${context}: every variant has weight 0`);
+	}
+	return variants;
 }
 
 /** `facing=north,half=bottom` → `{ facing: 'north', half: 'bottom' }`; `''` → `{}`. */

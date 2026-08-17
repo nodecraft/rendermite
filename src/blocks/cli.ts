@@ -42,6 +42,35 @@ Options:
       --cache-dir <dir>    jar download cache (default ~/.rendermite)
 `;
 
+/**
+ * The sizes reach the packer directly, where a `NaN` classifies every sprite as
+ * oversized and writes an empty atlas — worse than a crash, and only after the
+ * jar download and a full export. Checked up front instead.
+ */
+function parseSizes(padding: string | undefined, maxPageSize: string | undefined): {
+	padding?: number;
+	maxPageSize?: number;
+	errors: string[];
+} {
+	const errors: string[] = [];
+	const size = (raw: string | undefined, flag: string, minimum: number): number | undefined => {
+		if (raw === undefined) {
+			return undefined;
+		}
+		const value = Number(raw);
+		if (!Number.isSafeInteger(value) || value < minimum) {
+			errors.push(`--${flag} must be a whole number of at least ${minimum}; got "${raw}".`);
+			return undefined;
+		}
+		return value;
+	};
+	return {
+		padding: size(padding, 'padding', 0),
+		maxPageSize: size(maxPageSize, 'max-page-size', 16),
+		errors,
+	};
+}
+
 export async function runBlocksCli(argv: string[]): Promise<number> {
 	const { values } = parseArgs({
 		args: argv,
@@ -66,6 +95,14 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 	}
 	if (values.version && compareVersions(values.version, MINIMUM_VERSION) < 0) {
 		console.error(`Block packs start at ${MINIMUM_VERSION} (the Flattening); ${values.version} needs a numeric-id table that is out of scope.`);
+		return 1;
+	}
+
+	const sizes = parseSizes(values.padding, values['max-page-size']);
+	if (sizes.errors.length > 0) {
+		for (const message of sizes.errors) {
+			console.error(message);
+		}
 		return 1;
 	}
 
@@ -105,8 +142,8 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			output: values.output,
 			version: values.version ?? 'custom',
 			namespaces,
-			padding: values.padding ? Number(values.padding) : undefined,
-			maxPageSize: values['max-page-size'] ? Number(values['max-page-size']) : undefined,
+			padding: sizes.padding,
+			maxPageSize: sizes.maxPageSize,
 			onProgress: (stage, done, total) => {
 				if (done === total || done % 250 === 0) {
 					console.log(`${stage}: ${done}/${total}`);

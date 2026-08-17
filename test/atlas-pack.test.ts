@@ -105,6 +105,34 @@ describe('atlas packer', () => {
 		expect(atlas.rects.map(rect => rect.key)).toEqual(['example:block/fine']);
 	});
 
+	it('stays under a ceiling that is not a power of two', () => {
+		// Both axes have their own way of overrunning: width by doubling past the
+		// ceiling as pages spill, height by rounding the used shelves up.
+		const wide = Array.from({ length: 100 }, (_, index) => {
+			return { key: `example:block/wide_${index}`, texture: solid(1100, 16, index % 256) };
+		});
+		const runs = [
+			// Spills, so the doubling loop runs; it must stop at 2048, not 4096.
+			{ ceiling: 3000, atlas: packAtlas(wide, { maxPageSize: 3000 }) },
+			{ ceiling: 1000, atlas: packAtlas(entries(40, 300), { maxPageSize: 1000 }) },
+			{ ceiling: 1000, atlas: packAtlas([{ key: 'example:block/one', texture: solid(800, 600, 1) }], { maxPageSize: 1000 }) },
+		];
+		for (const { ceiling, atlas } of runs) {
+			for (const page of atlas.pages) {
+				expect(page.width).toBeLessThanOrEqual(ceiling);
+				expect(page.height).toBeLessThanOrEqual(ceiling);
+				expect(Number.isSafeInteger(Math.log2(page.width))).toBe(true);
+				expect(Number.isSafeInteger(Math.log2(page.height))).toBe(true);
+			}
+		}
+	});
+
+	it('rejects option values that would silently empty the atlas', () => {
+		expect(() => packAtlas(entries(4), { maxPageSize: Number('abc') })).toThrow(RangeError);
+		expect(() => packAtlas(entries(4), { maxPageSize: -1 })).toThrow(RangeError);
+		expect(() => packAtlas(entries(4), { padding: -1 })).toThrow(RangeError);
+	});
+
 	it('packs an empty run without producing a zero-sized page', () => {
 		const atlas = packAtlas([]);
 		expect(atlas.rects).toEqual([]);

@@ -708,9 +708,42 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		loaded.push({ id, frames, sequence, interpolate: animated.interpolated });
 	}
 
-	// A face whose sprite never loaded points at the missing-texture sprite, the
-	// same as the game does — dropping it would leave a hole in geometry the
-	// player can see. Already reported above.
+	// Always packed, even where nothing resolved to it: it is what a consumer
+	// draws for a block this pack does not describe at all — a mod that is
+	// loaded on the server but whose pack was never fetched — and a guarantee
+	// is worth more to that consumer than the 256 pixels it costs.
+	spriteIds.add(MISSING_SPRITE);
+	loaded.push({
+		id: MISSING_SPRITE,
+		frames: new Map([[0, missingTexture()]]),
+		sequence: [{ frame: 0, time: 1 }],
+		interpolate: false,
+	});
+
+	// 4. Pack.
+	const packed = packAtlas(
+		loaded.flatMap(sprite => [...sprite.frames].map(([index, texture]) => {
+			return { key: `${sprite.id}#${index}`, texture };
+		})),
+		{ padding: options.padding, maxPageSize: options.maxPageSize },
+	);
+	// A sprite that does not fit a page gets no rect, so it joins the missing set
+	// rather than leaving models naming an id atlas.json has no entry for.
+	for (const key of packed.oversized) {
+		const id = key.split('#', 1)[0];
+		// Every frame of an animated sprite is the same size, so report once.
+		if (!missingSprites.has(id)) {
+			failures.push({ id, kind: 'sprite', reason: 'sprite is larger than one atlas page; drawn as the missing texture' });
+			missingSprites.add(id);
+		}
+	}
+	if (missingSprites.has(MISSING_SPRITE)) {
+		throw new Error('the missing-texture sprite does not fit an atlas page; maxPageSize is too small');
+	}
+
+	// A face whose sprite never loaded, or never fit a page, points at the
+	// missing-texture sprite, the same as the game does — dropping it would leave
+	// a hole in geometry the player can see. Already reported above.
 	if (missingSprites.size > 0) {
 		for (const model of Object.values(emittedModels)) {
 			for (const element of model.elements) {
@@ -730,17 +763,6 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			}
 		}
 	}
-	// Always packed, even where nothing resolved to it: it is what a consumer
-	// draws for a block this pack does not describe at all — a mod that is
-	// loaded on the server but whose pack was never fetched — and a guarantee
-	// is worth more to that consumer than the 256 pixels it costs.
-	spriteIds.add(MISSING_SPRITE);
-	loaded.push({
-		id: MISSING_SPRITE,
-		frames: new Map([[0, missingTexture()]]),
-		sequence: [{ frame: 0, time: 1 }],
-		interpolate: false,
-	});
 	for (const [id, model] of Object.entries(emittedModels)) {
 		// A model drawn entirely in missing-texture is one the mod broke: Ars
 		// Nouveau's alteration table binds no variable its faces name. Worth
@@ -760,16 +782,6 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		}
 	}
 
-	// 4. Pack.
-	const packed = packAtlas(
-		loaded.flatMap(sprite => [...sprite.frames].map(([index, texture]) => {
-			return { key: `${sprite.id}#${index}`, texture };
-		})),
-		{ padding: options.padding, maxPageSize: options.maxPageSize },
-	);
-	for (const key of packed.oversized) {
-		failures.push({ id: key.split('#', 1)[0], kind: 'sprite', reason: 'sprite is larger than one atlas page' });
-	}
 	const rects = new Map(packed.rects.map(rect => [rect.key, rect]));
 	const emittedSprites: Record<string, EmittedSprite> = {};
 	for (const sprite of loaded) {

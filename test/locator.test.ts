@@ -31,6 +31,20 @@ describe('ResourceLocator', () => {
 		expect(ResourceLocator.tryParse('bad mod:item')).toBeNull();
 	});
 
+	it('rejects a path that climbs out of the pack', () => {
+		// An OBJ's `mtllib`, a model's `parent` and an MTL texture binding all reach
+		// this from a jar the operator did not write.
+		expect(() => ResourceLocator.parse('ns:../../secret.txt')).toThrow(InvalidResourceLocatorError);
+		expect(ResourceLocator.tryParse('ns:models/../../secret.txt')).toBeNull();
+		expect(ResourceLocator.tryParse('ns:..')).toBeNull();
+	});
+
+	it('collapses relative segments that stay inside the pack', () => {
+		expect(ResourceLocator.parse('ns:obj/../mtl/thing').toString()).toBe('ns:mtl/thing');
+		expect(ResourceLocator.parse('ns:./block/thing').toString()).toBe('ns:block/thing');
+		expect(ResourceLocator.parse('ns:block/thing.png').path).toBe('block/thing.png');
+	});
+
 	it('compares by value', () => {
 		expect(ResourceLocator.parse('a:b').equals(ResourceLocator.parse('a:b'))).toBe(true);
 		expect(ResourceLocator.parse('a:b').equals(ResourceLocator.parse('a:c'))).toBe(false);
