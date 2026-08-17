@@ -43,6 +43,12 @@ export interface ModelElementJson {
 	from: Vec3;
 	to: Vec3;
 	rotation?: ElementRotationJson;
+	/**
+	 * Ours, not vanilla: an extra angle about the element's own rotation axis,
+	 * folded into `rotation.angle` by the loader. Supplementaries writes it on
+	 * its awnings to get an arbitrary slant past vanilla's 22.5 steps.
+	 */
+	extra_rotation?: number;
 	shade?: boolean;
 	light_emission?: number;
 	/**
@@ -79,6 +85,11 @@ export interface ModelJson {
 	/** `front` renders items like flat sprites, `side` like blocks. */
 	gui_light?: 'front' | 'side';
 	display?: Partial<Record<DisplayPosition, DisplayTransformJson>>;
+	/**
+	 * Loader extension (forge/neoforge): the render layer this model draws on,
+	 * stated rather than inferred. Vanilla has no equivalent.
+	 */
+	render_type?: string;
 	/** name → locator or `#reference`. */
 	textures?: Record<string, string>;
 	elements?: ModelElementJson[];

@@ -1,0 +1,225 @@
+{
+	"credit": "Derived from renderchest:item/banner",
+	"texture_size": [
+		64,
+		64
+	],
+	"elements": [
+		{
+			"name": "post",
+			"from": [
+				7.3334,
+				0,
+				7.3334
+			],
+			"to": [
+				8.6666,
+				27.998,
+				8.6666
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						12.5,
+						0.5,
+						13,
+						11
+					],
+					"texture": "#texture"
+				},
+				"east": {
+					"uv": [
+						12,
+						0.5,
+						12.5,
+						11
+					],
+					"texture": "#texture"
+				},
+				"south": {
+					"uv": [
+						11.5,
+						0.5,
+						12,
+						11
+					],
+					"texture": "#texture"
+				},
+				"west": {
+					"uv": [
+						11,
+						0.5,
+						11.5,
+						11
+					],
+					"texture": "#texture"
+				},
+				"up": {
+					"uv": [
+						11.5,
+						0,
+						12,
+						0.5
+					],
+					"texture": "#texture"
+				},
+				"down": {
+					"uv": [
+						12,
+						0,
+						12.5,
+						0.5
+					],
+					"rotation": 180,
+					"texture": "#texture"
+				}
+			}
+		},
+		{
+			"name": "cloth",
+			"from": [
+				1.334,
+				2.6671999999999976,
+				8.6666
+			],
+			"to": [
+				14.666,
+				29.3312,
+				9.3332
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						5.5,
+						0.25,
+						10.5,
+						10.25
+					],
+					"tintindex": 0,
+					"texture": "#texture"
+				},
+				"east": {
+					"uv": [
+						5.25,
+						0.25,
+						5.5,
+						10.25
+					],
+					"tintindex": 0,
+					"texture": "#texture"
+				},
+				"south": {
+					"uv": [
+						0.25,
+						0.25,
+						5.25,
+						10.25
+					],
+					"tintindex": 0,
+					"texture": "#texture"
+				},
+				"west": {
+					"uv": [
+						0,
+						0.25,
+						0.25,
+						10.25
+					],
+					"tintindex": 0,
+					"texture": "#texture"
+				},
+				"up": {
+					"uv": [
+						0.25,
+						0,
+						5.25,
+						0.25
+					],
+					"tintindex": 0,
+					"texture": "#texture"
+				},
+				"down": {
+					"uv": [
+						5.25,
+						0,
+						10.25,
+						0.25
+					],
+					"rotation": 180,
+					"tintindex": 0,
+					"texture": "#texture"
+				}
+			}
+		},
+		{
+			"name": "bar",
+			"from": [
+				1.334,
+				28,
+				7.3334
+			],
+			"to": [
+				14.666,
+				29.3312,
+				8.6666
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						6,
+						11,
+						11,
+						11.5
+					],
+					"texture": "#texture"
+				},
+				"east": {
+					"uv": [
+						5.5,
+						11,
+						6,
+						11.5
+					],
+					"texture": "#texture"
+				},
+				"south": {
+					"uv": [
+						0.5,
+						11,
+						5.5,
+						11.5
+					],
+					"texture": "#texture"
+				},
+				"west": {
+					"uv": [
+						0,
+						11,
+						0.5,
+						11.5
+					],
+					"texture": "#texture"
+				},
+				"up": {
+					"uv": [
+						0.5,
+						10.5,
+						5.5,
+						11
+					],
+					"texture": "#texture"
+				},
+				"down": {
+					"uv": [
+						5.5,
+						10.5,
+						10.5,
+						11
+					],
+					"rotation": 180,
+					"texture": "#texture"
+				}
+			}
+		}
+	]
+}

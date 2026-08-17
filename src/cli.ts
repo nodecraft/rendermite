@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { runBlocksCli } from './blocks/cli.ts';
 import { bedCompatPath, builtinPackPath } from './builtin.ts';
 import { curatedModelOverrides } from './mods/models.ts';
 import { curatedTintOverrides, harvestTintOverrides } from './mods/tints.ts';
@@ -25,6 +26,12 @@ import {
 } from './versions/prepare.ts';
 
 import type { ResourceManager } from './resources/manager.ts';
+
+// The block pack is a different output entirely (geometry, not icons), so it
+// takes its own flag surface rather than bending this one.
+if (process.argv[2] === 'blocks') {
+	process.exit(await runBlocksCli(process.argv.slice(3)));
+}
 
 const { values } = parseArgs({
 	options: {
