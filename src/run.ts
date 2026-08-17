@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 
 import { discoverItems } from './items/discovery.ts';
+import { curatedModelOverrides } from './mods/models.ts';
 import { encodeRasterAsset } from './output/encode.ts';
 import { classifyItemStyle } from './output/item-styles.ts';
 import { minifyStylesheet } from './output/minify.ts';
@@ -21,6 +22,7 @@ import { generateStylesheet } from './output/stylesheet.ts';
 import { ItemPipeline } from './render/pipeline.ts';
 import { describeResources } from './resources/descriptor.ts';
 import { ResourceLocator } from './resources/locator.ts';
+import { LayeredResourceManager } from './resources/manager.ts';
 import { WorkerRenderPool } from './workers/pool.ts';
 
 import type { ItemStyle } from './output/stylesheet.ts';
@@ -116,11 +118,19 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		animation: options.animation,
 	};
 
+	/*
+	 * Curated geometry for code-drawn (`builtin/entity`) mod items must shadow the
+	 * stub the mod itself ships, and layers resolve first-hit — so it goes above
+	 * the caller's tree, not below. Callers that pass an assembled pack rather than
+	 * jars (the icon pipeline) otherwise never reach it and lose every curated item.
+	 */
+	const resourceTree = new LayeredResourceManager([curatedModelOverrides(), options.resources]);
+
 	// Workers spawn before discovery so their asset indexing overlaps it; a tree
 	// that cannot describe itself renders in-process instead.
 	const concurrency = Math.max(1, options.concurrency ?? 8);
 	const requestedWorkers = resolveWorkerCount(options.workers);
-	const descriptor = requestedWorkers > 1 ? describeResources(options.resources) : null;
+	const descriptor = requestedWorkers > 1 ? describeResources(resourceTree) : null;
 	const pool = descriptor
 		? new WorkerRenderPool<ItemRenderOutcome>({
 			workerUrl: workerUrl(),
@@ -137,7 +147,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		: null;
 	const usedWorkers = pool ? requestedWorkers : 1;
 
-	const pipeline = await ItemPipeline.create(options.resources, settings).catch(async (err: unknown) => {
+	const pipeline = await ItemPipeline.create(resourceTree, settings).catch(async (err: unknown) => {
 		await pool?.close();
 		throw err;
 	});
@@ -170,6 +180,8 @@ export async function run(options: RunOptions): Promise<RunResult> {
 			// (copper chests, mannequins). Ones the target version does not itself
 			// declare are not items there — rendering them is upstream's prune-retry
 			// failure mode, so require the id to exist beneath the builtin layer.
+			// Deliberately the caller's own tree, not the curated layer: curated
+			// supplies geometry for items a pack already has, never new items.
 			if (options.builtin && !(await itemExistsIn(options.resources, item.id))) {
 				continue;
 			}
