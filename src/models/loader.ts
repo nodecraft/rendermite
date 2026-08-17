@@ -19,6 +19,11 @@ export interface ResolvedModel {
 	locator: ResourceLocator;
 	/** `builtin/generated` etc. — the terminal builtin parent, when the chain ends in one. */
 	builtinParent: string | null;
+	/**
+	 * `ambientocclusion`, nearest declaration in the chain wins. Only the block
+	 * pack reads it; the icon renderer has no ambient occlusion to switch off.
+	 */
+	ambientOcclusion: boolean;
 	guiLight: 'front' | 'side';
 	/**
 	 * The gui_light in effect when `elements` were defined in the chain — upstream
@@ -32,8 +37,19 @@ export interface ResolvedModel {
 	elements: ModelElementJson[];
 	/** Deepest-first chain of model locators, for diagnostics. */
 	chain: string[];
+	/**
+	 * `render_type` as the chain states it, namespace stripped. Authoritative
+	 * where present; nothing states it in vanilla.
+	 */
+	renderType: string | null;
 	/** Forge/NeoForge OBJ loader geometry reference, when the chain declares one. */
-	obj?: { model: string; flipV: boolean; objects?: string[]; };
+	obj?: { model: string; flipV: boolean; objects?: string[]; conditional?: boolean; };
+	/**
+	 * Block offsets a split-multiblock model spans. IE's `basic_split` wraps one
+	 * mesh covering several blocks and hands each position its own slice at
+	 * runtime; which slice is in the block entity, not in the assets.
+	 */
+	splitParts?: Array<[number, number, number]>;
 	/** Fluid id from a fluid_container loader, for painting bucket contents. */
 	fluid?: string;
 }
@@ -69,6 +85,8 @@ const MODEL_PARENT_ALIASES: Readonly<Record<string, string>> = {
  */
 const MOD_LOADER_HANDLERS: Record<string, (json: ModelJson) => ModelJson> = {
 	'immersiveengineering:conf_sides': flattenConfSides,
+	'immersiveengineering:basic_split': flattenSplitMultiblock,
+	'immersiveengineering:ie_obj': restrictIeObjParts,
 	'mekanism:energy_cube': flattenEnergyCube,
 	'mekanism:transmitter': restrictTransmitterToUnconnected,
 	'botania:floating_flower': composeFloatingFlower,
@@ -150,6 +168,15 @@ export function flattenLoaderModel(json: ModelJson, depth = 0): ModelJson {
 	// block/pipe) is a parent redirect with extra runtime behaviour attached.
 	if (typeof extended.delegate === 'string') {
 		return { parent: extended.delegate };
+	}
+	// The same shape under the loader's own spelling. `model` only reaches here
+	// when the OBJ branch above declined it, so it names a JSON model —
+	// Supplementaries' faucet points at block/faucet_model this way — and the
+	// wrapper's own textures still bind the delegate's variables.
+	if (typeof objCandidate.model === 'string') {
+		const redirected = { ...withoutLoader(json), parent: objCandidate.model } as ModelJson & { model?: string; };
+		delete redirected.model;
+		return redirected;
 	}
 	if (extended.children && typeof extended.children === 'object') {
 		const children = Object.values(extended.children);
@@ -253,6 +280,62 @@ function flattenConveyor(json: ModelJson): ModelJson {
 			},
 		}],
 	};
+}
+
+/**
+ * IE's `ie_obj` loader packs several states of a block into one OBJ as named
+ * objects and picks between them in a Java callback: a workbench draws its
+ * blueprint only when one is inserted, a post grows arms only toward
+ * neighbours, a logic unit shows a board per installed circuit. The model files
+ * name the callback and nothing else, so the placed-and-empty default is
+ * curated here per callback.
+ *
+ * Only callbacks whose default is unambiguous are listed — the rest keep
+ * drawing every object, and the block pack records that they did rather than
+ * substituting a guess.
+ */
+const IE_DEFAULT_PARTS: Readonly<Record<string, string[]>> = {
+	'immersiveengineering:workbench': ['cube0'],
+	'immersiveengineering:post': ['base'],
+	'immersiveengineering:lantern': ['base'],
+	'immersiveengineering:logic_unit': ['base', 'tubes'],
+};
+
+function restrictIeObjParts(json: ModelJson): ModelJson {
+	const marked = json as ModelJson & {
+		callbacks?: unknown;
+		objModel?: { model: string; flipV: boolean; objects?: string[]; conditional?: boolean; };
+	};
+	if (typeof marked.callbacks !== 'string' || !marked.objModel) {
+		return marked;
+	}
+	const parts = IE_DEFAULT_PARTS[marked.callbacks];
+	if (parts) {
+		marked.objModel.objects = parts;
+	} else {
+		// A callback with no curated default still picks a subset at runtime;
+		// flag it so the pack can say the mesh holds states it drew together.
+		marked.objModel.conditional = true;
+	}
+	return marked;
+}
+
+/**
+ * IE's split loader wraps one model spanning several blocks — a coke oven's
+ * mesh is the whole 2x2x2 structure — and gives each block position its own
+ * slice of it at draw time. Which slice is in the block entity rather than in
+ * the assets, so the part list is carried through instead: a consumer can draw
+ * the mesh once from the structure's corner rather than once per position.
+ */
+function flattenSplitMultiblock(json: ModelJson): ModelJson {
+	const extended = json as ModelJson & { inner_model?: ModelJson; split_parts?: unknown; };
+	const inner = extended.inner_model && typeof extended.inner_model === 'object'
+		? flattenLoaderModel(extended.inner_model, 1)
+		: withoutLoader(json);
+	const parts = Array.isArray(extended.split_parts)
+		? extended.split_parts.filter((part): part is [number, number, number] => Array.isArray(part) && part.length === 3)
+		: [];
+	return parts.length > 0 ? { ...inner, splitParts: parts } as ModelJson : inner;
 }
 
 /**
@@ -433,12 +516,19 @@ function flattenStorageBarrel(json: ModelJson): ModelJson {
 	// the body the parts draw rather than on a bare cube.
 	const textures: Record<string, string> = {};
 	const merges: string[] = [];
+	// Only the shapes a barrel wears as placed. The two part groups are the
+	// partitioned and plain variants of the same barrel, and within a group
+	// `_open`, `locked` and `packed` are states — merging the lot stacked
+	// barrel_part/base four times over, 114 elements for a box.
+	const shapes = extended.model_parts ?? extended.partitioned_model_parts ?? {};
+	for (const [name, part] of Object.entries(shapes)) {
+		if (typeof part.model === 'string' && !/_open$|^locked$|^packed$/.test(name) && !merges.includes(part.model)) {
+			merges.push(part.model);
+		}
+	}
 	for (const group of groups) {
 		for (const part of Object.values(group ?? {})) {
 			Object.assign(textures, part.textures);
-			if (typeof part.model === 'string') {
-				merges.push(part.model);
-			}
 		}
 	}
 	const flattened = withoutLoader(json) as ModelJson & Record<string, unknown>;
@@ -487,6 +577,31 @@ function withoutLoader(json: ModelJson): ModelJson {
 	const rest = { ...json } as ModelJson & { loader?: unknown; };
 	delete rest.loader;
 	return rest;
+}
+
+function needsNormalizing(element: ModelElementJson): boolean {
+	return typeof element.extra_rotation === 'number' && element.extra_rotation !== 0 && element.rotation !== undefined;
+}
+
+/**
+ * Fold `extra_rotation` into the element's own rotation. Supplementaries slants
+ * its awnings with it — an arbitrary angle past vanilla's 22.5 steps, written
+ * beside a `rotation` of angle 0 — and ignoring it silently flattens them.
+ *
+ * The untouched array is returned by identity, so children of a shared parent
+ * keep sharing one elements array rather than each holding a copy.
+ */
+function normalizeElements(elements: ModelElementJson[]): ModelElementJson[] {
+	if (!elements.some(element => needsNormalizing(element))) {
+		return elements;
+	}
+	return elements.map((element) => {
+		if (!needsNormalizing(element) || !element.rotation) {
+			return element;
+		}
+		const angle = (element.rotation.angle ?? 0) + (element.extra_rotation ?? 0);
+		return { ...element, rotation: { ...element.rotation, angle } };
+	});
 }
 
 function isBuiltinParent(parent: string): boolean {
@@ -639,8 +754,16 @@ export class ModelLoader {
 		let elements: ModelElementJson[] = [];
 		let guiLight: 'front' | 'side' | undefined;
 		let elementsGuiLight: 'front' | 'side' | undefined;
+		let ambientOcclusion: boolean | undefined;
+		let renderType: string | undefined;
 		for (let i = chain.length - 1; i >= 0; i--) {
 			const { json } = chain[i];
+			if (json.ambientocclusion !== undefined) {
+				ambientOcclusion = json.ambientocclusion;
+			}
+			if (typeof json.render_type === 'string') {
+				renderType = json.render_type.replace(/^minecraft:/, '');
+			}
 			for (const [name, value] of Object.entries(json.textures ?? {})) {
 				// 1.21.5+ allows {"sprite": "..."} objects in texture maps.
 				textures[name] = typeof value === 'object' && value !== null
@@ -652,7 +775,7 @@ export class ModelLoader {
 				guiLight = json.gui_light;
 			}
 			if (json.elements !== undefined) {
-				elements = json.elements;
+				elements = normalizeElements(json.elements);
 				// Elements capture the light in effect where they are defined (same-file
 				// gui_light applies first); later overrides don't relight them.
 				elementsGuiLight = guiLight;
@@ -660,11 +783,21 @@ export class ModelLoader {
 		}
 
 		// OBJ geometry declared anywhere in the chain (deepest wins).
-		let obj: { model: string; flipV: boolean; } | undefined;
+		let obj: { model: string; flipV: boolean; objects?: string[]; conditional?: boolean; } | undefined;
 		for (const entry of chain) {
-			const marked = entry.json as ModelJson & { objModel?: { model: string; flipV: boolean; objects?: string[]; }; };
+			const marked = entry.json as ModelJson & { objModel?: { model: string; flipV: boolean; objects?: string[]; conditional?: boolean; }; };
 			if (marked.objModel) {
 				obj = marked.objModel;
+				break;
+			}
+		}
+
+		// Block offsets a split multiblock spans (deepest wins).
+		let splitParts: Array<[number, number, number]> | undefined;
+		for (const entry of chain) {
+			const marked = entry.json as ModelJson & { splitParts?: Array<[number, number, number]>; };
+			if (marked.splitParts) {
+				splitParts = marked.splitParts;
 				break;
 			}
 		}
@@ -721,8 +854,11 @@ export class ModelLoader {
 		return {
 			obj,
 			fluid,
+			splitParts,
+			renderType: renderType ?? null,
 			locator,
 			builtinParent,
+			ambientOcclusion: ambientOcclusion ?? true,
 			guiLight: guiLight ?? defaultLight,
 			elementsGuiLight: elementsGuiLight ?? defaultLight,
 			display,
@@ -777,12 +913,14 @@ function bindElementTextures(
 export function resolveTexture(model: ResolvedModel, reference: string): ResourceLocator | null {
 	let value = reference;
 	for (let depth = 0; depth < MAX_TEXTURE_REF_DEPTH; depth++) {
-		if (!value.startsWith('#')) {
-			return ResourceLocator.tryParse(value);
-		}
-		const next = model.textures[value.slice(1)];
+		// The game strips the `#` and resolves a face's texture as a variable
+		// either way, so the sigil is decorative — vanilla's own
+		// block/heavy_core writes `"texture": "all"` and draws fine. A bare name
+		// matching no variable is still treated as a direct locator.
+		const name = value.startsWith('#') ? value.slice(1) : value;
+		const next = model.textures[name];
 		if (next === undefined) {
-			return null;
+			return value.startsWith('#') ? null : ResourceLocator.tryParse(value);
 		}
 		value = next;
 	}

@@ -1,0 +1,44 @@
+{
+	"__comment": "The head half of a bed, as one block. Vanilla ships no model: BedRenderer draws both halves from an entity model spanning two block positions. Proportions and UVs follow that model (a 16x16x6 slab plus 3x3x3 legs on the outer end) read off the 64x64 sheet's own box unwrap. Authored with the outer end to the north, so `facing` rotates it.",
+	"texture_size": [64, 64],
+	"elements": [
+		{
+			"name": "slab",
+			"from": [0, 3, 0],
+			"to": [16, 9, 16],
+			"faces": {
+				"up": { "uv": [1.5, 1.5, 5.5, 5.5], "texture": "#texture" },
+				"down": { "uv": [7, 1.5, 11, 5.5], "texture": "#texture" },
+				"north": { "uv": [1.5, 0, 5.5, 1.5], "texture": "#texture" },
+				"west": { "uv": [0, 1.5, 1.5, 5.5], "texture": "#texture" },
+				"east": { "uv": [5.5, 1.5, 7, 5.5], "texture": "#texture" }
+			}
+		},
+		{
+			"name": "leg_west",
+			"from": [0, 0, 0],
+			"to": [3, 3, 3],
+			"faces": {
+				"up": { "uv": [13.25, 0, 14, 0.75], "texture": "#texture" },
+				"down": { "uv": [14, 0, 14.75, 0.75], "texture": "#texture" },
+				"north": { "uv": [13.25, 0.75, 14, 1.5], "texture": "#texture" },
+				"south": { "uv": [14.75, 0.75, 15.5, 1.5], "texture": "#texture" },
+				"west": { "uv": [12.5, 0.75, 13.25, 1.5], "texture": "#texture" },
+				"east": { "uv": [14, 0.75, 14.75, 1.5], "texture": "#texture" }
+			}
+		},
+		{
+			"name": "leg_east",
+			"from": [13, 0, 0],
+			"to": [16, 3, 3],
+			"faces": {
+				"up": { "uv": [13.25, 1.5, 14, 2.25], "texture": "#texture" },
+				"down": { "uv": [14, 1.5, 14.75, 2.25], "texture": "#texture" },
+				"north": { "uv": [13.25, 2.25, 14, 3], "texture": "#texture" },
+				"south": { "uv": [14.75, 2.25, 15.5, 3], "texture": "#texture" },
+				"west": { "uv": [12.5, 2.25, 13.25, 3], "texture": "#texture" },
+				"east": { "uv": [14, 2.25, 14.75, 3], "texture": "#texture" }
+			}
+		}
+	]
+}

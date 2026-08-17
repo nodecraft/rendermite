@@ -1,0 +1,686 @@
+# Block pack export
+
+Status: **implemented.** `rendermite blocks` / `exportBlockPack()`. Source in `src/blocks/`,
+tests in `test/block-pack.test.ts`, `test/blockstate-eval.test.ts` and `test/atlas-pack.test.ts`.
+
+rendermite renders finished item icons. This is a second output mode that emits **block geometry
+and textures as data**, for a renderer that draws blocks itself — specifically the in-browser
+Minecraft world editor in Nodecraft's `ui` repo, which reads Anvil regions today and needs to put
+chunks on screen in 3D next.
+
+## Why this belongs in rendermite
+
+The rasterizer is useless to that consumer: it draws 64px PNGs on the CPU, and a chunk renderer
+needs a GPU and per-frame geometry. But **everything above the rasterizer is exactly what it needs**,
+and that layer is the part that takes months to get right — jar layering, parent-chain flattening,
+`#texture` resolution, atlas sources, per-era shims, and the long tail of mod formats catalogued in
+`docs/research/mod-failure-taxonomy.md`.
+
+Rebuilding that in a browser would mean reimplementing this repo badly. Exporting from here means
+the browser gets a flat, pre-resolved data pack and the asset knowledge stays in one place.
+
+## Usage
+
+```
+rendermite blocks --version 1.21.8 --output blocks/1.21.8
+rendermite blocks --version 1.20.4 --mod create.jar --mod immersiveengineering.jar --output blocks/modded
+```
+
+A modded run without `--namespace` exports the mods' own namespaces rather than vanilla again.
+The library entry point is `exportBlockPack({ resources, output, version, namespaces })`.
+
+## Scope
+
+**In:** Java Edition block models and textures, vanilla and modded, **1.13 and up**, one version at a
+time. Output is a texture atlas plus JSON describing baked geometry, blockstate → model mapping, and
+tint semantics.
+
+**Out:** anything that draws the blocks. No meshing, no chunk decoding, no three.js. The consumer
+owns all of that. Also out: entity models, item models (already covered by the icon pipeline), and
+Bedrock.
+
+## Version support: 1.13 and up
+
+**The floor is 1.13 — the Flattening.** From 17w47a a chunk section's palette stores namespaced ids
+(`minecraft:oak_stairs` plus a property map) instead of a numeric id and a metadata nibble. That is
+the line the consumer draws: a world it can address by name is one this pack can describe. Below it
+a block is `35:14` and mapping that to a model needs a hand-maintained ~1,500-entry table, which is
+a separate project and explicitly out of scope. The CLI refuses anything lower rather than emitting
+a pack that cannot be addressed.
+
+1.13+ sits **entirely inside rendermite's `models` (1.9–1.21.3) and `modern` (1.21.4+) eras**, so
+none of the pre-1.8 machinery applies and the exporter is not version-gated anywhere.
+`prepareVersionResources` layers the jar and little else.
+
+Things that *do* vary across 1.13 → current, and that the exporter is right about:
+
+- **`atlases/` only exists from 1.19.3.** Below that `loadAtlasResolver` finds no atlas files and
+  returns a resolver that resolves nothing — and that is **correct**, not a bug to fix. Those
+  versions have no synthesized sprites, so every texture resolves by direct file lookup through
+  `TextureLoader`. Resist "fixing" the empty resolver.
+- **`multipart` exists from 1.9**, so both blockstate forms are present across the whole range.
+- **Colormaps grew.** `grass.png` and `foliage.png` throughout; `dry_foliage.png` only in recent
+  versions. `buildBlockTints` probes for each rather than assuming three.
+- **`render_type` is a loader extension** that vanilla only adopted recently, so alpha inference is
+  the mechanism across the entire supported range.
+
+## What it reuses
+
+None of this needed changing beyond two small additive fixes (below). `ItemPipeline.create` is the
+reference for the construction order, especially `setAtlasResolver` after building the
+`TextureLoader`.
+
+| Need | Used |
+| --- | --- |
+| Get a version's assets | `prepareVersionResources({ version, jar })` |
+| Add mod jars | `prepareModResources({ jars, vanilla })` |
+| Flatten a model | `new ModelLoader(resources).load(locator)` → `ResolvedModel` |
+| Turn `#north` into a file | `resolveTexture(model, reference)` |
+| Decode a texture | `new TextureLoader(resources).load(locator)` |
+| Animation frames | `textures.loadAnimated(locator)` → `.frameStartTicks()`, `.frame(i)`, `.tickLength` |
+| Synthesized sprites | `loadAtlasResolver` from `src/atlas/registry.ts`, then `textures.setAtlasResolver(…)` |
+
+Two changes landed outside `src/blocks/` and both benefit the icon path too:
+
+- **`ResolvedModel.ambientOcclusion`** — `ambientocclusion` merged down the parent chain. The pack
+  needs it per model and re-walking the chain to read one boolean would be worse.
+- **`resolveTexture` treats a bare face texture as a variable name.** The game strips the `#` and
+  looks the value up in the texture map either way, so the sigil is decorative — vanilla's own
+  `block/heavy_core` writes `"texture": "all"`. Before this, heavy core exported with no faces at
+  all. A bare name matching no variable is still treated as a direct locator, as before.
+
+## Output contract
+
+```
+<output>/
+  atlas-0.png          stitched page(s), 4px edge-extended padding
+  atlas.json           sprite id -> rect, render layer, animation frames
+  models.json          model id  -> { ao, elements: [...], mesh?, renderType?, multiblock? }
+  blockstates.json     block id  -> { variants | multipart }, keys and predicates pre-parsed
+  tints.json           flat plains colours, colormaps, ramps, per-block semantics
+  colormap/*.png       the version's own grass/foliage/dry_foliage maps
+  failures.json        every block, model, sprite and tintindex the run could not fully handle
+  meta.json            version, counts, sha256 of every other file
+```
+
+Everything is pre-resolved: face textures are sprite ids, UVs are always present (derived per
+vanilla's `BlockElement.uvsByFace` when the model omits one), and variant keys and multipart
+predicates are structures rather than strings. The consumer should never need to resolve anything.
+
+**`blockstates.json`.** `variants` is an array of `{ when, apply }` rather than a map, so the key
+parsing is already done and ordering is preserved. `multipart` predicates are a tree:
+
+```json
+{ "op": "match",  "properties": { "north": ["true"], "shape": ["north_west", "north_east"] } }
+{ "op": "or",     "terms": [ … ] }
+{ "op": "and",    "terms": [ … ] }
+```
+
+An unconditional part has `"when": null`. `apply` is always an array — the weighted list, whole,
+minus any `weight: 0` entry the game could never pick — and `x`, `y`, `z`, `uvlock` and `weight` are
+omitted at their defaults (`0`, `0`, `0`, `false`, `1`).
+`z` is a loader extension rather than vanilla: AE2 writes `ae2:z` so a wall-mounted charger can spin
+about the face it is on. Apply it after `x` and `y`.
+
+**`models.json`.** `elements` is the box geometry. Three optional fields carry what mods need:
+
+- **`mesh`** — triangle geometry from an OBJ loader, as `[{ sprite, object?, positions, uv }]` with
+  flat arrays: three vertices per triangle, `positions` in the same 0–16 block space as `elements`
+  and `uv` in 0–16 sprite space. Winding is the OBJ author's, counter-clockwise seen from outside,
+  so the normal is a cross product away. A model can have `elements`, `mesh`, or both. `object` is
+  the OBJ's own `o`/`g` name, carried so a consumer can filter a multi-state file to one state.
+- **`renderType`** — the layer the model *states* it draws on, one of `solid` / `cutout` /
+  `translucent`. Authoritative where present, and it beats the per-sprite inference below: the same
+  sprite can be solid in one model and translucent in another, which per-sprite alpha cannot express.
+- **`multiblock`** — block offsets a split-multiblock mesh spans. See the mods section.
+
+**`atlas.json`.** `sprites[id]` is `{ page, x, y, w, h, layer }`, plus `frames` and `interpolate`
+when animated. `frames` is the displayed *sequence*, each entry `{ page, x, y, time }` with `time`
+in game ticks — per-frame times rather than a single `frametime`, because an `.mcmeta` frame list
+can give each frame its own duration and re-deriving that is exactly the resolution work this pack
+exists to avoid. Physical frames are packed once and referenced, so a ping-pong list costs nothing
+extra. `layer` is `solid` / `cutout` / `translucent`.
+
+**`tints.json`.** `flat` holds the plains-climate colours (`grass`, `foliage`, `dry_foliage` sampled
+from the version's own colormap; `water` from plains' `water_color`). `colormaps` names the copies
+in the pack. `ramps` holds `redstone` (16, by power) and `stem` (8, by age). `blocks[id][tintindex]`
+is one of `{kind: 'grass'|'foliage'|'dry_foliage'|'water'}`, `{kind: 'constant', color}`, or
+`{kind: 'ramp', ramp, property}`.
+
+**`meta.json`** carries sha256 for every other file, because the consumer caches these immutably per
+version the same way `icons/<version>/` is cached today.
+
+**`minecraft:missingno`** is a synthesized sprite, the black-and-magenta 16×16 the game draws for an
+unresolved texture. Faces pointing at it are faces whose texture the mod did not ship or did not
+bind; the game draws them the same way, so the pack does too rather than leaving a hole.
+
+## Decisions
+
+- **Infer the render layer from alpha.** A sprite whose alpha is only ever 0 or 255 is cutout;
+  anything in between is translucent; fully opaque is solid. Right default, covers mods for free.
+- **One version per pack**, immutable, published under `blocks/<version>/` on the `mc-assets` R2
+  bucket beside `icons/<version>/`. Modded namespaces publish separately and are fetched on demand,
+  exactly as `icons/modded/<namespace>` works now.
+- **Flat plains tint in v1**, but the colormaps ship in the pack, so real biome tints only need a
+  per-biome temperature/downfall table on the consumer side — not a re-export.
+- **Do not pre-render anything.** The consumer wants geometry, not pictures.
+- **Nothing is dropped silently.** Every block, model, sprite and tintindex the run could not fully
+  handle lands in `failures.json` with a reason, and the version-matrix test asserts that the only
+  kinds present are the two that are statements about the assets rather than about the exporter.
+
+## Resolved open questions
+
+- **Weighted variant selection.** `weightedVariantIndex(weights, x, y, z)` is exported so both sides
+  agree without inventing a scheme: it is `Mth.getSeed(x, y, z)` seeding a `java.util.Random`, then
+  `WeightedBakedModel`'s `abs((int) nextLong()) % totalWeight`. Both halves are stable across
+  1.13–1.21.3. 1.21.4 reworked the model system and parity there is unverified — the cost of being
+  wrong is a grass block rotated differently from the game, so it is not worth chasing further
+  until someone can diff it against a running client.
+- **`.mcmeta` beyond animation.** Only `animation` matters here; the rest (`gui`, `texture`
+  `blur`/`clamp`) does not affect geometry or atlas placement. `TextureLoader` already ignores it.
+- **Modded texture sizes.** The packer's multi-page path works and is covered by a test at a forced
+  128px page ceiling. Create + Immersive Engineering together still fit one 1024² page; a sprite
+  too large for any page is reported in `failures.json`, and every face naming it is repointed at
+  the missing-texture sprite, so no model names an id `atlas.json` has no entry for.
+- **Atlas page size.** 4px padding inflates a 16×16 sprite to 24×24, which more than doubles the
+  packed area — but vanilla still lands on a single page across the whole range (2048×1024 at 26.2,
+  1024×1024 or smaller below it). The doc's earlier "single 1024×1024" estimate did not account for
+  padding; the packer picks the smallest power-of-two that fits and only spills at the ceiling.
+  Both page dimensions are always powers of two, so a `--max-page-size` that is not one is rounded
+  down to the largest that is.
+
+## Publishing, and consuming from `ui`
+
+The pack rides the rails `icons/` already uses: the `mc-assets` R2 bucket, one immutable directory
+per version, URLs listed in `ui`'s `libs/minecraft/icon-assets.ts`.
+
+```
+blocks/<version>/            one vanilla version, immutable
+blocks/modded/<namespace>/   one mod's namespace, fetched on demand
+```
+
+**Over the wire** (1.21.8, gzip except the PNGs, which are already compressed):
+
+| file | on disk | transferred | when |
+| --- | --- | --- | --- |
+| `atlas-0.png` | 330 KB | 330 KB | always |
+| `models.json` | 1,863 KB | 88 KB | always |
+| `blockstates.json` | 897 KB | 48 KB | always |
+| `atlas.json` | 118 KB | 11 KB | always |
+| `colormap/*.png` | 29 KB | 29 KB | only for real biome tints |
+| `tints.json` | 2 KB | 1 KB | always |
+| `failures.json` | 10 KB | 1 KB | diagnostics only, never at runtime |
+| `meta.json` | 1 KB | 1 KB | always |
+| **total** | **3.2 MB** | **507 KB** | |
+
+An eight-mod pack (Create, IE, Mekanism, AE2, Botania, Supplementaries, Quark, Farmer's Delight) is
+16.7 MB on disk and **1.8 MB transferred**, on one 2048² page.
+
+**Caching.** A pack is byte-identical across runs — every map is key-sorted and nothing stamps a
+time — so `blocks/<version>/` can be served `immutable, max-age=31536000` and `meta.json`'s sha256
+per file is enough to verify a cached copy without refetching it. Serve the JSON with
+`content-encoding: gzip`; the PNGs are already deflate.
+
+**Load order.** `meta.json` first (counts and hashes, 1 KB), then `atlas-0.png` in parallel with
+`blockstates.json` + `models.json` + `atlas.json`. Nothing needs `failures.json` at runtime and
+nothing needs `colormap/` until biome tints are wired up.
+
+**Knowing what you do not have.** The pack answers this itself, without the sidecar:
+
+- **Block not in `blockstates.json`** — this pack does not describe it. A modded block whose pack
+  was never fetched lands here.
+- **Evaluates to no case, or every case's model has empty `elements` and no `mesh`** — the game
+  draws this block in code and nothing is vendored for it. 58 of 1,107 vanilla blocks after the
+  substitutions below: banners, skulls, water, lava, air, barrier, light.
+- **A face's sprite is `minecraft:missingno`** — the mod named a texture it did not ship or did not
+  bind, and the game draws it black-and-magenta too. Drawing it is the faithful answer.
+- **`particle` on the model** — every model carries its particle texture, so even a block with no
+  geometry has a colour to draw a placeholder in: a chest comes out oak, a bed comes out wool.
+
+`minecraft:missingno` is in **every** pack whether or not anything resolved to it, so it is always
+available as the fallback for the first case as well — an unknown block can be drawn as a magenta
+cube without inventing a texture. `failures.json` is the diagnostic view of the same facts, keyed by
+model or block with a reason; it is for a build report, not for the renderer.
+
+**What the viewer still has to build itself.** The pack is the asset source, not the renderer:
+
+- **Fluids.** A fluid is a block here with no geometry, because the game meshes it from neighbouring
+  fluid levels. The pack puts every fluid's textures in the atlas anyway — animation frames and all
+  — so the mesher has pixels to work with, but the surface geometry is the consumer's. Which
+  textures those are is read off the files by the `_still` / `_flow` / `_flowing` convention rather
+  than listed, because mods add far more fluids than vanilla has and file them wherever they like:
+  Create under `fluid/`, Immersive Engineering under `block/fluid/`, Mekanism under `liquid/`. Three
+  mods together contribute 34 such sprites where vanilla has four.
+- **Block entities that are still empty.** Banners and skulls come out empty and recorded — see
+  below for the ones that no longer do.
+- **Ambient occlusion.** `ao` says whether a model wants it; computing it is the mesher's job.
+- **Biome tints.** `tints.json` ships flat plains colours plus the version's own colormaps; the
+  per-biome temperature/downfall table is a second data source.
+- **Break overlays and connected textures** are not in the pack at all.
+
+## Blocks the game draws in code
+
+A chest's blockstate is one empty-key variant on a model with no elements:
+
+```json
+minecraft:chest      → {"variants":{"":{"model":"minecraft:block/chest"}}}
+minecraft:oak_sign   → {"variants":{"":{"model":"minecraft:block/oak_sign"}}}
+```
+
+Not just the shape — the *orientation* is not in the assets either. A block entity renderer draws
+the lot from Java. That was **144 of vanilla 1.21.8's 1,107 blocks**, and a world viewer reading
+only the assets would put a hole where every chest and sign is.
+
+rendermite already vendors box geometry for most of them, because the icon pipeline hit the same
+wall years ago. `src/blocks/block-entities.ts` maps it onto blocks: it swaps the vendored model in
+and **synthesises the orientation variants the blockstate never carried**, which works because the
+consumer holds the block's real property map from the chunk even though the assets do not.
+
+| family | blocks | geometry |
+| --- | --- | --- |
+| signs, wall signs, hanging signs | 48 | authored for this — `renderchest:block/{standing,wall,hanging}_sign` |
+| banners, wall banners | 32 | authored for this — one model, 16 dyes from the tint table |
+| shulker boxes | 17 | vendored, one per colour, oriented on all six faces |
+| beds | 16 | authored for this — head and foot as a block each, `part` x `facing` |
+| skulls, wall skulls | 14 | vendored mobheads geometry, translated off the item's centre |
+| chests | 11 | vendored, plus authored halves for the double forms, `type` x `facing` |
+| fluids | 3 | authored for this — a culled cube on the still sprite |
+| conduit, decorated pot | 2 | vendored |
+| copper golem statue | 8 | authored for this — 26.2 only, read off the entity sheet |
+| **still empty** | **9** | air, barrier, light, structure void, moving piston, the two portals |
+
+Three things keep this honest:
+
+- **Every substituted model is named `rendermite:block/…`**, so nothing mistakes vendored geometry
+  for something a jar shipped.
+- **Every substituted block is recorded** in `failures.json` saying which model was swapped in.
+- **The substitution stands down where the assets grow geometry of their own.** 26.2 ships real
+  `block/oak_sign_rot_0` models with proper rotation variants, and the pack takes those instead —
+  asserted by a test, because silently overriding the game's own shape with an approximation of it
+  would be the worst outcome of the lot.
+
+Passing no `builtin` turns the whole thing off and every one of the 144 goes back to being empty
+and recorded.
+
+### The table is for vanilla; mods are searched for
+
+A table of block ids covers vanilla and nothing else. `ironchest:crystal_chest` keeps its sheet
+wherever it likes, `cobblemon:apricorn_sign` does not file its board under `entity/signs/`, and
+`spectrum` ships heads for 90 mobs. Measured across 60 mods and 21,177 blocks, keying off vanilla
+ids alone left **645 blocks empty** that the pack had geometry for.
+
+So the block pack uses the same discovery the icon renderer has always used, now shared in
+`src/resources/entity-textures.ts` rather than written twice: the sheet is found by token overlap
+with the block's name, over the mod's own textures. `findChestTexture`, `findMobTexture`,
+`findBedTexture`, `findEntityTexture` and `findFluidStill` are one module used from both ends.
+
+| family | before | after | what the search does |
+| --- | --- | --- | --- |
+| signs | 181 | 0 | falls back to a search when `entity/signs/<wood>` is not there |
+| chests | 155 | 2 | scores the mod's own chest sheets, wherever they live |
+| shulker boxes | 64 | 0 | gated on the sheet being a whole skin, not a tier overlay |
+| skulls | 244 | 122 | 90 vendored mobs by name, then the mod's own sheet by skin size |
+| fluids | 19 | 6 | matches the block name against `<name>_still` in its namespace |
+| banners | 2 | 1 | the mod's own base sheet, else vanilla's |
+
+Two things this turned up that were not about mods at all. The vendored heads were authored against
+current vanilla, which files an entity sheet under its own mob folder (`entity/bat/bat`); older
+versions keep them flat (`entity/bat`), so any binding that does not resolve is now looked up again
+by name — worth 70 blocks on its own. And a double chest's halves are not always suffixed: vanilla
+writes `normal_left`, quark files `left` beside `normal`, so both are tried.
+
+What is left is the honest limit of name matching. `botania:gaia_head` is a head for the Gaia
+Guardian, whose sheet botania calls `doppleganger`; Immersive Engineering's `phenolic_resin` fluid
+has a sprite called `resin_still`. Loosening the match to catch those would start binding
+`biodiesel` blocks to `diesel` sprites, which is worse than a recorded gap.
+
+Iron Chests, the mod that prompted the question, needs none of this: it ships real block models and
+was never empty.
+
+Some of these needed more than one shape per block, which is what the `shapes` list is for. A bed
+splits on `part`; a chest splits on `type`.
+
+### Double chests
+
+Two chests placed side by side stop being two chests. Each keeps its own block but takes a `type`
+of `left` or `right`, and the game swaps in a **15-wide** box on a wider sheet so the pair reads as
+one container with a single lock on the seam. Drawing two singles instead leaves a join down the
+middle and two lids.
+
+The halves are derived from the sheet rather than drawn, because Minecraft unwraps an entity box by
+a fixed rule and the vendored single chest already pins that rule down. Two things bit on the way:
+
+- The side band runs `d, w, d, w`. Writing the third boundary as `u + d + 2w` reproduces the single
+  chest exactly and is still wrong, because a single chest is as deep as it is wide and a double
+  half is not.
+- The vendored single chest labels that band's **east and west the other way round on its body box
+  than on its lid**. Its two side textures are near identical so the slip never showed, but on a
+  double chest it puts the blank seam end on the outside — a black hole where the chest should be.
+
+The tie-break was the sheets themselves. `normal_left` leaves nothing where its west face samples
+and `normal_right` nothing at its east, which says which end is the seam and agrees with
+`ChestBlock.getConnectedDirection` putting a left half's partner clockwise of its facing.
+`.work/check-doubles.mjs` then measures the join in all four facings, since a one-pixel gap is not
+something an isometric render will show you.
+
+### Fluids
+
+Flowing states are the one family the pack deliberately does not bake, and it is worth being precise
+about why. `LiquidBlockRenderer` computes each corner of a fluid's surface by averaging the heights
+of the block and its eight horizontal neighbours, and takes the flow angle from the gradient across
+them. `level` alone does not determine any of it.
+
+Baking per-level heights would also make the common case *worse*. An ocean is level 0 throughout,
+including the blocks below the surface, and vanilla only shortens a fluid whose neighbour above is
+not the same fluid. Emitting a 14-pixel box for every level 0 block would band a whole ocean with
+2-pixel gaps. A full cube is both simpler and the better naive answer.
+
+So the block is a full culled cube, and the model states what a consumer needs to mesh the real
+thing:
+
+```json
+"rendermite:block/water": {
+  "elements": [ … ],
+  "fluid": {
+    "still":   "minecraft:block/water_still",
+    "flow":    "minecraft:block/water_flow",
+    "overlay": "minecraft:block/water_overlay"
+  }
+}
+```
+
+That block is the point. The flow sheet was always in the atlas, but nothing named it, so a consumer
+had to guess `<block>_flow` — which works for vanilla and fails for every mod: Create files fluids
+under `fluid/`, Immersive Engineering under `block/fluid/`, Mekanism under `liquid/`. The sheets are
+now found as siblings of the still one, which also keeps lava from borrowing water's overlay, since
+only water has one.
+
+The cube itself follows the renderer where it costs nothing: the still sheet on the flat faces and
+the flow sheet on the sides, sampling its top-left quarter as `LiquidBlockRenderer` does.
+
+For a consumer that wants the real surface, the height rule is
+`(8 - min(level, 7)) / 9`, full for a falling fluid (`level >= 8`) or one with the same fluid above.
+
+### What stays empty
+
+Nine blocks, and the pack now says so rather than leaving a hole. `air`, `cave_air` and `void_air`
+draw nothing; `barrier`, `light` and `structure_void` only appear while the player holds one;
+`moving_piston` is a placeholder the piston draws for; `end_portal` and `end_gateway` are shader
+effects rather than geometry. They land in `failures.json` under a kind of its own:
+
+```js
+failures.filter(f => f.kind !== 'intentional')   // the real gaps
+```
+
+Two guarantees hold across every version and every mod pack tested, and both are asserted:
+
+- **No empty block is silent.** Anything that draws nothing has an entry in `failures.json`, whether
+  it is empty on purpose or a gap no geometry is vendored for.
+- **No substitution is part magenta.** Vendored geometry is a guess about a block the assets do not
+  describe, so a half-bound one reads as a broken texture rather than a gap. If any texture it names
+  is missing, the block is left empty and recorded instead.
+
+### The copper golem statue
+
+26.2's statue was the last vanilla block with nothing to draw, and it is the hardest kind: the game
+draws it entirely from Java, the jar's model carries only a particle texture, and 26.2 ships no
+entity geometry as data either. So it was **read off its own texture**.
+
+A Mojang entity sheet is an unwrap, and an unwrap is measurable. Printing the alpha channel shows
+nine islands, and each island's dimensions give back the box that made it — a top band `d` rows tall
+and `2w` wide, a side band `h` rows tall and `2d + 2w` wide:
+
+```
+rows 0–9    x 10–25   →  top band, d=10, 2w=16   ┐
+rows 10–14  x 0–35    →  side band, h=5, 2d+2w=36 ┘  head: 8 x 5 x 10 at texOffs(0,0)
+```
+
+Nine boxes came out that way: head, beak, antenna stem and top, body, two arms, two legs. Four of
+them are then pinned exactly rather than guessed, because `mobheads:item/copper_golem` is vendored
+for the icon pipeline, reads the same sheet at the same offsets, and states its boxes and UVs
+outright. The unwrap formula reproduces its head and antenna to the pixel, which is what makes the
+other five trustworthy.
+
+Two details the sheet also settled:
+
+- **Which way it faces.** The eyes sheet has 8 opaque pixels in the head's north band and none in
+  the other three, so the model is authored facing north — the opposite of the chest, which is why
+  the same unwrap labels their east and west differently.
+- **The overlay.** The vendored head item leaves its eyes layer coplanar with the head, which a
+  rasterizer resolves by draw order and a depth buffer does not. The block version is nudged out by
+  0.02 units: enough to win, not enough to see.
+
+The properties came from the wiki rather than the assets, which do not carry them: `facing`,
+`waterlogged`, and `copper_golem_pose` with `standing`, `sitting`, `running` and `star`. Only
+standing is authored — the other three differ by limb rotations nothing records — so the cases key
+on `facing` alone and every pose draws the standing statue rather than a hole.
+
+**That closes vanilla.** Every version from 1.13 to 26.2 now exports with the only empty blocks
+being the nine the game itself draws nothing for, and the version matrix test asserts it.
+
+## Mods
+
+Vanilla is the easy half. The mod work was driven by exporting a pack per jar across the corpus and
+reading the failure taxonomy back — `.work/survey-mods.ts` in a working tree, not committed — rather
+than guessing at what mods do. Everything below is a class the survey surfaced, in the order it cost
+the most geometry.
+
+### OBJ geometry — the big one
+
+Forge and NeoForge let a block model point at an `.obj` instead of stating `elements`, and mods use
+it for everything a box cannot express. Across 59 named mods that is **237 block models**: Create's
+crushing wheels, blaze burners, flywheels and valve handles; Immersive Engineering's slopes,
+connectors, chutes and split multiblocks; Mekanism's pipes, cables and transporters. Before this,
+every one of them exported with nothing to draw.
+
+Triangles are a superset of boxes and a GPU consumer draws them more easily, so `models.json` gained
+a `mesh` rather than trying to approximate a mesh with boxes. `src/blocks/obj-mesh.ts` reuses the
+icon pipeline's `parseObj`/`parseMtl` and material binding unchanged; the only translation is 0–1
+block space to the pack's 0–16, and OBJ's 0–1 UVs to 0–16 sprite space. IE's `.obj.ie` files parse
+the same way. A mesh over 20,000 triangles is reported rather than emitted.
+
+### One OBJ, several states
+
+The catch with OBJ is that a file often holds *more than one state of the block*. IE's `ie_obj`
+loader packs them in as named objects and picks between them in a Java callback: a workbench draws
+its blueprint only when one is inserted, a post grows arms only toward neighbours, a logic unit
+shows a board per installed circuit, a floodlight has separate lamp-on and lamp-off objects. 44 IE
+models do this.
+
+Drawing all of them is worse than drawing none, because it looks like it worked — an alu post came
+out with arms in every direction, a lantern with brackets on all six sides, a fluid pipe as a solid
+knot of every connection shape. **The model files name the callback and nothing else**, so there is
+no data source for the right subset. Three things, in order of how much they are guessing:
+
+1. **Every mesh group carries its `object` name.** No guessing, strictly more data, and it lets a
+   consumer filter to one state.
+2. **A model whose loader declares a runtime selector and got no restriction is recorded**, listing
+   the objects, so a wrong-looking block is traceable to the reason rather than looking like a pack
+   bug. It is gated on the selector, not on the object count: Create's track models are 37 named
+   groups that all draw together, and flagging those would be crying wolf.
+3. **A curated default per callback, for the ones whose default is unambiguous** — following the
+   same per-mod convention `MOD_LOADER_HANDLERS` already uses. Currently `workbench` (blueprint is
+   inserted contents), `post` and `lantern` (connections need neighbours) and `logic_unit` (boards
+   are installed circuits). Each was checked by rendering it. `chute` was in this list and came
+   out wrong — `base` is only the frame, not the walls — so it was removed rather than kept on the
+   strength of the reasoning. Everything else keeps drawing all objects, recorded.
+
+### Broken mod assets must not lose geometry
+
+Three separate cases, all of which used to drop something:
+
+- **`#missing` and absent textures.** Blockbench writes `"texture": "#missing"` on faces nobody
+  assigned, and mods name textures they forgot to ship (Spectrum's `stripped_gala_log`). That is
+  620 faces and 111 sprites across the corpus. The game draws them in black and magenta; the pack
+  now points them at `minecraft:missingno` instead of deleting the face, which shows the mod's bug
+  rather than inventing a hole.
+- **One bad case must not take the block with it.** AE2's `crafting_monitor` states no model for
+  `formed=true` because the game draws that state itself. That one case used to fail the parse and
+  lose all eleven others. `parseBlockState` now takes an `onCaseError` handler; the exporter drops
+  the case, records it, and keeps the rest.
+- **A model the pack cannot carry must not be named.** AE2 builds its `*_formed` models in Java, so
+  no file exists to read — 99 references across the corpus. Blockstates are now serialized *after*
+  the models resolve, and a variant naming a model that did not export is dropped from the emitted
+  case. The pack never hands the consumer a model id it does not carry, which is the one invariant
+  the whole contract rests on.
+
+### Loader extensions vanilla has no equivalent for
+
+- **`render_type`** — 893 modded block models state their layer outright. Where a model says so it
+  is authoritative, and `renderType` on the model beats the per-sprite alpha inference.
+- **`extra_rotation`** — an arbitrary angle on an element, past vanilla's 22.5° steps.
+  Supplementaries slants its awnings with it. Folded into the element's rotation angle by the model
+  loader, so the icon renderer gets the fix too; ignoring it silently flattened the awnings.
+- **A third rotation axis** — AE2 writes `ae2:z` on blockstate variants so a wall-mounted charger or
+  drive can spin about the face it is on. 17 blockstates use it, several with real geometry.
+  Any `z` or `<ns>:z` numeric key is read; only a number can match, so the probe is safe.
+- **A loader naming its delegate `model`** — the same shape as `delegate` and `childModel` under the
+  loader's own spelling (Supplementaries' faucet). Redirected as a parent.
+- **`neoforge:definition_type`** — NeoForge 1.21.6+ lets a mod register a blockstate *definition*
+  loader the way it can register a model loader, and the file then carries the loader's own shape
+  instead of `variants`. Only the fallback is recoverable from assets, and it is the right one:
+  `base_model` is what the block looks like before the loader runs. FramedBlocks' 233 camouflage
+  blocks went from 22 exported to 255 on this alone. Recorded, since a camouflage block will not
+  reflect what is inside it.
+
+### Multiblocks
+
+IE's `basic_split` wraps one mesh spanning several block positions — a coke oven's model is the
+whole 2×2×2 structure — and hands each position its own slice at draw time. **Which slice is in the
+block entity, not in the assets**, so no amount of asset reading recovers it. The pack carries the
+whole mesh plus `multiblock`, the offsets the structure spans, and records the model in
+`failures.json` so the consumer knows to draw it once from a corner rather than once per position.
+
+### Looking for geometry that is wrong rather than missing
+
+The sidecar only knows about things the exporter could not do. A block that exports happily and
+draws its every state at once looks like a success in every count. So a second sweep over the same
+corpus reads the *emitted* packs and flags shapes that read as wrong: a model whose every face is
+the missing-texture sprite, geometry a long way outside its own block with no multiblock to explain
+it, the identical element twice over, a mesh whose objects are mutually exclusive, zero-volume
+boxes. Two real bugs came out of it.
+
+- **Sophisticated Storage's barrels were 114 elements for a box.** The loader states two part
+  groups — the partitioned and plain variants of the same barrel — and within each, `_open`,
+  `locked` and `packed` are states rather than additions. Merging the lot stacked
+  `barrel_part/base` four times. Now the plain group is taken, states are skipped and repeats
+  deduplicated: **114 elements → 13**. This one predates the block pack; the icon renderer had been
+  drawing four barrels on top of each other too.
+- **"Every face is magenta" is now said once per model** rather than left to be inferred from a
+  face-by-face scan, so a consumer can hide the block instead of showing a magenta box. 2,381
+  models across the corpus, and they are faithful: Ars Nouveau's alteration table names `#3` on
+  every face and binds only `particle`, so the game draws it magenta too.
+
+The rest of what the sweep found is mods being mods: 2,412 meshes with many named groups that all
+legitimately draw together, and 2,210 models with a genuinely duplicated element, which is what a
+Blockbench user pressing duplicate produces. Those pass through verbatim.
+
+### How the mod path is tested
+
+Three layers, because each catches what the others cannot:
+
+- **Synthetic assets** (`test/block-pack-mods.test.ts`) — one isolated case per class, with the mod
+  that motivated it named on the test. Fast, and it pins the exact behaviour rather than a count.
+- **Real jars** (`test/block-pack.test.ts`) — two modded cases from Modrinth, downloaded at test
+  time. Create, Immersive Engineering, Mekanism, AE2 and Botania loaded together as one Forge 1.20.1
+  pack (which is also what stresses the atlas packer), and Supplementaries with FramedBlocks as a
+  NeoForge 1.21.1 pack for the newer loader extensions. Both assert the pack is self-contained and
+  that the only sidecar entries are shapes spelled out in `MODDED_ALLOWANCES` — a `model` entry
+  whose reason is anything but "Model not found", or a `texture` entry that is not the missing-sprite
+  substitution, still fails the run.
+- **Looking at it.** Counts cannot see a block that exports happily and draws wrong. The floating
+  blueprint on IE's workbench passed every count and every assertion; it was found by rendering the
+  pack and looking. `.work/render-sample.mjs` in a working tree draws a sample across every
+  namespace in a pack for exactly that.
+
+### What mods still cannot give us
+
+- **Connection state is not in the blockstate.** Mekanism's cables and IE's pipes keep every
+  connection state in one OBJ and pick per neighbour at runtime, from the block entity. Mekanism's
+  is restricted to the unconnected centre, which is what an isolated cable looks like; IE's pipe
+  has 17 objects and no obvious default, so it draws all of them and says so. Both carry their
+  object names, so a consumer that learns the rule can filter without a re-export.
+- **Connected textures** (Continuity, Chipped's CTM) live in `optifine/ctm/` or a mod's own format
+  and describe *runtime* sprite selection from neighbours. Out of scope for the same reason: the
+  pack describes a block, not its neighbourhood. Chipped's 6,981 blocks export fine without it.
+- **Blocks drawn in code** stay empty, as in vanilla. After the OBJ work, 574 of the corpus's
+  remaining empty models have no loader at all — they are genuinely code-built (AE2's cable bus,
+  Sophisticated Backpacks, Create's kinetic overlays).
+
+## Known gaps
+
+- **11 vanilla tintindexes have no table entry** (1.21.8): `bamboo`, `bamboo_sapling`, `bush`,
+  `cherry_leaves`, `lava_cauldron`, `leaf_litter`, `pale_oak_leaves`, `pink_petals`,
+  `powder_snow_cauldron`, `stonecutter`, `wildflowers`. Some are correct as-is — cherry and pale oak
+  leaves inherit their tintindex from `block/leaves` and vanilla registers no colour for them, so
+  untinted *is* what the game draws. Others (`bamboo`, `leaf_litter`) declare it themselves and
+  probably want a colour. Closing them means reading `BlockColors.createDefault()` for the target
+  version; until then they are in `failures.json` rather than quietly grey.
+- **Blocks the game draws in code** export as whatever their model states, which for signs, chests,
+  shulker boxes, banners, beds, water and lava is nothing at all. All of them are listed in
+  `failures.json` with kind `geometry`, so the consumer can say so in its UI rather than looking
+  broken.
+- **Modded tintindexes are the bulk of the sidecar**, 1,066 across the corpus. A mod's block colours
+  live in its Java, exactly as vanilla's do, so there is no data source short of a per-mod table.
+  They export untinted and say so.
+- **Supplementaries' `flower_box` and `frame_block`** name their content under keys nothing else
+  uses (`box`, `overlay`), and the frame's real geometry is the block it mimics. 21 models,
+  unrecovered.
+
+## Measured
+
+Full vanilla export, `.work/fixtures/<version>-client.jar` through `prepareVersionResources`:
+
+| version | blocks | models | sprites | atlas page | time |
+| --- | --- | --- | --- | --- | --- |
+| 1.13.2 | 599 | 924 | 504 | 1024×512 | 1.1s |
+| 1.18.2 | 900 | 1,563 | 780 | 1024×1024 | 1.7s |
+| 1.19.4 | 1,000 | 1,790 | 855 | 1024×1024 | 1.9s |
+| 1.21.1 | 1,062 | 1,925 | 973 | 1024×1024 | 2.2s |
+| 1.21.4 | 1,097 | 1,991 | 1,000 | 1024×1024 | 2.3s |
+| 1.21.8 | 1,107 | 2,015 | 1,044 | 1024×1024 | 2.3s |
+| 26.2 | 1,198 | 2,380 | 1,230 | 2048×1024 | 2.9s |
+
+One pack per mod jar, mod namespaces only, over vanilla:
+
+| mod | blocks | models | sprites | atlas | time | sidecar |
+| --- | --- | --- | --- | --- | --- | --- |
+| chipped | 6,981 | 9,827 | 7,252 | one page | 27.4s | 33 tint, 4 texture |
+| spectrum | 1,306 | 1,801 | 1,179 | one page | 7.1s | 25 tint, 32 texture, 7 geometry |
+| quark | 809 | 1,383 | 514 | one page | 3.0s | 62 tint, 42 geometry, 34 model |
+| botania | 678 | 1,241 | 497 | one page | 2.9s | 25 tint, 34 geometry |
+| create | 643 | 1,459 | 707 | one page | 3.6s | 6 geometry, 1 tint |
+| immersive engineering | 295 | 899 | 353 | one page | 2.3s | 65 geometry, 1 tint |
+| handcrafted | 267 | 12,016 | 922 | one page | 14.8s | none |
+| mekanism | 201 | 273 | 405 | one page | 1.5s | 21 geometry, 9 tint |
+| ae2 | 102 | 192 | 117 | one page | 0.7s | 14 geometry, 6 texture, 3 tint, 1 model |
+
+Across 59 named mods: **20,941 blocks, 60,251 models, 22,617 sprites, no run errored, none needed a
+second atlas page.** Eight of them loaded together as one modpack come to 3,088 blocks and 3,210
+sprites on a single 2048² page, with 152 OBJ meshes, 320 models stating a render layer and 49 split
+multiblocks; forced to a 1024 ceiling the same pack spills cleanly to three pages.
+
+Breadth: a pack per jar over the whole 3,000-jar coverage corpus — **1,202 of them ship blocks, and
+those export 147,240 blocks with no run erroring.** That sweep is what found the classes above; the
+last of them, NeoForge's blockstate definition loaders, came out of the tail of it.
+
+What the work changed, measured on the same 59 jars: models with nothing to draw **907 → 627**;
+geometry dropped for a texture the mod did not ship or bind **699 → 0** (588 faces and 111 sprites,
+all now carrying the missing-texture sprite); blockstates lost whole to one bad case **23 → 0**;
+dangling model references in `blockstates.json` **99 → 0**.
+
+1.21.8 on disk: `atlas-0.png` 316 KB, `models.json` 1.9 MB, `blockstates.json` 919 KB,
+`atlas.json` 119 KB. The JSON gzips well and caches immutably.
+
+## Consumer context
+
+The `ui` repo's `NCRegionWorkbench` reads Anvil regions in the browser today — chunk map, per-chunk
+NBT editing, download. The next phase there is decoding chunk block states and meshing them, which
+is what this pack feeds. Its mesher is deliberately written against a `BlockAccessor` interface
+rather than a chunk, so structures and schematics render through the same path.
+
+The 1.13 floor obliges that decoder to handle three section layouts, not one: 1.13–1.15 pack palette
+indices tightly across long boundaries, 1.16–1.17 pad so an index never straddles two longs, and
+1.18+ moved sections to the chunk root under `block_states`. All three are namespaced, so all three
+are in scope for this pack — a version this exporter supports is one the consumer must be able to
+read, and vice versa. Keep the two floors in step.

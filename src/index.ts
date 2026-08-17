@@ -32,3 +32,27 @@ export type { RunOptions, RunResult, ItemFailure } from './run.ts';
 export { JarResourceManager, UnsafeJarError, isUnsafeEntryPath } from './resources/jar.ts';
 export { parseAtlasSources, createAtlasResolver, AtlasSourceError } from './atlas/sources.ts';
 export type { AtlasSource, AtlasResolver, ResolvedSprite } from './atlas/sources.ts';
+export { exportBlockPack } from './blocks/export.ts';
+export type { ExportBlockPackOptions, BlockPackResult, BlockPackFailure } from './blocks/export.ts';
+export {
+	BlockStateError,
+	collectModels,
+	evaluateBlockState,
+	matchesCondition,
+	parseBlockState,
+	weightedVariantIndex,
+} from './blocks/blockstate-eval.ts';
+export type {
+	BlockModelVariant,
+	BlockProperties,
+	BlockStateDefinition,
+	BlockStateMultipartCase,
+	BlockStateVariantCase,
+	MultipartCondition,
+} from './blocks/blockstate-eval.ts';
+export { buildObjMesh, ObjMeshError } from './blocks/obj-mesh.ts';
+export type { MeshGroup, ObjMesh } from './blocks/obj-mesh.ts';
+export { packAtlas } from './blocks/atlas-pack.ts';
+export type { PackEntry, PackOptions, PackedAtlas, PackedPage, PackedRect } from './blocks/atlas-pack.ts';
+export { buildBlockTints } from './blocks/tints.ts';
+export type { BlockTint, BlockTintPack } from './blocks/tints.ts';

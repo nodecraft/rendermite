@@ -58,12 +58,37 @@ icons/
   rc-<namespace>-failures.json     # per-item failures with reasons, never silent
 ```
 
+### Block packs
+
+A second output mode emits block **geometry and textures as data**, for a renderer that draws blocks itself rather than consuming finished icons. Java Edition, 1.13 (the Flattening) and up.
+
+```sh
+rendermite blocks --version 1.21.8 --output ./blocks/1.21.8
+rendermite blocks --version 1.20.4 --mod ./create-1.20.1.jar --output ./blocks/create
+```
+
+```
+blocks/1.21.8/
+  atlas-0.png          # stitched sprite page(s), 4px edge-extended padding
+  atlas.json           # sprite id -> rect, render layer, animation frames
+  models.json          # model id -> baked elements, OBJ meshes, stated render layer
+  blockstates.json     # block id -> variants/multipart, keys and predicates pre-parsed
+  tints.json           # plains tints, colormaps, ramps, per-block tint semantics
+  colormap/*.png       # the version's own grass/foliage/dry_foliage maps
+  failures.json        # anything not fully handled, with reasons, never silent
+  meta.json            # version, counts, sha256 of every other file
+```
+
+Everything is pre-resolved: no parent chains, no `#texture` references, no variant-key parsing at runtime.
+
+Mods are first-class. Forge/NeoForge **OBJ geometry** exports as triangle meshes alongside box elements (Create's crushing wheels, Immersive Engineering's slopes and connectors, Mekanism's pipes), stated `render_type` beats inference, arbitrary element angles and a third rotation axis are carried through, and a mod's broken assets cost a magenta face rather than the whole block. Verified by exporting a pack per jar across a 3,000-mod corpus. See [docs/block-pack-export.md](docs/block-pack-export.md) for the full contract.
+
 ### As a library
 
-Everything the CLI does is exported, from the high-level `run()` down to individual pieces (`ModelLoader`, `TextureLoader`, `renderModel`, `prepareVersionResources`, `prepareModResources`, `generateStylesheet`).
+Everything the CLI does is exported, from the high-level `run()` and `exportBlockPack()` down to individual pieces (`ModelLoader`, `TextureLoader`, `renderModel`, `prepareVersionResources`, `prepareModResources`, `generateStylesheet`, `evaluateBlockState`, `packAtlas`).
 
 ```ts
-import { run, prepareModResources, builtinPackPath } from '@nodecraft/rendermite';
+import { run, exportBlockPack, prepareModResources, builtinPackPath } from '@nodecraft/rendermite';
 ```
 
 ## Performance

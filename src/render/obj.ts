@@ -149,7 +149,7 @@ export function parseMtl(text: string): Map<string, string> {
  * go through the model's texture map (Forge binds materials that way); bare
  * names fall back to a direct locator.
  */
-function materialTexture(model: ResolvedModel, materials: Map<string, string>, material: string): ResourceLocator | null {
+export function materialTexture(model: ResolvedModel, materials: Map<string, string>, material: string): ResourceLocator | null {
 	const mapped = materials.get(material) ?? material;
 	if (mapped.startsWith('#')) {
 		return resolveTexture(model, mapped);

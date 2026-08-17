@@ -36,6 +36,13 @@ Reference data:
 - Mod jars + packs: the internal `ui` repo's `.minecraft-icons/{modjars,packs}/` corpus (local only, license-restricted).
 - Local fixture: `.work/fixtures/1.21.8/` (extracted client jar assets).
 
+## Second output mode: block packs
+
+`docs/block-pack-export.md` — `rendermite blocks` emits block geometry and textures as data
+(atlas + JSON) for a GPU renderer, rather than rendered icons. Java Edition, 1.13 and up.
+Everything above the rasterizer is reused unchanged; the new pieces are a real blockstate
+evaluator, an atlas packer, and the emit.
+
 ## Architecture
 
 ```
@@ -58,6 +65,10 @@ src/
   output/      (next) encode via sharp (PNG/WebP/AVIF), stylesheet + item library
   versions/    (next) era detection, legacy reshaping, donor geometry (port from ui lib.ts)
   mods/        (next) loader model flattening, synthesized item models (port from ui lib.ts)
+  blocks/      block pack export: blockstate-eval (variants/multipart/weights),
+               atlas-pack (shelf packer, edge-extended padding), obj-mesh (OBJ
+               loader geometry as triangles), tints (vanilla BlockColors table +
+               plains colormap sampling), export (the emit)
 ```
 
 ### Key decisions

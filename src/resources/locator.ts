@@ -12,6 +12,33 @@ const PATH_PATTERN = /^[\d./_a-z-]+$/;
 
 export class InvalidResourceLocatorError extends Error {}
 
+/**
+ * Collapse `.` and `..` segments, or null when the path climbs out of the pack.
+ * Ids come from jars, OBJ `mtllib` lines and MTL texture bindings, and every one
+ * of them is joined onto an asset root on disk, so an escaping path reads a file
+ * the pack does not contain.
+ */
+function containedPath(path: string): string | null {
+	if (!path.includes('.')) {
+		return path;
+	}
+	const segments: string[] = [];
+	for (const segment of path.split('/')) {
+		if (segment === '.') {
+			continue;
+		}
+		if (segment !== '..') {
+			segments.push(segment);
+			continue;
+		}
+		if (segments.length === 0) {
+			return null;
+		}
+		segments.pop();
+	}
+	return segments.join('/');
+}
+
 export class ResourceLocator {
 	static parse(locator: string, defaultNamespace = 'minecraft'): ResourceLocator {
 		const colon = locator.indexOf(':');
@@ -33,7 +60,11 @@ export class ResourceLocator {
 		if (!PATH_PATTERN.test(path)) {
 			throw new InvalidResourceLocatorError(`Invalid path in resource locator: ${locator}`);
 		}
-		return new ResourceLocator(namespace, path);
+		const contained = containedPath(path);
+		if (contained === null || contained.length === 0) {
+			throw new InvalidResourceLocatorError(`Path does not resolve inside the pack: ${locator}`);
+		}
+		return new ResourceLocator(namespace, contained);
 	}
 
 	/** Parse, returning null instead of throwing for ids too malformed to normalize. */
