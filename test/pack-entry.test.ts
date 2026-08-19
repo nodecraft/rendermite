@@ -8,11 +8,13 @@
  * was meant, or one convenience re-export from the exporter — would otherwise
  * pull the toolchain in silently, and the failure lands on whoever ships it.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { rolldown } from 'rolldown';
 import { describe, expect, it } from 'vitest';
+
+import type { BlockPackBlockState } from '../src/blocks/pack-format.ts';
 
 const root = path.join(import.meta.dirname, '..');
 
@@ -92,5 +94,49 @@ describe('the pack entry', () => {
 			'matchesCondition',
 			'weightedVariantIndex',
 		]);
+	});
+	/**
+	 * The source bundle above proves the module graph, but a consumer loads `dist`,
+	 * which the build splits into shared chunks. A chunk shared with the exporter
+	 * would ship `sharp` behind a source graph that still looks clean, so the built
+	 * artifact is walked too. CI builds before it tests; locally this needs a build.
+	 */
+	it.runIf(existsSync(path.join(root, 'dist/pack.js')))('ships a built entry that reaches nothing else', () => {
+		const seen = new Set<string>();
+		const bare: string[] = [];
+		const walk = (file: string): void => {
+			const resolved = path.normalize(file);
+			if (seen.has(resolved)) {
+				return;
+			}
+			seen.add(resolved);
+			const code = readFileSync(resolved, 'utf8');
+			for (const match of code.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)) {
+				if (match[1].startsWith('.')) {
+					walk(path.join(path.dirname(resolved), match[1]));
+				} else {
+					bare.push(match[1]);
+				}
+			}
+		};
+		walk(path.join(root, 'dist/pack.js'));
+		expect(bare).toStrictEqual([]);
+		expect([...seen].reduce((total, file) => total + statSync(file).size, 0)).toBeLessThan(SIZE_BUDGET);
+	});
+	/**
+	 * The whole point of the entry: a state read straight out of `blockstates.json`
+	 * evaluates with no cast. The emit drops every rotation at its default, so a
+	 * type stating them as required would force a consumer to lie about the file.
+	 */
+	it('evaluates a state in the shape the pack file writes', async () => {
+		const { evaluateBlockState } = await import('../src/pack.ts');
+		const state = {
+			variants: [
+				{ when: { facing: 'north' }, apply: [{ model: 'minecraft:block/chest' }] },
+				{ when: { facing: 'east' }, apply: [{ model: 'minecraft:block/chest', y: 90 }] },
+			],
+		} satisfies BlockPackBlockState;
+		expect(evaluateBlockState({ kind: 'variants', cases: state.variants }, { facing: 'east' }))
+			.toStrictEqual([[{ model: 'minecraft:block/chest', y: 90 }]]);
 	});
 });

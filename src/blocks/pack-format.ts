@@ -9,7 +9,7 @@
  * drift: a field added to the emit without being added here fails to compile.
  */
 
-import type { BlockStateDefinition } from './blockstate-eval.ts';
+import type { BlockStateMultipartCase, BlockStateVariantCase } from './blockstate-eval.ts';
 import type { MeshGroup } from './obj-mesh.ts';
 import type { BlockTintPack } from './tints.ts';
 import type {
@@ -108,12 +108,27 @@ export type BlockPackModelsFile = Record<string, BlockPackModel>;
 export type BlockPackBlockStatesFile = Record<string, BlockPackBlockState>;
 
 /**
- * One block's cases as the pack writes them: the tagged union `evaluateBlockState`
- * takes, flattened to the key the file uses.
+ * A variant as the pack writes it. Every rotation is optional because the emit
+ * drops each one at its default, which is most of them.
+ */
+export interface BlockPackVariant {
+	model: string;
+	x?: number;
+	y?: number;
+	z?: number;
+	uvlock?: true;
+	weight?: number;
+}
+
+/**
+ * One block's cases as the pack writes them: what `evaluateBlockState` takes,
+ * flattened to the key the file uses. Pass it as
+ * `{ kind: 'variants', cases: state.variants }` and the models come back as
+ * `BlockPackVariant`, no cast in either direction.
  */
 export type BlockPackBlockState =
-	| { variants: Extract<BlockStateDefinition, { kind: 'variants'; }>['cases']; multipart?: undefined; }
-	| { multipart: Extract<BlockStateDefinition, { kind: 'multipart'; }>['cases']; variants?: undefined; };
+	| { variants: Array<BlockStateVariantCase<BlockPackVariant>>; multipart?: undefined; }
+	| { multipart: Array<BlockStateMultipartCase<BlockPackVariant>>; variants?: undefined; };
 
 /** `tints.json`. */
 export type BlockPackTintsFile = BlockTintPack;
