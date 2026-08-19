@@ -91,6 +91,14 @@ Everything the CLI does is exported, from the high-level `run()` and `exportBloc
 import { run, exportBlockPack, prepareModResources, builtinPackPath } from '@nodecraft/rendermite';
 ```
 
+Reading a published block pack needs none of that toolchain, so it has its own entry — no `sharp`,
+no `node:` builtin, 13 KB bundled:
+
+```ts
+import { evaluateBlockState } from '@nodecraft/rendermite/pack';
+import type { BlockPackModel } from '@nodecraft/rendermite/pack';
+```
+
 ## Performance
 
 Benchmarked against PHP renderchest v5.1.0 on the same machine, rendering the same extracted 1.21.8 assets at 64px (PNG + WebP):
