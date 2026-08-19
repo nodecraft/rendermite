@@ -672,10 +672,6 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		if (empty.length === 0) {
 			continue;
 		}
-		const substitute = await itemModelSubstitute(id, resources, models);
-		if (substitute === null) {
-			continue;
-		}
 		const definition = definitions.get(id);
 		/*
 		 * A multipart part draws *as well as* every other part that matches, not instead of one, so
@@ -683,6 +679,10 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		 * filling a gap. MoreRed's wire draws its connections from the oriented parts, and the item
 		 * model laid over them is a flat cross lying on the floor whichever wall the wire is on.
 		 * Dropping the part leaves the block drawing what it can; only code can make the rest.
+		 *
+		 * Ahead of the substitute lookup so the answer does not depend on whether the block happens to
+		 * have an item model: without one this used to keep the part, leaving a case pointing at a
+		 * model with no elements.
 		 */
 		if (definition?.kind === 'multipart') {
 			const drawable = definition.cases.filter(part => part.apply.some(variant => !empty.includes(variant.model)));
@@ -692,10 +692,14 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 				failures.push({
 					id,
 					kind: 'geometry',
-					reason: `the game draws ${empty.join(', ')} in code; the pack drops those parts rather than laying an unoriented item model over the ${drawable.length} that do draw`,
+					reason: `the game draws ${empty.join(', ')} in code; the pack drops those parts and keeps the ${drawable.length} that do draw, since a multipart part laid over them would draw as well as them rather than instead`,
 				});
 				continue;
 			}
+		}
+		const substitute = await itemModelSubstitute(id, resources, models);
+		if (substitute === null) {
+			continue;
 		}
 		const stood = adoptSubstitute(substitute);
 		for (const part of definition?.cases ?? []) {

@@ -517,6 +517,23 @@ describe('a block whose shape only its item model has', () => {
 			.toEqual([['false', 'example:block/ring'], ['true', 'example:item/quantum_ring']]);
 	});
 
+	it('drops the part whether or not the block has an item model to fall back on', async () => {
+		// betterend's composters and bookshelves are the shape without one: nothing to stand in, and
+		// keeping the part left a case pointing at a model with no elements.
+		const pack = await exportFrom('multipart-no-item-model', (resources) => {
+			resources.set('blockstate', 'example:shelf', JSON.stringify({
+				multipart: [
+					{ apply: { model: 'example:block/shelf_contents' } },
+					{ when: { slot_0_occupied: true }, apply: { model: 'example:block/shelf_slot' } },
+				],
+			}));
+			resources.set('model', 'example:block/shelf_contents', JSON.stringify({}));
+			resources.set('model', 'example:block/shelf_slot', JSON.stringify({ textures: { all: 'example:block/plain' }, elements: [CUBE] }));
+		});
+		const parts = pack.blockStates['example:shelf'].multipart ?? [];
+		expect(parts.map(part => part.apply[0].model)).toEqual(['example:block/shelf_slot']);
+	});
+
 	it('leaves a block whose item is a flat icon empty and recorded', async () => {
 		// `item/generated` states no elements, so a 2D icon never becomes a plane
 		// standing in a chunk.
