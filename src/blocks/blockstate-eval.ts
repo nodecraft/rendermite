@@ -36,11 +36,17 @@ export interface BlockModelVariant {
 	weight: number;
 }
 
-/** One entry of a `variants` map, with its `a=b,c=d` key already parsed. */
-export interface BlockStateVariantCase {
+/**
+ * One entry of a `variants` map, with its `a=b,c=d` key already parsed.
+ *
+ * Generic over the variant because the evaluation reads only `model`: a pack
+ * consumer holds variants whose rotations are optional (the emit omits them at
+ * their defaults) and can evaluate those directly, getting its own shape back.
+ */
+export interface BlockStateVariantCase<Variant extends { model: string; } = BlockModelVariant> {
 	/** Properties this case constrains; unstated ones are wildcards. */
 	when: Record<string, string>;
-	apply: BlockModelVariant[];
+	apply: Variant[];
 }
 
 /**
@@ -52,15 +58,15 @@ export type MultipartCondition =
 	| { op: 'and'; terms: MultipartCondition[]; }
 	| { op: 'or'; terms: MultipartCondition[]; };
 
-export interface BlockStateMultipartCase {
+export interface BlockStateMultipartCase<Variant extends { model: string; } = BlockModelVariant> {
 	/** null for an unconditional part, which always applies. */
 	when: MultipartCondition | null;
-	apply: BlockModelVariant[];
+	apply: Variant[];
 }
 
-export type BlockStateDefinition =
-	| { kind: 'variants'; cases: BlockStateVariantCase[]; }
-	| { kind: 'multipart'; cases: BlockStateMultipartCase[]; };
+export type BlockStateDefinition<Variant extends { model: string; } = BlockModelVariant> =
+	| { kind: 'variants'; cases: Array<BlockStateVariantCase<Variant>>; }
+	| { kind: 'multipart'; cases: Array<BlockStateMultipartCase<Variant>>; };
 
 export class BlockStateError extends Error {}
 
@@ -314,15 +320,15 @@ export function matchesCondition(
 }
 
 /** The variant case closest to an exact-key lookup, or null when none matches. */
-function bestVariant(
-	cases: BlockStateVariantCase[],
+function bestVariant<Variant extends { model: string; }>(
+	cases: Array<BlockStateVariantCase<Variant>>,
 	properties: BlockProperties,
 	absentIsWildcard: boolean,
-): BlockStateVariantCase | null {
+): BlockStateVariantCase<Variant> | null {
 	// Variant keys are mutually exclusive in valid data, so at most one matches.
 	// Mods do ship overlapping keys; the most constrained one is the closest
 	// thing to what an exact-key lookup would have found.
-	let best: BlockStateVariantCase | null = null;
+	let best: BlockStateVariantCase<Variant> | null = null;
 	for (const variant of cases) {
 		const entries = Object.entries(variant.when);
 		const matched = entries.every(([name, value]) => properties[name] === value
@@ -354,10 +360,10 @@ function bestVariant(
  * Still empty when even that finds nothing, which is a real answer: a blockstate
  * that covers only some of a block's states draws nothing for the rest.
  */
-export function evaluateBlockState(
-	definition: BlockStateDefinition,
+export function evaluateBlockState<Variant extends { model: string; }>(
+	definition: BlockStateDefinition<Variant>,
 	properties: BlockProperties,
-): BlockModelVariant[][] {
+): Variant[][] {
 	if (definition.kind === 'multipart') {
 		const matched = definition.cases
 			.filter(part => part.when === null || matchesCondition(part.when, properties));
@@ -365,7 +371,7 @@ export function evaluateBlockState(
 			return matched.map(part => part.apply);
 		}
 		const drawn = new Set<string>();
-		const loose: BlockModelVariant[][] = [];
+		const loose: Variant[][] = [];
 		for (const part of definition.cases) {
 			if (part.when !== null && !matchesCondition(part.when, properties, true)) {
 				continue;

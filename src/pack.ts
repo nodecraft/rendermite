@@ -50,6 +50,7 @@ export type {
 	BlockPackSprite,
 	BlockPackSpriteFrame,
 	BlockPackTintsFile,
+	BlockPackVariant,
 } from './blocks/pack-format.ts';
 export type { MeshGroup, ObjMesh } from './blocks/obj-mesh.ts';
 export type { BlockTint, BlockTintPack } from './blocks/tints.ts';

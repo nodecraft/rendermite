@@ -29,9 +29,11 @@ import { ResourceLocator } from '../resources/locator.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../resources/manager.ts';
 import { TextureLoader } from '../textures/loader.ts';
 
-import type { BlockStateDefinition, BlockStateMultipartCase, BlockStateVariantCase } from './blockstate-eval.ts';
+import type { BlockModelVariant, BlockStateDefinition, BlockStateVariantCase } from './blockstate-eval.ts';
 import type {
 	BlockPackAtlasFile,
+	BlockPackBlockState,
+	BlockPackBlockStatesFile,
 	BlockPackElement,
 	BlockPackFace,
 	BlockPackMetaFile,
@@ -40,6 +42,8 @@ import type {
 	BlockPackRenderLayer,
 	BlockPackSprite,
 	BlockPackSpriteFrame,
+	BlockPackTintsFile,
+	BlockPackVariant,
 } from './pack-format.ts';
 import type { ResolvedModel } from '../models/loader.ts';
 import type {
@@ -242,31 +246,30 @@ function translateElements(elements: ModelElementJson[], offset?: [number, numbe
 function serializeBlockState(
 	definition: BlockStateDefinition,
 	exported: (model: string) => boolean,
-): unknown | null {
-	const cases: unknown[] = [];
-	for (const entry of definition.cases as Array<BlockStateVariantCase | BlockStateMultipartCase>) {
-		const apply = entry.apply.filter(variant => exported(variant.model));
-		if (apply.length === 0) {
-			continue;
-		}
-		cases.push({
-			when: entry.when,
-			apply: apply.map((variant) => {
-				return {
-					model: variant.model,
-					...(variant.x !== 0 && { x: variant.x }),
-					...(variant.y !== 0 && { y: variant.y }),
-					...(variant.z !== 0 && { z: variant.z }),
-					...(variant.uvlock && { uvlock: true }),
-					...(variant.weight !== 1 && { weight: variant.weight }),
-				};
-			}),
+): BlockPackBlockState | null {
+	/** Every default dropped, since most variants state none of these. */
+	const serializeApply = (apply: BlockModelVariant[]): BlockPackVariant[] => apply.filter(variant => exported(variant.model)).map((variant) => {
+		return {
+			model: variant.model,
+			...(variant.x !== 0 && { x: variant.x }),
+			...(variant.y !== 0 && { y: variant.y }),
+			...(variant.z !== 0 && { z: variant.z }),
+			...(variant.uvlock && { uvlock: true as const }),
+			...(variant.weight !== 1 && { weight: variant.weight }),
+		};
+	});
+	if (definition.kind === 'variants') {
+		const cases = definition.cases.flatMap((entry) => {
+			const apply = serializeApply(entry.apply);
+			return apply.length === 0 ? [] : [{ when: entry.when, apply }];
 		});
+		return cases.length === 0 ? null : { variants: cases };
 	}
-	if (cases.length === 0) {
-		return null;
-	}
-	return definition.kind === 'variants' ? { variants: cases } : { multipart: cases };
+	const cases = definition.cases.flatMap((entry) => {
+		const apply = serializeApply(entry.apply);
+		return apply.length === 0 ? [] : [{ when: entry.when, apply }];
+	});
+	return cases.length === 0 ? null : { multipart: cases };
 }
 
 /**
@@ -693,7 +696,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	// 2b. Serialize the blockstates against the models that survived, dropping
 	// references to models nothing could load (AE2 builds its `*_formed` models
 	// in Java, so no file exists to export).
-	const blockStates: Record<string, unknown> = {};
+	const blockStates: Record<string, BlockPackBlockState> = {};
 	for (const [id, definition] of definitions) {
 		const serialized = serializeBlockState(definition, model => emittedModels[model] !== undefined);
 		if (serialized === null) {
@@ -948,8 +951,8 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		sprites: sortedByKey(emittedSprites),
 	} satisfies BlockPackAtlasFile));
 	await emit('models.json', JSON.stringify(sortedByKey(emittedModels) satisfies BlockPackModelsFile));
-	await emit('blockstates.json', JSON.stringify(sortedByKey(blockStates)));
-	await emit('tints.json', JSON.stringify(tints.pack));
+	await emit('blockstates.json', JSON.stringify(sortedByKey(blockStates) satisfies BlockPackBlockStatesFile));
+	await emit('tints.json', JSON.stringify(tints.pack satisfies BlockPackTintsFile));
 	failures.sort((left, right) => left.id.localeCompare(right.id) || left.kind.localeCompare(right.kind));
 	await emit('failures.json', JSON.stringify(failures, null, '\t'));
 
@@ -967,6 +970,6 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		namespaces,
 		counts,
 		hashes: sortedByKey(hashes),
-	}, null, '\t'));
+	} satisfies BlockPackMetaFile, null, '\t'));
 	return { ...counts, writtenFiles, failures };
 }
