@@ -676,8 +676,29 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		if (substitute === null) {
 			continue;
 		}
+		const definition = definitions.get(id);
+		/*
+		 * A multipart part draws *as well as* every other part that matches, not instead of one, so
+		 * standing an item model in beside parts that already work adds phantom geometry rather than
+		 * filling a gap. MoreRed's wire draws its connections from the oriented parts, and the item
+		 * model laid over them is a flat cross lying on the floor whichever wall the wire is on.
+		 * Dropping the part leaves the block drawing what it can; only code can make the rest.
+		 */
+		if (definition?.kind === 'multipart') {
+			const drawable = definition.cases.filter(part => part.apply.some(variant => !empty.includes(variant.model)));
+			if (drawable.length > 0) {
+				definition.cases = drawable;
+				blockModels.set(id, references.filter(reference => !empty.includes(reference)));
+				failures.push({
+					id,
+					kind: 'geometry',
+					reason: `the game draws ${empty.join(', ')} in code; the pack drops those parts rather than laying an unoriented item model over the ${drawable.length} that do draw`,
+				});
+				continue;
+			}
+		}
 		const stood = adoptSubstitute(substitute);
-		for (const part of definitions.get(id)?.cases ?? []) {
+		for (const part of definition?.cases ?? []) {
 			for (const variant of part.apply) {
 				if (empty.includes(variant.model)) {
 					variant.model = stood;
