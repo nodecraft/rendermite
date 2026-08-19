@@ -517,6 +517,23 @@ describe('a block whose shape only its item model has', () => {
 			.toEqual([['false', 'example:block/ring'], ['true', 'example:item/quantum_ring']]);
 	});
 
+	it('drops the part whether or not the block has an item model to fall back on', async () => {
+		// betterend's composters and bookshelves are the shape without one: nothing to stand in, and
+		// keeping the part left a case pointing at a model with no elements.
+		const pack = await exportFrom('multipart-no-item-model', (resources) => {
+			resources.set('blockstate', 'example:shelf', JSON.stringify({
+				multipart: [
+					{ apply: { model: 'example:block/shelf_contents' } },
+					{ when: { slot_0_occupied: true }, apply: { model: 'example:block/shelf_slot' } },
+				],
+			}));
+			resources.set('model', 'example:block/shelf_contents', JSON.stringify({}));
+			resources.set('model', 'example:block/shelf_slot', JSON.stringify({ textures: { all: 'example:block/plain' }, elements: [CUBE] }));
+		});
+		const parts = pack.blockStates['example:shelf'].multipart ?? [];
+		expect(parts.map(part => part.apply[0].model)).toEqual(['example:block/shelf_slot']);
+	});
+
 	it('leaves a block whose item is a flat icon empty and recorded', async () => {
 		// `item/generated` states no elements, so a 2D icon never becomes a plane
 		// standing in a chunk.
@@ -563,10 +580,16 @@ describe('a block whose shape only its item model has', () => {
 			&& failure.reason.includes('no case of this blockstate could be read'))).toBe(true);
 	});
 
-	it('draws a MoreRed wire as the cross its item model states, not one connection stub', async () => {
-		// `morered:wire_parts` holds the `line` and `edge` shapes a wire draws
-		// *between* blocks and picks per neighbour in Java. Taking whichever the
-		// file named first put a stub in a corner of every wire in the world.
+	it('drops a code-drawn multipart part rather than laying an item model over the parts that draw', async () => {
+		/*
+		 * `morered:wire_parts` holds the `line` and `edge` shapes a wire draws *between* blocks and
+		 * picks per neighbour in Java, and which neighbours those are is nowhere in the saved state.
+		 * Taking whichever shape the file named first put a stub in a corner of every wire; standing
+		 * the item model in for it instead put a flat cross on every wire whichever wall it was on,
+		 * because a multipart part draws *as well as* every other match rather than instead of one.
+		 * Neither is the wire. What the pack can place correctly is the oriented node the mod's own
+		 * blockstate ships, so the unreadable part is dropped and recorded.
+		 */
 		const pack = await exportFrom('morered-wire', (resources) => {
 			resources.set('blockstate', 'example:red_alloy_wire', JSON.stringify({
 				multipart: [
@@ -594,10 +617,11 @@ describe('a block whose shape only its item model has', () => {
 				],
 			}));
 		});
-		expect(pack.models['example:block/red_alloy_wire_parts'].elements).toEqual([]);
 		const parts = pack.blockStates['example:red_alloy_wire'].multipart ?? [];
-		expect(parts[0].apply[0].model).toBe('example:item/red_alloy_wire');
-		expect(parts[1].apply[0].model).toBe('example:block/red_alloy_wire_node');
-		expect(pack.models['example:item/red_alloy_wire'].elements).toHaveLength(2);
+		// Only the part that draws, and it keeps the `when` that puts it on the right face
+		expect(parts.map(part => [part.when, part.apply[0].model]))
+			.toEqual([[{ op: 'match', properties: { down: ['true'] } }, 'example:block/red_alloy_wire_node']]);
+		expect(pack.failures.some(failure => failure.id === 'example:red_alloy_wire'
+			&& failure.reason.includes('drops those parts'))).toBe(true);
 	});
 });
