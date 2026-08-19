@@ -191,6 +191,34 @@ bind; the game draws them the same way, so the pack does too rather than leaving
 
 ## Publishing, and consuming from `ui`
 
+### `@nodecraft/rendermite/pack`, the entry a renderer imports
+
+The main entry is a Node toolchain: it reads jars, rasterizes with `sharp` and writes files, so it
+can never enter a browser bundle. But a consumer of a *published* pack needs none of that — it needs
+the format, and the one piece of logic the pack deliberately leaves at runtime, which is matching a
+placed block's properties against its cases.
+
+```ts
+import { evaluateBlockState, weightedVariantIndex } from '@nodecraft/rendermite/pack';
+import type { BlockPackAtlasFile, BlockPackModel, BlockPackBlockState } from '@nodecraft/rendermite/pack';
+```
+
+That evaluation is worth importing rather than reimplementing: it has a most-constrained-key rule for
+the overlapping keys mods ship, and the wildcard retry described above. A consumer that reimplements
+it and misses the retry draws a hole where every Functional Storage drawer stands — which is exactly
+what `ui` did until the two were compared.
+
+`test/pack-entry.test.ts` bundles this entry the way a consumer's bundler would and fails on anything
+that came along: it reaches two modules, pulls in no dependency and no `node:` builtin, and bundles
+to under 32 KB. The types it exports are the ones `export.ts` writes each file `satisfies`, so the
+format and the writer cannot drift.
+
+**One caveat before depending on it.** A subpath export does not change what npm installs: taking
+`@nodecraft/rendermite` as a runtime dependency still installs `sharp` and `lightningcss`, ~20 MB of
+native binaries, for a 13 KB function. It is free for anything that already has rendermite in its
+devDependencies — a build script, a test — and for a library shipped to third parties it is not, so
+that case wants either these two moved behind optional peers or the entry split into its own package.
+
 The pack rides the rails `icons/` already uses: the `mc-assets` R2 bucket, one immutable directory
 per version, URLs listed in `ui`'s `libs/minecraft/icon-assets.ts`.
 

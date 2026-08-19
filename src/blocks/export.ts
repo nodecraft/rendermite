@@ -30,7 +30,17 @@ import { FolderResourceManager, LayeredResourceManager } from '../resources/mana
 import { TextureLoader } from '../textures/loader.ts';
 
 import type { BlockStateDefinition, BlockStateMultipartCase, BlockStateVariantCase } from './blockstate-eval.ts';
-import type { MeshGroup } from './obj-mesh.ts';
+import type {
+	BlockPackAtlasFile,
+	BlockPackElement,
+	BlockPackFace,
+	BlockPackMetaFile,
+	BlockPackModel,
+	BlockPackModelsFile,
+	BlockPackRenderLayer,
+	BlockPackSprite,
+	BlockPackSpriteFrame,
+} from './pack-format.ts';
 import type { ResolvedModel } from '../models/loader.ts';
 import type {
 	FaceDirectionName,
@@ -83,57 +93,8 @@ export interface BlockPackResult {
 	failures: BlockPackFailure[];
 }
 
-/** How a sprite's alpha classifies it, inferred because assets rarely say. */
-type RenderLayer = 'solid' | 'cutout' | 'translucent';
-
-interface EmittedFace {
-	sprite: string;
-	/** [u1, v1, u2, v2] in 0–16 sprite space, derived when the model omits it. */
-	uv: Vec4;
-	rotation?: number;
-	tintindex?: number;
-	cullface?: FaceDirectionName;
-}
-
-interface EmittedElement {
-	from: Vec3;
-	to: Vec3;
-	rotation?: ModelElementJson['rotation'];
-	shade?: false;
-	faces: Partial<Record<FaceDirectionName, EmittedFace>>;
-}
-
-interface EmittedModel {
-	ao: boolean;
-	elements: EmittedElement[];
-	/**
-	 * The model's `particle` texture. What the game throws when the block breaks
-	 * or is walked on, and the only colour a consumer has to work with for a
-	 * block that draws nothing — a placeholder cube for a chest comes out oak
-	 * rather than magenta. Costs 40 sprites over a whole vanilla pack.
-	 */
-	particle?: string;
-	/** Triangle geometry from an OBJ loader, when the model uses one. */
-	mesh?: MeshGroup[];
-	/**
-	 * The layer the model states it draws on. Authoritative where present, and
-	 * it beats the per-sprite alpha inference — the same sprite can be solid in
-	 * one model and translucent in another.
-	 */
-	renderType?: RenderLayer;
-	/** Block offsets a split-multiblock mesh spans; see `splitParts`. */
-	multiblock?: Array<[number, number, number]>;
-	/**
-	 * Present when the block is a fluid, whose real surface height and flow
-	 * direction come from its neighbours and so cannot be baked. The cube here is
-	 * a stand-in; these are the sheets to mesh the real thing with, named because
-	 * guessing them from the block id works for vanilla and fails for every mod.
-	 */
-	fluid?: { still: string; flow: string; overlay?: string; };
-}
-
 /** `render_type` values collapsed onto the pack's three layers. */
-const RENDER_TYPES: Record<string, RenderLayer> = {
+const RENDER_TYPES: Record<string, BlockPackRenderLayer> = {
 	solid: 'solid',
 	cutout: 'cutout',
 	cutout_mipped: 'cutout',
@@ -142,25 +103,6 @@ const RENDER_TYPES: Record<string, RenderLayer> = {
 	translucent: 'translucent',
 	translucent_moving_block: 'translucent',
 };
-
-interface SpriteFrame {
-	page: number;
-	x: number;
-	y: number;
-	/** Duration in game ticks. */
-	time: number;
-}
-
-interface EmittedSprite {
-	page: number;
-	x: number;
-	y: number;
-	w: number;
-	h: number;
-	layer: RenderLayer;
-	frames?: SpriteFrame[];
-	interpolate?: true;
-}
 
 /**
  * A sprite whose strip is longer than this exports as its first frame only.
@@ -252,7 +194,7 @@ function defaultFaceUv(direction: FaceDirectionName, from: Vec3, to: Vec3): Vec4
  * translucent (`render_type` is a loader extension adopted only recently), and
  * inferring it covers mods for free.
  */
-function inferRenderLayer(frames: Texture[]): RenderLayer {
+function inferRenderLayer(frames: Texture[]): BlockPackRenderLayer {
 	let sawHole = false;
 	for (const frame of frames) {
 		for (let offset = 3; offset < frame.data.length; offset += 4) {
@@ -347,7 +289,7 @@ function firstBoundTexture(model: ResolvedModel): ResourceLocator | null {
 
 interface ItemModelSubstitute {
 	id: string;
-	emitted: EmittedModel;
+	emitted: BlockPackModel;
 	sprites: Set<string>;
 	tintIndices: Set<number>;
 }
@@ -404,12 +346,12 @@ function bakeModel(
 	id: string,
 	model: ResolvedModel,
 	failures: BlockPackFailure[],
-): { emitted: EmittedModel; sprites: Set<string>; tintIndices: Set<number>; } {
+): { emitted: BlockPackModel; sprites: Set<string>; tintIndices: Set<number>; } {
 	const sprites = new Set<string>();
 	const tintIndices = new Set<number>();
-	const elements: EmittedElement[] = [];
+	const elements: BlockPackElement[] = [];
 	for (const element of model.elements) {
-		const faces: Partial<Record<FaceDirectionName, EmittedFace>> = {};
+		const faces: Partial<Record<FaceDirectionName, BlockPackFace>> = {};
 		for (const [name, face] of Object.entries(element.faces)) {
 			if (!face || !FACE_DIRECTIONS.has(name)) {
 				continue;
@@ -537,7 +479,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	}
 
 	// 2. Models → baked elements with concrete sprites.
-	const emittedModels: Record<string, EmittedModel> = {};
+	const emittedModels: Record<string, BlockPackModel> = {};
 	const modelTintIndices = new Map<string, Set<number>>();
 	const spriteIds = new Set<string>();
 	done = 0;
@@ -930,13 +872,13 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	}
 
 	const rects = new Map(packed.rects.map(rect => [rect.key, rect]));
-	const emittedSprites: Record<string, EmittedSprite> = {};
+	const emittedSprites: Record<string, BlockPackSprite> = {};
 	for (const sprite of loaded) {
 		const first = rects.get(`${sprite.id}#${sprite.sequence[0].frame}`);
 		if (!first) {
 			continue;
 		}
-		const frames: SpriteFrame[] = [];
+		const frames: BlockPackSpriteFrame[] = [];
 		for (const entry of sprite.sequence) {
 			const rect = rects.get(`${sprite.id}#${entry.frame}`);
 			if (rect) {
@@ -1000,8 +942,12 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	for (const file of tints.files) {
 		await emit(file.path, file.data);
 	}
-	await emit('atlas.json', JSON.stringify({ padding: packed.padding, pages: pageFiles, sprites: sortedByKey(emittedSprites) }));
-	await emit('models.json', JSON.stringify(sortedByKey(emittedModels)));
+	await emit('atlas.json', JSON.stringify({
+		padding: packed.padding,
+		pages: pageFiles,
+		sprites: sortedByKey(emittedSprites),
+	} satisfies BlockPackAtlasFile));
+	await emit('models.json', JSON.stringify(sortedByKey(emittedModels) satisfies BlockPackModelsFile));
 	await emit('blockstates.json', JSON.stringify(sortedByKey(blockStates)));
 	await emit('tints.json', JSON.stringify(tints.pack));
 	failures.sort((left, right) => left.id.localeCompare(right.id) || left.kind.localeCompare(right.kind));
