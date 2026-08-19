@@ -539,6 +539,24 @@ describe.skipIf(!online)('modded block pack', () => {
 				.filter(variant => variant.z);
 			expect(spun.length).toBeGreaterThan(10);
 
+			// AE2 builds its cable bus entirely in code, and 823 of them were the
+			// biggest hole in a real base. The cable core it does ship stands in.
+			const cableBus = pack.blockStates['ae2:cable_bus'].variants ?? [];
+			expect(cableBus).toHaveLength(1);
+			expect(pack.models[cableBus[0].apply[0].model].elements.length).toBeGreaterThan(0);
+
+			// A block the mod draws in Java, standing on the item model it ships
+			// for the inventory: AE2's drive, its crafting storage `formed` states.
+			const fromItemModels = pack.result.failures
+				.filter(failure => failure.reason.includes('substitutes the block'));
+			expect(fromItemModels.length).toBeGreaterThan(10);
+			for (const failure of fromItemModels) {
+				const definition = pack.blockStates[failure.id];
+				const drawn = [...definition.variants ?? [], ...definition.multipart ?? []]
+					.flatMap(entry => entry.apply);
+				expect(drawn.some(variant => pack.models[variant.model].elements.length > 0)).toBe(true);
+			}
+
 			expect(unexpectedFailures(pack, true)).toEqual([]);
 		} finally {
 			await prepared.close();

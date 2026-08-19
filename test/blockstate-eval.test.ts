@@ -268,6 +268,59 @@ describe('collected models', () => {
 	});
 });
 
+describe('a state the world saved without every property', () => {
+	// Functional Storage's drawers key every case on a `facing` the block gained
+	// later, so a world saved before it stores `subfacing` and `locked` alone.
+	const drawer = {
+		multipart: [
+			{ when: { facing: 'down', subfacing: 'south' }, apply: { model: 'example:block/oak_1', y: 180 } },
+			{ when: { facing: 'down', locked: 'true', subfacing: 'south' }, apply: { model: 'example:block/lock', y: 180 } },
+			{ when: { facing: 'down', subfacing: 'up' }, apply: { model: 'example:block/oak_1', x: 270 } },
+			{ when: { facing: 'north', subfacing: 'up' }, apply: { model: 'example:block/oak_1', x: 270, y: 180 } },
+		],
+	};
+
+	it('treats a property the state does not carry as a wildcard', () => {
+		expect(drawn(drawer, { subfacing: 'south', locked: 'true' }, 'example'))
+			.toEqual(['example:block/oak_1', 'example:block/lock']);
+	});
+
+	it('draws one part per model rather than every rotation of it', () => {
+		// `subfacing=up` exists for two facings; wildcarding `facing` must not
+		// stack both rotations of the same drawer on top of each other.
+		expect(drawn(drawer, { subfacing: 'up' }, 'example')).toEqual(['example:block/oak_1']);
+	});
+
+	it('leaves a state that already matched strictly alone', () => {
+		expect(evaluateBlockState(parse(drawer, 'example'), { facing: 'north', subfacing: 'up' })[0][0].y).toBe(180);
+	});
+
+	it('still draws nothing when a property it does carry disagrees', () => {
+		expect(drawn(drawer, { subfacing: 'west', locked: 'false' }, 'example')).toEqual([]);
+	});
+
+	it('never fires where an unconditional part already matched', () => {
+		const fence = {
+			multipart: [
+				{ apply: { model: 'example:block/post' } },
+				{ when: { north: 'true' }, apply: { model: 'example:block/side' } },
+			],
+		};
+		expect(drawn(fence, {}, 'example')).toEqual(['example:block/post']);
+	});
+
+	it('falls back for variants too, and prefers the most constrained case', () => {
+		const json = {
+			variants: {
+				'facing=north,lit=true': { model: 'example:block/lamp_on' },
+				'lit=true': { model: 'example:block/lamp' },
+			},
+		};
+		expect(drawn(json, { lit: 'true' }, 'example')).toEqual(['example:block/lamp']);
+		expect(drawn(json, { unrelated: 'x' }, 'example')).toEqual(['example:block/lamp_on']);
+	});
+});
+
 describe('weighted variant selection', () => {
 	it('always picks the only entry', () => {
 		expect(weightedVariantIndex([1], 0, 0, 0)).toBe(0);

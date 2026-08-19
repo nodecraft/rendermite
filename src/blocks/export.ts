@@ -327,6 +327,78 @@ function serializeBlockState(
 	return definition.kind === 'variants' ? { variants: cases } : { multipart: cases };
 }
 
+/**
+ * Any texture the model binds, for a model that declares no `particle`. Ordered
+ * by the chain's own key order so a run is reproducible, and `particle` itself
+ * is not a candidate: it was already tried.
+ */
+function firstBoundTexture(model: ResolvedModel): ResourceLocator | null {
+	for (const name of Object.keys(model.textures)) {
+		if (name === 'particle') {
+			continue;
+		}
+		const resolved = resolveTexture(model, `#${name}`);
+		if (resolved !== null) {
+			return resolved;
+		}
+	}
+	return null;
+}
+
+interface ItemModelSubstitute {
+	id: string;
+	emitted: EmittedModel;
+	sprites: Set<string>;
+	tintIndices: Set<number>;
+}
+
+/**
+ * The block's own item model, baked, for a block model that draws nothing.
+ *
+ * A mod that builds a block's shape in Java still has to put something in the
+ * inventory, so it ships an item model with real geometry, and that is the
+ * closest the assets come to describing the block: Ender IO's conduit is a cube
+ * of its own texture, AE2's formed quantum ring is the ring, MoreRed's wire is
+ * the cross it draws with nothing connected. Flat icons fall out on their own,
+ * since `item/generated` states no elements.
+ *
+ * Null unless the substitute is whole: a part-magenta stand-in reads as a broken
+ * texture, which is worse than the recorded gap it replaces.
+ */
+async function itemModelSubstitute(
+	blockId: string,
+	resources: ResourceManager,
+	models: ModelLoader,
+): Promise<ItemModelSubstitute | null> {
+	const block = ResourceLocator.tryParse(blockId);
+	if (block === null) {
+		return null;
+	}
+	const item = new ResourceLocator(block.namespace, `item/${block.path}`);
+	if (!await resources.hasResource('model', item)) {
+		return null;
+	}
+	let resolved: ResolvedModel;
+	try {
+		resolved = await models.load(item.toString());
+	} catch {
+		return null;
+	}
+	// Face-level losses belong to the model this stands in for, not to the pack;
+	// they are only interesting if the substitute survives, and it is dropped
+	// whole below if any of its sprites is missing.
+	const { emitted, sprites, tintIndices } = bakeModel(item.toString(), resolved, []);
+	if (emitted.elements.length === 0) {
+		return null;
+	}
+	const present = await Promise.all([...sprites]
+		.map(async sprite => sprite !== MISSING_SPRITE && await resources.hasResource('texture', ResourceLocator.parse(sprite))));
+	if (present.includes(false)) {
+		return null;
+	}
+	return { id: item.toString(), emitted, sprites, tintIndices };
+}
+
 /** Bake one flattened model into pack form, reporting every face it loses. */
 function bakeModel(
 	id: string,
@@ -377,7 +449,12 @@ function bakeModel(
 		});
 	}
 	const renderType = model.renderType === null ? undefined : RENDER_TYPES[model.renderType];
-	const particle = resolveTexture(model, '#particle');
+	// A model with nothing to draw is the one case where the particle is the
+	// only colour a consumer has, and the models that draw nothing are exactly
+	// the ones least likely to declare one. Any texture the model binds is a
+	// better stand-in than magenta, so the first one stands in for it.
+	const particle = resolveTexture(model, '#particle')
+		?? (elements.length === 0 ? firstBoundTexture(model) : null);
 	if (particle !== null) {
 		sprites.add(particle.toString());
 	}
@@ -626,6 +703,51 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		});
 	}
 
+	// 2a2. Whatever still draws nothing, drawn as the block's own item model.
+	// This runs after the vendored table so a chest keeps its oriented geometry,
+	// and per model reference rather than per block so a case the mod builds in
+	// Java (AE2's `formed=true`, MoreRed's wire connections) is filled in while
+	// the states with real models keep them.
+	const adoptSubstitute = (substitute: ItemModelSubstitute): string => {
+		emittedModels[substitute.id] = substitute.emitted;
+		modelTintIndices.set(substitute.id, substitute.tintIndices);
+		for (const sprite of substitute.sprites) {
+			spriteIds.add(sprite);
+		}
+		return substitute.id;
+	};
+	for (const [id, references] of blockModels) {
+		if (INVISIBLE_BLOCKS[id] !== undefined) {
+			continue;
+		}
+		const empty = references.filter((reference) => {
+			const model = emittedModels[reference];
+			return model === undefined || (model.elements.length === 0 && !model.mesh?.length);
+		});
+		if (empty.length === 0) {
+			continue;
+		}
+		const substitute = await itemModelSubstitute(id, resources, models);
+		if (substitute === null) {
+			continue;
+		}
+		const stood = adoptSubstitute(substitute);
+		for (const part of definitions.get(id)?.cases ?? []) {
+			for (const variant of part.apply) {
+				if (empty.includes(variant.model)) {
+					variant.model = stood;
+				}
+			}
+		}
+		blockModels.set(id, [...references.filter(reference => !empty.includes(reference)), stood]);
+		const drawnInCode = empty.length === references.length ? 'this block' : empty.join(', ');
+		failures.push({
+			id,
+			kind: 'geometry',
+			reason: `the game draws ${drawnInCode} in code; the pack substitutes the block's own item model ${stood}, which carries the shape but not the orientation or connections`,
+		});
+	}
+
 	// 2b. Serialize the blockstates against the models that survived, dropping
 	// references to models nothing could load (AE2 builds its `*_formed` models
 	// in Java, so no file exists to export).
@@ -638,6 +760,31 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			continue;
 		}
 		blockStates[id] = serialized;
+	}
+
+	// 2c. A block whose blockstate the pack could not read at all still has an
+	// item model to stand on. NeoForge lets a mod register a *model type* and name
+	// it in a variant instead of a model (`{"": {"type": "enderio:conduit"}}`),
+	// which leaves the case unusable and the block absent; AE2 has shipped
+	// variants stating no model at all. Either way the block exists in the world
+	// and the mod ships an inventory shape for it.
+	for (const locator of blockLocators) {
+		const id = locator.toString();
+		if (blockStates[id] !== undefined || INVISIBLE_BLOCKS[id] !== undefined) {
+			continue;
+		}
+		const substitute = await itemModelSubstitute(id, resources, models);
+		if (substitute === null) {
+			continue;
+		}
+		const stood = adoptSubstitute(substitute);
+		blockStates[id] = { variants: [{ when: {}, apply: [{ model: stood }] }] };
+		blockModels.set(id, [stood]);
+		failures.push({
+			id,
+			kind: 'geometry',
+			reason: `no case of this blockstate could be read; the pack substitutes the block's own item model ${stood}, which carries the shape but not the orientation`,
+		});
 	}
 
 	// 3. Sprites → physical animation frames. The fluid sprites join the set the

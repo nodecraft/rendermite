@@ -28,12 +28,14 @@ interface Pack {
 		ao: boolean;
 		elements: Array<{ rotation?: { angle: number; }; faces: Record<string, { sprite: string; uv: number[]; }>; }>;
 		mesh?: Array<{ sprite: string; object?: string; positions: number[]; uv: number[]; }>;
+		particle?: string;
 		renderType?: string;
 		multiblock?: number[][];
 		fluid?: { still: string; flow: string; overlay?: string; };
 	}>;
 	blockStates: Record<string, {
-		variants?: Array<{ when: Record<string, string>; apply: Array<{ model: string; z?: number; }>; }>;
+		variants?: Array<{ when: Record<string, string>; apply: Array<{ model: string; y?: number; z?: number; }>; }>;
+		multipart?: Array<{ when: unknown; apply: Array<{ model: string; }>; }>;
 	}>;
 	sprites: Record<string, { layer: string; }>;
 	failures: Array<{ id: string; kind: string; reason: string; }>;
@@ -445,5 +447,157 @@ describe('code-drawn blocks in a mod namespace', () => {
 		expect(pack.blockStates['example:apricorn_sign'].variants).toHaveLength(16);
 		const model = pack.models['rendermite:block/apricorn_sign'];
 		expect(Object.values(model.elements[0].faces)[0].sprite).toBe('example:entity/sign/apricorn');
+	});
+});
+
+describe('a block whose shape only its item model has', () => {
+	/** A code-drawn block: one empty-key variant on a model with no geometry. */
+	function codeDrawn(resources: MapResourceManager, id: string): void {
+		const name = id.split(':', 2)[1];
+		resources.set('blockstate', id, JSON.stringify({ variants: { '': { model: `example:block/${name}` } } }));
+		resources.set('model', `example:block/${name}`, JSON.stringify({ loader: 'example:built_in_java' }));
+	}
+
+	it('draws the item model when the block model has no geometry', async () => {
+		// Ender IO's conduit, ExtendedAE's matrix glass, PneumaticCraft's tubes:
+		// the block model is a loader and nothing else, and the item model the mod
+		// needs for the inventory is the only shape the assets hold.
+		const pack = await exportFrom('item-model-fallback', (resources) => {
+			codeDrawn(resources, 'example:conduit');
+			resources.set('model', 'example:item/conduit', JSON.stringify({
+				textures: { all: 'example:block/plain' },
+				elements: [CUBE],
+			}));
+		});
+		const cases = pack.blockStates['example:conduit'].variants ?? [];
+		expect(cases).toHaveLength(1);
+		expect(cases[0].apply[0].model).toBe('example:item/conduit');
+		expect(pack.models['example:item/conduit'].elements[0].faces.up.sprite).toBe('example:block/plain');
+		expect(pack.failures.some(failure => failure.id === 'example:conduit'
+			&& failure.reason.includes('example:item/conduit'))).toBe(true);
+	});
+
+	it('leaves every state its own rotation when it substitutes', async () => {
+		// AE2 builds one drive model for every facing and spin, so the substitute
+		// has to land inside the cases rather than replace them.
+		const pack = await exportFrom('item-model-oriented', (resources) => {
+			resources.set('blockstate', 'example:drive', JSON.stringify({
+				variants: {
+					'facing=north': { model: 'example:block/drive' },
+					'facing=east': { model: 'example:block/drive', y: 90 },
+				},
+			}));
+			resources.set('model', 'example:block/drive', JSON.stringify({ loader: 'example:built_in_java' }));
+			resources.set('model', 'example:item/drive', JSON.stringify({
+				textures: { all: 'example:block/plain' },
+				elements: [CUBE],
+			}));
+		});
+		const cases = pack.blockStates['example:drive'].variants ?? [];
+		expect(cases.map(one => [one.when.facing, one.apply[0].model, one.apply[0].y]))
+			.toEqual([['north', 'example:item/drive', undefined], ['east', 'example:item/drive', 90]]);
+	});
+
+	it('substitutes only the states the mod builds in Java', async () => {
+		// AE2 ships no model for a formed quantum ring; the unformed state keeps
+		// the one it does ship.
+		const pack = await exportFrom('item-model-per-state', (resources) => {
+			resources.set('blockstate', 'example:quantum_ring', JSON.stringify({
+				variants: {
+					'formed=false': { model: 'example:block/ring' },
+					'formed=true': { model: 'example:block/ring_formed' },
+				},
+			}));
+			resources.set('model', 'example:block/ring', JSON.stringify({ textures: { all: 'example:block/plain' }, elements: [CUBE] }));
+			resources.set('model', 'example:block/ring_formed', JSON.stringify({}));
+			resources.set('model', 'example:item/quantum_ring', JSON.stringify({ parent: 'example:block/ring' }));
+		});
+		const cases = pack.blockStates['example:quantum_ring'].variants ?? [];
+		expect(cases.map(one => [one.when.formed, one.apply[0].model]))
+			.toEqual([['false', 'example:block/ring'], ['true', 'example:item/quantum_ring']]);
+	});
+
+	it('leaves a block whose item is a flat icon empty and recorded', async () => {
+		// `item/generated` states no elements, so a 2D icon never becomes a plane
+		// standing in a chunk.
+		const pack = await exportFrom('item-model-flat', (resources) => {
+			codeDrawn(resources, 'example:widget');
+			resources.set('model', 'example:item/widget', JSON.stringify({
+				parent: 'minecraft:item/generated',
+				textures: { layer0: 'example:block/plain' },
+			}));
+		});
+		expect(pack.models['example:item/widget']).toBeUndefined();
+		expect(pack.failures.some(failure => failure.id === 'example:widget'
+			&& failure.reason.includes('no geometry is vendored'))).toBe(true);
+	});
+
+	it('gives an empty model a particle from any texture it binds', async () => {
+		// A consumer with no geometry has only the particle to colour a
+		// placeholder with, and the models that draw nothing are the ones least
+		// likely to name one.
+		const pack = await exportFrom('empty-model-particle', (resources) => {
+			codeDrawn(resources, 'example:widget');
+			resources.set('model', 'example:block/widget', JSON.stringify({ textures: { all: 'example:block/plain' } }));
+		});
+		expect(pack.models['example:block/widget'].particle).toBe('example:block/plain');
+	});
+
+	it('draws a block whose blockstate names a model type rather than a model', async () => {
+		// NeoForge lets a mod register a model *type* and name it in a variant:
+		// Ender IO writes `{"": {"type": "enderio:conduit"}}`, which leaves no
+		// usable case and used to leave the block out of the pack entirely.
+		const pack = await exportFrom('variant-model-type', (resources) => {
+			resources.set('blockstate', 'example:conduit', JSON.stringify({
+				variants: { '': { type: 'example:conduit' } },
+			}));
+			resources.set('model', 'example:item/conduit', JSON.stringify({
+				textures: { all: 'example:block/plain' },
+				elements: [CUBE],
+			}));
+		});
+		const cases = pack.blockStates['example:conduit'].variants ?? [];
+		expect(cases).toEqual([{ when: {}, apply: [{ model: 'example:item/conduit' }] }]);
+		expect(pack.models['example:item/conduit'].elements).toHaveLength(1);
+		expect(pack.failures.some(failure => failure.id === 'example:conduit'
+			&& failure.reason.includes('no case of this blockstate could be read'))).toBe(true);
+	});
+
+	it('draws a MoreRed wire as the cross its item model states, not one connection stub', async () => {
+		// `morered:wire_parts` holds the `line` and `edge` shapes a wire draws
+		// *between* blocks and picks per neighbour in Java. Taking whichever the
+		// file named first put a stub in a corner of every wire in the world.
+		const pack = await exportFrom('morered-wire', (resources) => {
+			resources.set('blockstate', 'example:red_alloy_wire', JSON.stringify({
+				multipart: [
+					{ apply: { model: 'example:block/red_alloy_wire_parts' } },
+					{ when: { down: 'true' }, apply: { model: 'example:block/red_alloy_wire_node' } },
+				],
+			}));
+			resources.set('model', 'example:block/red_alloy_wire_parts', JSON.stringify({
+				loader: 'morered:wire_parts',
+				line: { parent: 'example:block/red_alloy_wire_line' },
+				edge: { parent: 'example:block/red_alloy_wire_edge' },
+			}));
+			const stub = (from: number[], to: number[]): string => JSON.stringify({
+				textures: { wire: 'example:block/plain' },
+				elements: [{ from, to, faces: { up: { texture: '#wire' } } }],
+			});
+			resources.set('model', 'example:block/red_alloy_wire_line', stub([7, 0, 0], [9, 2, 7]));
+			resources.set('model', 'example:block/red_alloy_wire_edge', stub([0, 0, 7], [2, 2, 9]));
+			resources.set('model', 'example:block/red_alloy_wire_node', stub([7, 0, 7], [9, 2, 9]));
+			resources.set('model', 'example:item/red_alloy_wire', JSON.stringify({
+				textures: { wire: 'example:block/plain' },
+				elements: [
+					{ from: [7, 0, 0], to: [9, 2, 16], faces: { up: { texture: '#wire' } } },
+					{ from: [0, 0, 7], to: [16, 2, 9], faces: { up: { texture: '#wire' } } },
+				],
+			}));
+		});
+		expect(pack.models['example:block/red_alloy_wire_parts'].elements).toEqual([]);
+		const parts = pack.blockStates['example:red_alloy_wire'].multipart ?? [];
+		expect(parts[0].apply[0].model).toBe('example:item/red_alloy_wire');
+		expect(parts[1].apply[0].model).toBe('example:block/red_alloy_wire_node');
+		expect(pack.models['example:item/red_alloy_wire'].elements).toHaveLength(2);
 	});
 });
