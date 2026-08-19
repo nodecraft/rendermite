@@ -289,50 +289,98 @@ export function parseBlockState(
 	throw new BlockStateError(`${context}: states neither variants nor multipart`);
 }
 
-export function matchesCondition(condition: MultipartCondition, properties: BlockProperties): boolean {
+/**
+ * `absentIsWildcard` is the second pass `evaluateBlockState` makes when the
+ * first found nothing: a property the given map does not carry at all counts as
+ * satisfied rather than failed. A *wrong* value still fails either way.
+ */
+export function matchesCondition(
+	condition: MultipartCondition,
+	properties: BlockProperties,
+	absentIsWildcard = false,
+): boolean {
 	switch (condition.op) {
 		case 'match': {
 			return Object.entries(condition.properties)
-				.every(([name, accepted]) => accepted.includes(properties[name]));
+				.every(([name, accepted]) => (absentIsWildcard && properties[name] === undefined) || accepted.includes(properties[name]));
 		}
 		case 'and': {
-			return condition.terms.every(term => matchesCondition(term, properties));
+			return condition.terms.every(term => matchesCondition(term, properties, absentIsWildcard));
 		}
 		case 'or': {
-			return condition.terms.some(term => matchesCondition(term, properties));
+			return condition.terms.some(term => matchesCondition(term, properties, absentIsWildcard));
 		}
 	}
 }
 
-/**
- * The models the game draws for a block in this state, as one weighted list per
- * contributing part — a fence is several models at once, and each of them may
- * itself be a random pick. Empty when nothing matches, which is a real answer:
- * a blockstate that covers only some of a block's states draws nothing for the
- * rest.
- */
-export function evaluateBlockState(
-	definition: BlockStateDefinition,
+/** The variant case closest to an exact-key lookup, or null when none matches. */
+function bestVariant(
+	cases: BlockStateVariantCase[],
 	properties: BlockProperties,
-): BlockModelVariant[][] {
-	if (definition.kind === 'multipart') {
-		return definition.cases
-			.filter(part => part.when === null || matchesCondition(part.when, properties))
-			.map(part => part.apply);
-	}
+	absentIsWildcard: boolean,
+): BlockStateVariantCase | null {
 	// Variant keys are mutually exclusive in valid data, so at most one matches.
 	// Mods do ship overlapping keys; the most constrained one is the closest
 	// thing to what an exact-key lookup would have found.
 	let best: BlockStateVariantCase | null = null;
-	for (const variant of definition.cases) {
+	for (const variant of cases) {
 		const entries = Object.entries(variant.when);
-		if (!entries.every(([name, value]) => properties[name] === value)) {
+		const matched = entries.every(([name, value]) => properties[name] === value
+			|| (absentIsWildcard && properties[name] === undefined));
+		if (!matched) {
 			continue;
 		}
 		if (best === null || entries.length > Object.keys(best.when).length) {
 			best = variant;
 		}
 	}
+	return best;
+}
+
+/**
+ * The models the game draws for a block in this state, as one weighted list per
+ * contributing part — a fence is several models at once, and each of them may
+ * itself be a random pick.
+ *
+ * When nothing matches, the cases are tried again with any property the given
+ * map does not carry treated as a wildcard. That is not tolerance for sloppy
+ * data: a world saved before a mod added a property stores the state without it,
+ * and Functional Storage's drawers key every case on a `facing` the saves in
+ * hand do not have, so a strict read draws a wall of holes. The retry only ever
+ * fires where the strict read found nothing, so it cannot change a state that
+ * already resolved, and it takes at most one part per model so a block missing
+ * its `facing` draws one drawer rather than six rotations of itself.
+ *
+ * Still empty when even that finds nothing, which is a real answer: a blockstate
+ * that covers only some of a block's states draws nothing for the rest.
+ */
+export function evaluateBlockState(
+	definition: BlockStateDefinition,
+	properties: BlockProperties,
+): BlockModelVariant[][] {
+	if (definition.kind === 'multipart') {
+		const matched = definition.cases
+			.filter(part => part.when === null || matchesCondition(part.when, properties));
+		if (matched.length > 0) {
+			return matched.map(part => part.apply);
+		}
+		const drawn = new Set<string>();
+		const loose: BlockModelVariant[][] = [];
+		for (const part of definition.cases) {
+			if (part.when !== null && !matchesCondition(part.when, properties, true)) {
+				continue;
+			}
+			const shape = part.apply.map(variant => variant.model).join('|');
+			if (drawn.has(shape)) {
+				continue;
+			}
+			drawn.add(shape);
+			loose.push(part.apply);
+		}
+		return loose;
+	}
+	const best = bestVariant(definition.cases, properties, false)
+		?? bestVariant(definition.cases, properties, true);
 	return best === null ? [] : [best.apply];
 }
 

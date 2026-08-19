@@ -561,9 +561,20 @@ async function bedGeometry(blockId: string, context: GeometryContext): Promise<B
 	};
 }
 
-/** Blocks with one shape and nothing to orient by. */
+/**
+ * Blocks with one shape and nothing to orient by. Vanilla ids draw vendored
+ * geometry; a mod id is here only where the mod ships a model of its own that
+ * describes the block and nothing points at it, the same bar `MOD_LOADER_HANDLERS`
+ * uses for loaders.
+ */
 const FIXED: Record<string, BlockEntityGeometry> = {
 	'minecraft:conduit': { shapes: [{ model: 'renderchest:item/conduit' }], orient: { kind: 'fixed' } },
+	// AE2 builds the cable bus entirely in code: cable type, connections and every
+	// attached part live in the block entity, so its model is `{}` and its item
+	// model is too. The basic cable's centre core is the one piece of it the assets
+	// do describe, and it puts a marker where a network runs instead of a hole
+	// through the middle of every AE2 base.
+	'ae2:cable_bus': { shapes: [{ model: 'ae2:part/cable/glass/center' }], orient: { kind: 'fixed' } },
 	'minecraft:decorated_pot': {
 		shapes: [{ model: 'renderchest:item/decorated_pot' }],
 		// An undecorated pot: the sherd faces are per-block-entity NBT.

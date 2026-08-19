@@ -258,6 +258,32 @@ model or block with a reason; it is for a build report, not for the renderer.
   per-biome temperature/downfall table is a second data source.
 - **Break overlays and connected textures** are not in the pack at all.
 
+## A state the world saved without every property
+
+`evaluateBlockState` matches a case against the property map a chunk holds, and a mod's blockstate
+can name a property that map does not have. Functional Storage's drawers are the case that surfaced
+it: every one of their 32 cases keys on both `facing` and `subfacing`,
+
+```json
+{"when": {"facing": "down", "subfacing": "south"}, "apply": [{"model": "functionalstorage:oak_1"}]}
+```
+
+but a world saved before the block gained `facing` stores `{"subfacing": "south", "locked": "true"}`
+and nothing else. The export is faithful, checked against the jar, so a strict read is right about
+the data and still puts a hole where every drawer is.
+
+So when no case matches, the cases are tried again with **any property the given map does not carry
+at all treated as a wildcard**. A property that is present and disagrees still fails, so this is not
+tolerance for a wrong value; it is a read of a state that predates the property. Two things bound it:
+
+- **It only fires where the strict read found nothing**, so it can never change a state that already
+  resolved. A multipart with an unconditional part therefore never reaches it.
+- **At most one part per model**, so a drawer missing its `facing` draws one drawer rather than the
+  six rotations of itself that six facings would otherwise all match.
+
+A consumer that reimplements the pack's semantics rather than importing `evaluateBlockState` needs
+this rule too. It is the difference between a wall of holes and a wall of drawers.
+
 ## Blocks the game draws in code
 
 A chest's blockstate is one empty-key variant on a model with no elements:
@@ -301,6 +327,54 @@ Three things keep this honest:
 
 Passing no `builtin` turns the whole thing off and every one of the 144 goes back to being empty
 and recorded.
+
+### The block's own item model, for whatever the table cannot reach
+
+A table of vanilla ids and a search over entity sheets close vanilla, and a good part of mods. What
+they cannot reach is the rest of the long tail: a mod that builds a block's shape in Java files no
+geometry anywhere the pack can find it.
+
+But that mod still has to put something in the *inventory*, so it ships an item model with real
+geometry, and that is the closest thing the assets hold to the block's shape. So a model that draws
+nothing falls back to `<namespace>:item/<block name>`:
+
+| block | item model | what it draws |
+| --- | --- | --- |
+| `enderio:conduit` | a 12³ cube on its own conduit texture | a conduit-coloured block |
+| `extendedae:assembler_matrix_glass` | `block/cube_all` on the glass sheet | the glass block |
+| `advanced_ae:quantum_structure` | `block/cube_all`, translucent | the structure block |
+| `pneumaticcraft:pressure_tube` | `block/pressure_tube_inv` | the tube's unconnected shape |
+| `ae2:quantum_ring` `formed=true` | `block/qnb/ring` | the ring, which is what a formed one is |
+| `ae2:drive` | `block/drive/drive_base` | the drive, oriented by its own variants |
+| `morered:red_alloy_wire` | the wire's full cross | a wire that reads as a connected run |
+
+Three things keep it from over-reaching:
+
+- **A flat icon is not geometry.** `item/generated` states no elements, so a 2D sprite never becomes
+  a plane standing in a chunk. The same falls out for `builtin/entity` items. No test on the parent
+  is needed, because the absence of elements is the test.
+- **It is per model reference, not per block.** A state the mod builds in Java is filled in while the
+  states with real models keep them (AE2's `formed=true`), and each case keeps its own `x`/`y`/`z`,
+  so a drive still faces the way the blockstate says.
+- **A part-magenta substitute is worse than the gap.** Same rule as the vendored geometry: if any
+  sprite the item model names is missing, nothing is substituted and the block stays recorded.
+
+It also runs where the blockstate itself could not be read at all. NeoForge lets a mod register a
+model *type* and name it in a variant instead of a model, the way Ender IO writes
+`{"variants": {"": {"type": "enderio:conduit"}}}`. That leaves no usable case, and the block used to
+be absent from the pack entirely rather than merely empty.
+
+Every substitution is in `failures.json` naming the item model it took, and the model keeps its
+`item/` id in `models.json` so the pack says outright where the shape came from. Measured over 26
+content-heavy mods: **160 blocks that drew nothing now draw**, Refined Storage 96 of them and Quark
+35. Vanilla is untouched at every version, and a full 1.21.8 export is byte-identical: the nine
+intentionally-invisible blocks are skipped and everything else was already covered.
+
+`ae2:cable_bus` is the one mod id in the vendored table, because it is the one that earns it: 823 of
+them in a real base, and none of the above reaches it. The cable type, the connections and every
+attached part live in the block entity, its block model is `{}` and its item model is too. The basic
+cable's centre core (`ae2:part/cable/glass/center`) is the one piece of it the assets do describe, so
+that stands in and puts a marker where a network runs.
 
 ### The table is for vanilla; mods are searched for
 
@@ -600,12 +674,18 @@ Three layers, because each catches what the others cannot:
   is restricted to the unconnected centre, which is what an isolated cable looks like; IE's pipe
   has 17 objects and no obvious default, so it draws all of them and says so. Both carry their
   object names, so a consumer that learns the rule can filter without a re-export.
+  MoreRed's 18 wire families are the element-model version of the same thing: `morered:wire_parts`
+  holds the two shapes a wire draws *between* blocks (`line` across a face, `edge` around its corner)
+  and picks per neighbour in Java. Neither is the wire, and taking whichever the file named first put
+  a stub in the corner of every wire in the world, so the loader draws nothing and the wire falls back
+  to its item model's cross, which tiles into a continuous run.
 - **Connected textures** (Continuity, Chipped's CTM) live in `optifine/ctm/` or a mod's own format
   and describe *runtime* sprite selection from neighbours. Out of scope for the same reason: the
   pack describes a block, not its neighbourhood. Chipped's 6,981 blocks export fine without it.
-- **Blocks drawn in code** stay empty, as in vanilla. After the OBJ work, 574 of the corpus's
-  remaining empty models have no loader at all — they are genuinely code-built (AE2's cable bus,
-  Sophisticated Backpacks, Create's kinetic overlays).
+- **Blocks drawn in code** keep whatever shape the assets hold: the item model where there is one,
+  nothing where there is not. After the OBJ work, 574 of the corpus's remaining empty models have no
+  loader at all: they are genuinely code-built (Sophisticated Backpacks, Create's kinetic overlays),
+  and the ones whose mod ships an inventory shape now stand on it.
 
 ## Known gaps
 
@@ -616,10 +696,12 @@ Three layers, because each catches what the others cannot:
   untinted *is* what the game draws. Others (`bamboo`, `leaf_litter`) declare it themselves and
   probably want a colour. Closing them means reading `BlockColors.createDefault()` for the target
   version; until then they are in `failures.json` rather than quietly grey.
-- **Blocks the game draws in code** export as whatever their model states, which for signs, chests,
-  shulker boxes, banners, beds, water and lava is nothing at all. All of them are listed in
-  `failures.json` with kind `geometry`, so the consumer can say so in its UI rather than looking
-  broken.
+- **Blocks the game draws in code** export as whatever the assets hold: vendored geometry where the
+  table or the entity-sheet search reaches them, the block's own item model where the mod ships one,
+  and nothing at all otherwise. All of them are listed in `failures.json` with kind `geometry`, so
+  the consumer can say so in its UI rather than looking broken. A substitute carries a shape and not
+  an orientation, and for a cable or a pipe not the connections either, so a wire drawn from its item
+  model reads as connected in every direction rather than only the ones it is.
 - **Modded tintindexes are the bulk of the sidecar**, 1,066 across the corpus. A mod's block colours
   live in its Java, exactly as vanilla's do, so there is no data source short of a per-mod table.
   They export untinted and say so.

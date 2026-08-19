@@ -96,6 +96,7 @@ const MOD_LOADER_HANDLERS: Record<string, (json: ModelJson) => ModelJson> = {
 	'sophisticatedstorage:barrel': flattenStorageBarrel,
 	'sophisticatedstorage:limited_barrel': flattenStorageBarrel,
 	'sophisticatedstorage:simple_composite': mergeCompositeParts,
+	'morered:wire_parts': restrictWireToCentre,
 	// IE addons (Immersive Petroleum etc.) register conveyor types through
 	// IE's API, so their items also carry IE's loader id.
 	'immersiveengineering:models/conveyor': flattenConveyor,
@@ -398,6 +399,22 @@ function restrictTransmitterToUnconnected(json: ModelJson): ModelJson {
 		marked.objModel.objects = ['down', 'up', 'north', 'south', 'east', 'west'].map(side => `${side}NONE`);
 	}
 	return marked;
+}
+
+/**
+ * MoreRed's wire loader holds the two shapes a wire draws *between* blocks
+ * (`line` across a face, `edge` around its corner) and picks per connection from
+ * the block entity. Neither is the wire itself: the blockstate places the centre
+ * separately, and an unconnected wire is only that centre. Taking one of the two,
+ * whichever the file happens to name first, put a stub in a corner of every wire
+ * in the world, so the loader draws nothing here and the block pack falls back to
+ * the mod's own item model, which is the wire's full cross.
+ */
+function restrictWireToCentre(json: ModelJson): ModelJson {
+	const stripped = withoutLoader(json) as ModelJson & { line?: unknown; edge?: unknown; };
+	delete stripped.line;
+	delete stripped.edge;
+	return { ...stripped, elements: [] };
 }
 
 /**
