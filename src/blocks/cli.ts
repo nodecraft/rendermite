@@ -151,6 +151,9 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			},
 		});
 		console.log(`\n${result.blocks} blocks, ${result.models} models, ${result.sprites} sprites across ${result.pages} atlas page(s); ${result.writtenFiles} files written.`);
+		console.log(result.biomes > 0
+			? `${result.biomes} biomes described in biomes.json.`
+			: 'No biomes to describe; biomes.json not written.');
 		console.log(`${result.failures.length} entries in failures.json.`);
 		return 0;
 	} finally {

@@ -54,5 +54,7 @@ export { buildObjMesh, ObjMeshError } from './blocks/obj-mesh.ts';
 export type { MeshGroup, ObjMesh } from './blocks/obj-mesh.ts';
 export { packAtlas } from './blocks/atlas-pack.ts';
 export type { PackEntry, PackOptions, PackedAtlas, PackedPage, PackedRect } from './blocks/atlas-pack.ts';
-export { buildBlockTints } from './blocks/tints.ts';
+export { buildBlockTints, UNREGISTERED_TINTS } from './blocks/tints.ts';
 export type { BlockTint, BlockTintPack } from './blocks/tints.ts';
+export { buildBiomeClimates, parseBiomeClimate, VANILLA_BIOME_CLIMATES, DEFAULT_WATER_COLOR } from './blocks/biomes.ts';
+export type { BiomeClimate, BiomeClimatePack } from './blocks/biomes.ts';

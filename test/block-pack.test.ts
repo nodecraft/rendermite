@@ -5,12 +5,14 @@
  * boundary at 1.21.4.
  *
  * The load-bearing assertion is the last one in every case: nothing may land in
- * the failures sidecar except the two kinds that are statements about the assets
- * rather than about the exporter — a block the game draws in code, and a
- * tintindex no table covers. A dropped model or an unresolved sprite fails here.
+ * the failures sidecar except the kinds that are statements about the assets
+ * rather than about the exporter — a block the game draws in code, and the tint
+ * indices vanilla itself leaves alone. A dropped model, an unresolved sprite or a
+ * tintindex the table has no answer for fails here.
  */
 
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -29,8 +31,16 @@ import type { ResourceManager } from '../src/resources/manager.ts';
 
 const packRoot = path.join(import.meta.dirname, '..', '.work', 'block-packs');
 
-/** Kinds that describe the assets, not a failure of the exporter. */
-const ASSET_KINDS = new Set(['geometry', 'tint', 'intentional']);
+/**
+ * Kinds that describe the assets, not a failure of the exporter.
+ *
+ * `tint` is deliberately *not* one of them. A vanilla tintindex with no entry in
+ * the table is a block that draws grey where the game draws it green — which is
+ * how 1.21.5's leaf litter and bushes went a release unnoticed — so the ones
+ * vanilla really does leave untinted are named in `UNREGISTERED_TINTS` and
+ * recorded as `intentional`, and anything else here fails the run.
+ */
+const ASSET_KINDS = new Set(['geometry', 'intentional']);
 
 /**
  * Mods break their own assets in ways vanilla never does, and the pack's answer
@@ -50,6 +60,9 @@ const MODDED_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
 	// whose every model the mod builds in Java — the block-level statement of
 	// the `Model not found` entries above.
 	{ kind: 'blockstate', reason: /case dropped$|^a loader defines this blockstate|^every case named a model that could not be exported$/ },
+	// A mod registers its block colours in Java, so the tint table can only ever
+	// cover vanilla's. Recorded, and the block draws untinted rather than not at all.
+	{ kind: 'tint', reason: /^tintindex \d+ is not in the tint table/ },
 ];
 
 function unexpectedFailures(pack: Pack, modded = false): BlockPackResult['failures'] {
@@ -99,6 +112,8 @@ interface Pack {
 	blockStates: BlockStatesJson;
 	meta: { counts: Record<string, number>; hashes: Record<string, string>; };
 	tints: { flat: Record<string, string>; blocks: Record<string, Record<string, { kind: string; }>>; };
+	/** `biomes.json`, which a pack with no biomes to describe does not write at all. */
+	biomes: Record<string, { temperature: number; downfall: number; water?: string; modifier?: string; grass?: string; foliage?: string; dryFoliage?: string; }> | null;
 }
 
 async function exportPack(name: string, resources: ResourceManager, namespaces?: string[]): Promise<Pack> {
@@ -114,6 +129,7 @@ async function exportPack(name: string, resources: ResourceManager, namespaces?:
 		blockStates: await read<BlockStatesJson>('blockstates.json'),
 		meta: await read<Pack['meta']>('meta.json'),
 		tints: await read<Pack['tints']>('tints.json'),
+		biomes: existsSync(path.join(directory, 'biomes.json')) ? await read<NonNullable<Pack['biomes']>>('biomes.json') : null,
 	};
 }
 
@@ -235,6 +251,32 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		expect(pack.tints.flat.grass).toMatch(/^#[\da-f]{6}$/);
 		expect(pack.tints.flat.foliage).toMatch(/^#[\da-f]{6}$/);
 
+		/*
+		 * Every biome the version can put in a chunk, so the consumer tints a swamp
+		 * grey-green rather than every biome as a plains. The climates are not in any
+		 * jar — they are code in the game — so this is the transcribed table, and what
+		 * matters is that it reaches the pack and says what the game says.
+		 */
+		expect(pack.biomes, 'biomes.json').not.toBeNull();
+		const biomes = pack.biomes as NonNullable<Pack['biomes']>;
+		expect(biomes['minecraft:plains']).toEqual({ temperature: 0.8, downfall: 0.4 });
+		expect(biomes['minecraft:swamp']).toMatchObject({ modifier: 'swamp', water: '#617b64' });
+		expect(pack.meta.counts.biomes).toBe(Object.keys(biomes).length);
+
+		/*
+		 * The tint table is this version's, not the union of every version: a climate
+		 * kind it names has to have a colour in the same pack, and a block it names has
+		 * to be one this version actually has.
+		 */
+		for (const [id, indices] of Object.entries(pack.tints.blocks)) {
+			expect(pack.blockStates, `${id} is tinted`).toHaveProperty([id]);
+			for (const [index, tint] of Object.entries(indices)) {
+				if (['grass', 'foliage', 'dry_foliage'].includes(tint.kind)) {
+					expect(pack.tints.flat[tint.kind], `${id} tintindex ${index}`).toMatch(/^#[\da-f]{6}$/);
+				}
+			}
+		}
+
 		// meta.json is what the consumer caches on, so its hashes must be real.
 		for (const [file, hash] of Object.entries(pack.meta.hashes)) {
 			const bytes = await readFile(path.join(pack.directory, file));
@@ -280,6 +322,21 @@ describe('block pack contents', () => {
 
 		expect(pack.tints.blocks['minecraft:grass_block']['0'].kind).toBe('grass');
 		expect(pack.tints.blocks['minecraft:oak_leaves']['0'].kind).toBe('foliage');
+		/*
+		 * The blocks 1.21.5 added, each of which the wiki's own colour tables and the
+		 * blocks' item definitions agree on. A bush reads the *grass* map rather than the
+		 * dry-foliage one it sounds like it should, and leaf litter is the only block in
+		 * the game that reads the dry-foliage map at all.
+		 */
+		expect(pack.tints.blocks['minecraft:bush']['0'].kind).toBe('grass');
+		expect(pack.tints.blocks['minecraft:leaf_litter']['0'].kind).toBe('dry_foliage');
+		// Stems only: the flowers above them are untinted, so the tint sits on index 1
+		// and reading index 0 finds nothing. Nothing else in vanilla numbers a tint.
+		expect(pack.tints.blocks['minecraft:pink_petals']).toEqual({ 1: { kind: 'grass' } });
+		expect(pack.tints.blocks['minecraft:wildflowers']).toEqual({ 1: { kind: 'grass' } });
+		// An empty cauldron holds no water to colour, unlike the water one.
+		expect(pack.tints.blocks['minecraft:water_cauldron']['0'].kind).toBe('water');
+		expect(pack.tints.blocks['minecraft:cauldron']).toBeUndefined();
 	});
 
 	it('gives blocks the game draws in code a shape and an orientation', { timeout: 180000 }, async () => {

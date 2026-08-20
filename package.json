@@ -47,7 +47,7 @@
 		"lint:ci": "eslint .",
 		"test": "vitest run",
 		"bench": "vitest bench --config vitest.bench.config.ts --run",
-		"bench:report": "vitest bench --config vitest.bench.config.ts --run --outputJson bench-results.json && node scripts/bench-report.ts",
+		"bench:against": "node scripts/bench-against.ts",
 		"test:watch": "vitest",
 		"typecheck": "tsc --noEmit",
 		"semantic-release": "semantic-release"

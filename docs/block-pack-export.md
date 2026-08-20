@@ -98,6 +98,7 @@ Two changes landed outside `src/blocks/` and both benefit the icon path too:
   models.json          model id  -> { ao, elements: [...], mesh?, renderType?, multiblock? }
   blockstates.json     block id  -> { variants | multipart }, keys and predicates pre-parsed
   tints.json           flat plains colours, colormaps, ramps, per-block semantics
+  biomes.json          biome id -> climate and the colours it overrides (absent when there are none)
   colormap/*.png       the version's own grass/foliage/dry_foliage maps
   failures.json        every block, model, sprite and tintindex the run could not fully handle
   meta.json            version, counts, sha256 of every other file
@@ -146,6 +147,17 @@ from the version's own colormap; `water` from plains' `water_color`). `colormaps
 in the pack. `ramps` holds `redstone` (16, by power) and `stem` (8, by age). `blocks[id][tintindex]`
 is one of `{kind: 'grass'|'foliage'|'dry_foliage'|'water'}`, `{kind: 'constant', color}`, or
 `{kind: 'ramp', ramp, property}`.
+
+**`biomes.json`.** `{ temperature, downfall }` per biome, plus `water`, `grass`, `foliage`,
+`dryFoliage` and `modifier` where the biome overrides what its climate would give. A climate pair
+addresses the triangular half of a colormap (`x = (1 - temperature) * 255`,
+`y = (1 - downfall * temperature) * 255`, each clamped to 0-1 first); `modifier` applies to the grass
+sample afterwards (`dark_forest` is `((c & 0xFEFEFE) + 0x28340A) >> 1`, `swamp` substitutes
+`#6a7039`); an entry with no `water` is `#3f76e4`. Vanilla's climates are transcribed, because they
+are code in the game rather than assets and no client jar carries them; a mod's are read out of the
+`data/<ns>/worldgen/biome/*.json` its jar ships, so a modded pack describes its own biomes and
+nothing else. The file is absent when a pack has no biomes to describe, and a consumer without one
+falls back to `tints.json`'s flat plains colours.
 
 **`meta.json`** carries sha256 for every other file, because the consumer caches these immutably per
 version the same way `icons/<version>/` is cached today.
@@ -237,6 +249,7 @@ blocks/modded/<namespace>/   one mod's namespace, fetched on demand
 | `atlas.json` | 118 KB | 11 KB | always |
 | `colormap/*.png` | 29 KB | 29 KB | only for real biome tints |
 | `tints.json` | 2 KB | 1 KB | always |
+| `biomes.json` | 4 KB | 1 KB | only for real biome tints |
 | `failures.json` | 10 KB | 1 KB | diagnostics only, never at runtime |
 | `meta.json` | 1 KB | 1 KB | always |
 | **total** | **3.2 MB** | **507 KB** | |
@@ -282,8 +295,8 @@ model or block with a reason; it is for a build report, not for the renderer.
 - **Block entities that are still empty.** Banners and skulls come out empty and recorded — see
   below for the ones that no longer do.
 - **Ambient occlusion.** `ao` says whether a model wants it; computing it is the mesher's job.
-- **Biome tints.** `tints.json` ships flat plains colours plus the version's own colormaps; the
-  per-biome temperature/downfall table is a second data source.
+- **Biome blending.** `biomes.json` says what colour a biome is; the game averages a tinted block
+  over the square around it, and which block neighbours which biome is the consumer's world to walk.
 - **Break overlays and connected textures** are not in the pack at all.
 
 ## A state the world saved without every property

@@ -8,18 +8,24 @@ import type { ResourceDescriptor } from './descriptor.ts';
 
 /**
  * A category of resource inside a pack, mapping to a directory under
- * `assets/<namespace>/` plus a file extension.
+ * `<root>/<namespace>/` plus a file extension.
+ *
+ * `root` is `assets` for everything a renderer draws with. Biome definitions are
+ * the exception: they are *data*, not assets, so a jar keeps them under `data/`
+ * and a manager that assumed `assets/` could never see them.
  */
 export const ResourceKind = {
-	model: { directory: 'models', extension: '.json' },
-	itemDefinition: { directory: 'items', extension: '.json' },
-	blockstate: { directory: 'blockstates', extension: '.json' },
-	texture: { directory: 'textures', extension: '.png' },
-	textureMeta: { directory: 'textures', extension: '.png.mcmeta' },
-	atlas: { directory: 'atlases', extension: '.json' },
-	lang: { directory: 'lang', extension: '.json' },
+	model: { root: 'assets', directory: 'models', extension: '.json' },
+	itemDefinition: { root: 'assets', directory: 'items', extension: '.json' },
+	blockstate: { root: 'assets', directory: 'blockstates', extension: '.json' },
+	texture: { root: 'assets', directory: 'textures', extension: '.png' },
+	textureMeta: { root: 'assets', directory: 'textures', extension: '.png.mcmeta' },
+	atlas: { root: 'assets', directory: 'atlases', extension: '.json' },
+	lang: { root: 'assets', directory: 'lang', extension: '.json' },
 	/** Arbitrary file under assets/<ns>/ (OBJ geometry, MTL material libraries). */
-	raw: { directory: '', extension: '' },
+	raw: { root: 'assets', directory: '', extension: '' },
+	/** A datapack biome: climate and the colours a renderer tints its blocks with. */
+	biome: { root: 'data', directory: 'worldgen/biome', extension: '.json' },
 } as const;
 
 export type ResourceKindName = keyof typeof ResourceKind;
@@ -47,15 +53,26 @@ export interface ResourceManager {
  * (what renderchest's --assets and the ui pipeline pass).
  */
 export class FolderResourceManager implements ResourceManager {
+	/** What `root` was before the `assets/` layout was detected, so `data/` is reachable too. */
+	private readonly packRoot: string;
+
 	readonly root: string;
 
 	constructor(root: string) {
+		this.packRoot = root;
 		this.root = existsSync(path.join(root, 'assets')) ? path.join(root, 'assets') : root;
 	}
 
+	/** Where a kind's namespaces live: the detected assets root, or a sibling of it. */
+	private base(kind: ResourceKindName, namespace: string): string {
+		const { root, directory } = ResourceKind[kind];
+		const rooted = root === 'assets' ? this.root : path.join(this.packRoot, root);
+		return path.join(rooted, namespace, directory);
+	}
+
 	private resolve(kind: ResourceKindName, locator: ResourceLocator): string {
-		const { directory, extension } = ResourceKind[kind];
-		return path.join(this.root, locator.namespace, directory, `${locator.path}${extension}`);
+		const { extension } = ResourceKind[kind];
+		return path.join(this.base(kind, locator.namespace), `${locator.path}${extension}`);
 	}
 
 	async getResource(kind: ResourceKindName, locator: ResourceLocator): Promise<Buffer | null> {
@@ -87,8 +104,8 @@ export class FolderResourceManager implements ResourceManager {
 	}
 
 	async listResources(kind: ResourceKindName, namespace: string): Promise<ResourceLocator[]> {
-		const { directory, extension } = ResourceKind[kind];
-		const base = path.join(this.root, namespace, directory);
+		const { extension } = ResourceKind[kind];
+		const base = this.base(kind, namespace);
 		let entries;
 		try {
 			entries = await readdir(base, { recursive: true, withFileTypes: true });

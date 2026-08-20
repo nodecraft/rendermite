@@ -6,7 +6,6 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  actions: read # the benchmark job downloads main's baseline artifact
 
 jobs:
   test:
@@ -41,17 +40,23 @@ jobs:
         env:
           NODE_OPTIONS: --max_old_space_size=6144
 
-  # Performance monitoring (reporting, not a gate): publish a report every run so
-  # main always has a baseline, and diff PRs against it. Runner speed varies more
-  # than most regressions do, so the report scales timings by a calibration
-  # benchmark measured in the same run — see scripts/bench-report.ts.
+  # Performance monitoring (reporting, not a gate). Both sides are measured on
+  # this runner, in one process, so full history is needed to check out the base
+  # commit: a stored number from an earlier run of main folds the difference
+  # between two machines into every delta. See bench/sides.ts.
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     name: Benchmarks
-    if: (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
+    # A second push should replace an in-flight run rather than race it to the same comment
+    concurrency:
+      group: bench-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.title, '[skip bench]')
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Setup node
         uses: actions/setup-node@v6
         with:
@@ -62,35 +67,26 @@ jobs:
       - name: Cache test fixtures
         uses: actions/cache@v6
         with:
-          path: .work/fixtures
           key: fixtures-${{ hashFiles('test/global-setup.ts', 'test/fixtures/*.ts') }}
+          path: .work/fixtures
           restore-keys: fixtures-
-      - name: Run benchmarks
-        run: npm run bench:report
-      - name: Upload benchmark report
+      - name: Benchmark against the base commit
+        run: npm run bench:against -- --base "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      - name: Upload raw numbers
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: bench-report
-          path: bench-report.json
+          name: bench-json
+          path: .bench/bench.json
+          if-no-files-found: warn
           retention-days: 90
-      - name: Download main benchmark baseline
-        if: github.event_name == 'pull_request'
-        uses: dawidd6/action-download-artifact@v21
-        with:
-          workflow: workflow.yml
-          branch: main
-          name: bench-report
-          path: base-bench
-          if_no_artifact_found: warn
-      - name: Render benchmark comment
-        if: github.event_name == 'pull_request'
-        run: BASE_BENCH_JSON=base-bench/bench-report.json node scripts/bench-report.ts --comment bench-comment.md
       - name: Post benchmark comment
-        if: github.event_name == 'pull_request'
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: benchmarks
-          path: bench-comment.md
+          path: .bench/comment.md
 
   release:
     runs-on: ubuntu-latest
