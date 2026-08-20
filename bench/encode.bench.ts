@@ -1,25 +1,31 @@
 /**
  * Encoding benchmarks. Encoding is roughly half the per-item wall time of a run
- * and its settings trade bytes against CPU, so these measure speed while the
- * report tracks the encoded size alongside it — bytes are deterministic, which
- * makes them the more reliable of the two signals on a hosted runner.
+ * and its settings trade bytes against CPU, so a regression here is expensive
+ * and easy to introduce.
+ *
+ * Both sides encode the *same* frames, rendered once by this tree, so the
+ * comparison isolates the encoder: a pull request that changes what the
+ * renderer emits would otherwise hand the two encoders different pixels and
+ * report the difference as an encoding change. `FloatTexture` is a plain
+ * width/height/Float64Array record, which is what makes handing one tree's
+ * frames to the other's encoder safe.
  *
  * Setup is top-level because Vitest does not run suite hooks in benchmark mode.
  */
 
-import { bench, describe } from 'vitest';
-
 import { BENCH_VERSION } from './global-setup.ts';
-import { defaultProperties } from '../src/items/definition.ts';
-import { resolveItem } from '../src/items/discovery.ts';
-import { ModelLoader } from '../src/models/loader.ts';
-import { encodeAnimatedIcon } from '../src/output/encode.ts';
-import { renderModelFrames } from '../src/render/renderer.ts';
-import { JarResourceManager } from '../src/resources/jar.ts';
-import { TextureLoader } from '../src/textures/loader.ts';
+import { prepareSides } from './sides.ts';
+import {
+	JarResourceManager,
+	ModelLoader,
+	TextureLoader,
+	defaultProperties,
+	renderModelFrames,
+	resolveItem,
+} from './subject.ts';
 import { vanillaJar } from '../test/fixtures/index.ts';
 
-import type { FloatTexture } from '../src/render/blend.ts';
+import type { FloatTexture } from './subject.ts';
 
 const STATIC_ITEMS = ['minecraft:diamond_sword', 'minecraft:stone', 'minecraft:bookshelf'] as const;
 const ANIMATED_ITEM = 'minecraft:magma_block';
@@ -53,19 +59,23 @@ if (animated.frames.length < 2) {
 	throw new Error(`${ANIMATED_ITEM} rendered ${animated.frames.length} frames; the animated benchmark needs more`);
 }
 
-describe('encode', () => {
-	bench('three static icons to PNG + WebP', async () => {
-		let bytes = 0;
-		for (const item of statics) {
-			const encoded = await encodeAnimatedIcon(item.frames, item.delaysMs, { webp: true });
-			bytes += encoded.png.length;
-		}
-		if (bytes === 0) {
-			throw new Error('benchmark encoded nothing');
-		}
-	}, { time: 2000 });
+const sides = await prepareSides((subject) => {
+	return {
+		encode: subject.encodeAnimatedIcon,
+	};
+});
 
-	bench('one animated icon to PNG + animated WebP', async () => {
-		await encodeAnimatedIcon(animated.frames, animated.delaysMs, { webp: true });
-	}, { time: 2000 });
+sides.compare('encode', 'three static icons to PNG + WebP', { time: 2000 }, async ({ encode }) => {
+	let bytes = 0;
+	for (const item of statics) {
+		const encoded = await encode(item.frames, item.delaysMs, { webp: true });
+		bytes += encoded.png.length;
+	}
+	if (bytes === 0) {
+		throw new Error('benchmark encoded nothing');
+	}
+});
+
+sides.compare('encode', 'one animated icon to PNG + animated WebP', { time: 2000 }, async ({ encode }) => {
+	await encode(animated.frames, animated.delaysMs, { webp: true });
 });
