@@ -39,6 +39,7 @@ export type {
 export type {
 	BlockPackAtlasFile,
 	BlockPackAtlasPage,
+	BlockPackBiomesFile,
 	BlockPackBlockState,
 	BlockPackBlockStatesFile,
 	BlockPackElement,
@@ -54,3 +55,4 @@ export type {
 } from './blocks/pack-format.ts';
 export type { MeshGroup, ObjMesh } from './blocks/obj-mesh.ts';
 export type { BlockTint, BlockTintPack } from './blocks/tints.ts';
+export type { BiomeClimate, BiomeClimatePack } from './blocks/biomes.ts';

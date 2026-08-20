@@ -8,9 +8,10 @@
  * namespaces (plural dirs, camelCase names, cube/face-suffix synthesis rules).
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createWriteStream } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import sharp from 'sharp';
@@ -53,6 +54,19 @@ const MODS: FixtureMod[] = [
 				}],
 			},
 			'assets/depcore/textures/trims/items/gear_trim.png': png([160, 160, 160, 255], 8),
+			// A datapack biome, under data/ rather than assets/ — the only place a modded
+			// biome's climate is ever stated, and colours as the decimal ints jars write.
+			'data/depcore/worldgen/biome/machine_wastes.json': {
+				temperature: 0.4,
+				downfall: 0.2,
+				has_precipitation: true,
+				effects: {
+					water_color: 3_820_122,
+					grass_color: 8_227_420,
+					grass_color_modifier: 'dark_forest',
+					sky_color: 7_907_327,
+				},
+			},
 			'assets/depcore/models/item/trimmed_gear.json': {
 				parent: 'item/generated',
 				textures: { layer0: 'depcore:item/core_gear', layer1: 'depcore:trims/items/gear_trim_amethyst' },
@@ -418,12 +432,20 @@ async function encodeEntry(value: JarEntries[string]): Promise<Buffer> {
 
 export const fixtureModJar = (name: string): string => path.join(fixturesDir, 'mods', `${name}.jar`);
 
-/** Build all fixture mod jars that are not already cached. */
+/**
+ * Build every fixture mod jar whose declaration has changed.
+ *
+ * Keyed on a hash of the declaration rather than on the file existing: a cached
+ * jar that predates an edit to `MODS` is the worst of both worlds, because the
+ * test asserting the new entry fails while pointing at code that is correct.
+ */
 export async function buildFixtureModJars(): Promise<void> {
 	await mkdir(path.join(fixturesDir, 'mods'), { recursive: true });
 	for (const mod of MODS) {
 		const jarPath = fixtureModJar(mod.name);
-		if (existsSync(jarPath)) {
+		const stampPath = `${jarPath}.sha`;
+		const stamp = createHash('sha256').update(JSON.stringify(mod.entries)).digest('hex');
+		if (existsSync(jarPath) && existsSync(stampPath) && await readFile(stampPath, 'utf8') === stamp) {
 			continue;
 		}
 		const zip = new ZipFile();
@@ -436,5 +458,6 @@ export async function buildFixtureModJars(): Promise<void> {
 			stream.on('close', () => resolve());
 			stream.on('error', reject);
 		});
+		await writeFile(stampPath, stamp);
 	}
 }

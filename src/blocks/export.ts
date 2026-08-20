@@ -19,10 +19,11 @@ import path from 'node:path';
 import sharp from 'sharp';
 
 import { packAtlas } from './atlas-pack.ts';
+import { buildBiomeClimates } from './biomes.ts';
 import { INVISIBLE_BLOCKS, blockEntityGeometry, synthesizeVariants } from './block-entities.ts';
 import { collectModels, parseBlockState } from './blockstate-eval.ts';
 import { buildObjMesh } from './obj-mesh.ts';
-import { buildBlockTints } from './tints.ts';
+import { UNREGISTERED_TINTS, buildBlockTints } from './tints.ts';
 import { loadAtlasResolver } from '../atlas/registry.ts';
 import { ModelLoader, resolveTexture, salvageJson } from '../models/loader.ts';
 import { ResourceLocator } from '../resources/locator.ts';
@@ -32,6 +33,7 @@ import { TextureLoader } from '../textures/loader.ts';
 import type { BlockModelVariant, BlockStateDefinition, BlockStateVariantCase } from './blockstate-eval.ts';
 import type {
 	BlockPackAtlasFile,
+	BlockPackBiomesFile,
 	BlockPackBlockState,
 	BlockPackBlockStatesFile,
 	BlockPackElement,
@@ -83,7 +85,7 @@ export interface BlockPackFailure {
 	 * `intentional` is not a failure: it marks a block that is empty because the
 	 * game draws nothing for it. Filter it out to get the real gaps.
 	 */
-	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'intentional';
+	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'intentional';
 	reason: string;
 }
 
@@ -92,6 +94,8 @@ export interface BlockPackResult {
 	models: number;
 	sprites: number;
 	pages: number;
+	/** Biomes described in `biomes.json`; `0` means the file was not written. */
+	biomes: number;
 	/** Files actually written — the only trustworthy success signal. */
 	writtenFiles: number;
 	failures: BlockPackFailure[];
@@ -935,17 +939,26 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			}
 		}
 		for (const index of used) {
-			if (tints.pack.blocks[block]?.[String(index)] === undefined) {
-				// Not automatically a defect: vanilla leaves an unregistered
-				// tintindex untinted too (cherry leaves inherit one from
-				// block/leaves and are meant to stay pink). Recorded so a real
-				// gap in the table is visible instead of just looking grey.
-				failures.push({ id: block, kind: 'tint', reason: `tintindex ${index} is not in the tint table; exported untinted` });
+			if (tints.pack.blocks[block]?.[String(index)] !== undefined) {
+				continue;
 			}
+			// Vanilla leaves some of these untinted too — an index inherited from a
+			// parent model, or one on a shared model whose other block is the tinted
+			// one. Those are named, with the reason, so that everything *else* landing
+			// here is a real gap in the table rather than a bucket nobody reads.
+			const expected = block.startsWith('minecraft:')
+				? UNREGISTERED_TINTS[block.slice('minecraft:'.length)]
+				: undefined;
+			failures.push(expected === undefined
+				? { id: block, kind: 'tint', reason: `tintindex ${index} is not in the tint table; exported untinted` }
+				: { id: block, kind: 'intentional', reason: `tintindex ${index} is untinted in vanilla too: ${expected}` });
 		}
 	}
 
-	// 6. Emit.
+	// 6. Biome climates: vanilla's own table, plus whatever a mod's datapack states.
+	const biomes = await buildBiomeClimates(resources, namespaces);
+
+	// 7. Emit.
 	await mkdir(output, { recursive: true });
 	const hashes: Record<string, string> = {};
 	let writtenFiles = 0;
@@ -978,6 +991,14 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	await emit('models.json', JSON.stringify(sortedByKey(emittedModels) satisfies BlockPackModelsFile));
 	await emit('blockstates.json', JSON.stringify(sortedByKey(blockStates) satisfies BlockPackBlockStatesFile));
 	await emit('tints.json', JSON.stringify(tints.pack satisfies BlockPackTintsFile));
+	// Only when there is something to say: a mod that adds no biomes should not
+	// publish an empty file for a consumer to fetch and discard.
+	if (Object.keys(biomes.pack).length > 0) {
+		await emit('biomes.json', JSON.stringify(sortedByKey(biomes.pack) satisfies BlockPackBiomesFile));
+	}
+	for (const biome of biomes.unreadable) {
+		failures.push({ id: biome, kind: 'biome', reason: 'biome definition is unreadable or states no climate; exported without one' });
+	}
 	failures.sort((left, right) => left.id.localeCompare(right.id) || left.kind.localeCompare(right.kind));
 	await emit('failures.json', JSON.stringify(failures, null, '\t'));
 
@@ -986,6 +1007,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		models: Object.keys(emittedModels).length,
 		sprites: Object.keys(emittedSprites).length,
 		pages: packed.pages.length,
+		biomes: Object.keys(biomes.pack).length,
 		failures: failures.length,
 	};
 	// meta.json hashes the pack, so it is written last and hashes nothing of itself.

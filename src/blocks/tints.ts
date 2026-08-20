@@ -9,9 +9,9 @@
  *
  * The colour *values* are not hand-written: grass and foliage are sampled from
  * the version's own colormaps at plains' climate, so a pack always carries the
- * colours that version ships. Real per-biome tints need a temperature/downfall
- * table the assets do not contain; the colormaps ride along in the pack so that
- * stays a refinement rather than a re-export.
+ * colours that version ships. `flat` is that one climate; the colormaps ride
+ * along in the pack and `biomes.json` (see src/blocks/biomes.ts) says where in
+ * one each biome reads, which is what makes a real per-biome tint possible.
  */
 
 import { ResourceLocator } from '../resources/locator.ts';
@@ -31,7 +31,7 @@ export type BlockTint =
 export interface BlockTintPack {
 	/** Plains-climate colours, the flat tint a v1 consumer applies everywhere. */
 	flat: Record<string, string>;
-	/** Colormap name → file inside the pack, for real biome tints later. */
+	/** Colormap name → file inside the pack; `biomes.json` says where in one to read. */
 	colormaps: Record<string, string>;
 	ramps: Record<string, string[]>;
 	/** Block id → tintindex → semantics. */
@@ -54,11 +54,45 @@ const GRASS_BLOCKS = [
 	'large_fern',
 	'potted_fern',
 	'sugar_cane',
+	// 1.21.5. Grass rather than dry foliage, as its own item definition states.
+	'bush',
 ];
 
 const FOLIAGE_BLOCKS = ['oak_leaves', 'jungle_leaves', 'acacia_leaves', 'dark_oak_leaves', 'mangrove_leaves', 'vine'];
 
-const WATER_BLOCKS = ['water', 'bubble_column', 'cauldron', 'water_cauldron'];
+/** 1.21.5's dry foliage, the third colormap. Older versions simply have neither block. */
+const DRY_FOLIAGE_BLOCKS = ['leaf_litter'];
+
+const WATER_BLOCKS = ['water', 'bubble_column', 'water_cauldron'];
+
+/**
+ * Blocks whose *stem* is grass-tinted while the flowers on it are not, so the
+ * tint sits on `tintindex` 1 rather than 0. Nothing else in vanilla numbers a
+ * tint above zero.
+ */
+const GRASS_STEM_BLOCKS = ['pink_petals', 'wildflowers'];
+
+/**
+ * Blocks with a `tintindex` vanilla registers no colour for, and why. The game
+ * draws them untinted too — the index is inherited from a parent model or a
+ * shared one — so the pack leaving them alone is correct rather than a gap, and
+ * saying so here is what keeps a real gap visible in the failures sidecar.
+ */
+export const UNREGISTERED_TINTS: Record<string, string> = {
+	bamboo: 'the stalk model carries an index vanilla never colours',
+	bamboo_sapling: 'shares the bamboo stalk model',
+	cherry_leaves: 'inherits an index from block/leaves and is meant to stay pink',
+	pale_oak_leaves: 'inherits an index from block/leaves and is meant to stay pale',
+	lava_cauldron: 'shares the water cauldron model; lava is not water-tinted',
+	powder_snow_cauldron: 'shares the water cauldron model',
+	stonecutter: 'the saw model carries an index vanilla never colours',
+	// Mojang agreed in the end: 1.21 repointed kelp at block/cross, which has no
+	// index at all. Seagrass lost its own the same way in 1.18.
+	kelp: 'inherits an index from block/tinted_cross, which vanilla never colours it through',
+	kelp_plant: 'shares the kelp model',
+	seagrass: 'inherits an index from its pre-1.18 template model',
+	tall_seagrass: 'shares the seagrass template',
+};
 
 /** Blocks whose tint vanilla hard-codes rather than reading from a colormap. */
 const CONSTANT_TINTS: Record<string, string> = {
@@ -166,17 +200,33 @@ export async function buildBlockTints(resources: ResourceManager, textures: Text
 	}
 
 	const blocks: Record<string, Record<string, BlockTint>> = {};
-	const put = (id: string, tint: BlockTint): void => {
-		blocks[`minecraft:${id}`] = { 0: tint };
+	const put = (id: string, tint: BlockTint, tintindex = 0): void => {
+		blocks[`minecraft:${id}`] = { ...blocks[`minecraft:${id}`], [tintindex]: tint };
 	};
 	for (const id of GRASS_BLOCKS) {
 		put(id, { kind: 'grass' });
 	}
+	for (const id of GRASS_STEM_BLOCKS) {
+		put(id, { kind: 'grass' }, 1);
+	}
 	for (const id of FOLIAGE_BLOCKS) {
 		put(id, { kind: 'foliage' });
 	}
+	for (const id of DRY_FOLIAGE_BLOCKS) {
+		put(id, { kind: 'dry_foliage' });
+	}
 	for (const id of WATER_BLOCKS) {
 		put(id, { kind: 'water' });
+	}
+	/*
+	 * Before 1.17 the cauldron *is* the water one — one block with a level, and its
+	 * own model is the tinted one. 1.17 split it into empty, water, lava and powder
+	 * snow, and from then on the empty one holds nothing to colour. Asked as a
+	 * question about the assets rather than about the version, so a snapshot in
+	 * between is right for free.
+	 */
+	if (!(await resources.hasResource('blockstate', ResourceLocator.parse('minecraft:water_cauldron')))) {
+		put('cauldron', { kind: 'water' });
 	}
 	for (const [id, color] of Object.entries(CONSTANT_TINTS)) {
 		put(id, { kind: 'constant', color });
@@ -190,8 +240,21 @@ export async function buildBlockTints(resources: ResourceManager, textures: Text
 		put(id, { kind: 'ramp', ramp: 'stem', property: 'age' });
 	}
 
+	/*
+	 * Only the blocks this version has. The lists above span 1.13 to now, so an
+	 * unpruned table tells a 1.18 pack about leaf litter and a modern one about
+	 * `grass` under its pre-1.20.3 name — and worse, names a `dry_foliage` tint in a
+	 * version that ships no dry-foliage colormap to resolve it against.
+	 */
+	const present: Record<string, Record<string, BlockTint>> = {};
+	for (const [id, tints] of Object.entries(blocks)) {
+		if (await resources.hasResource('blockstate', ResourceLocator.parse(id))) {
+			present[id] = tints;
+		}
+	}
+
 	return {
-		pack: { flat, colormaps, ramps: { redstone: redstoneRamp(), stem: stemRamp() }, blocks },
+		pack: { flat, colormaps, ramps: { redstone: redstoneRamp(), stem: stemRamp() }, blocks: present },
 		files,
 	};
 }

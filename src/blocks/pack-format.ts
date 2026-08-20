@@ -9,6 +9,7 @@
  * drift: a field added to the emit without being added here fails to compile.
  */
 
+import type { BiomeClimatePack } from './biomes.ts';
 import type { BlockStateMultipartCase, BlockStateVariantCase } from './blockstate-eval.ts';
 import type { MeshGroup } from './obj-mesh.ts';
 import type { BlockTintPack } from './tints.ts';
@@ -133,6 +134,13 @@ export type BlockPackBlockState =
 /** `tints.json`. */
 export type BlockPackTintsFile = BlockTintPack;
 
+/**
+ * `biomes.json`, present only when the pack has biomes to describe: vanilla's
+ * whole table, or the ones a mod's datapack declares. Absent is not empty — a
+ * consumer with no file falls back to tinting at `tints.json`'s flat climate.
+ */
+export type BlockPackBiomesFile = BiomeClimatePack;
+
 /** `meta.json`, written last because it hashes every other file. */
 export interface BlockPackMetaFile {
 	generator: string;
@@ -143,6 +151,8 @@ export interface BlockPackMetaFile {
 		models: number;
 		sprites: number;
 		pages: number;
+		/** Biomes in `biomes.json`; `0` means the pack has none and the file is absent. */
+		biomes: number;
 		failures: number;
 	};
 	/** sha256 per file, enough to verify a cached copy without refetching it. */

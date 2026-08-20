@@ -55,14 +55,19 @@ export class JarResourceManager implements ResourceManager {
 						reject(new UnsafeJarError(`Unsafe entry in ${this.jarPath}: ${entry.fileName}`));
 						return;
 					}
-					const match = /^assets\/([^/]+)\//.exec(entry.fileName);
+					// `data/` is indexed alongside `assets/` for the biome definitions a mod
+					// ships as a datapack, but only assets name a namespace: a namespace is a
+					// thing to render from, and a data-only one has nothing to draw.
+					const match = /^(assets|data)\/([^/]+)\//.exec(entry.fileName);
 					if (match) {
 						entries.set(entry.fileName, entry);
 						const lower = entry.fileName.toLowerCase();
 						if (!entriesLower.has(lower)) {
 							entriesLower.set(lower, entry);
 						}
-						namespaces.add(match[1].toLowerCase());
+						if (match[1] === 'assets') {
+							namespaces.add(match[2].toLowerCase());
+						}
 					}
 					zip.readEntry();
 				});
@@ -75,9 +80,9 @@ export class JarResourceManager implements ResourceManager {
 	}
 
 	private entryPath(kind: ResourceKindName, locator: ResourceLocator): string {
-		const { directory, extension } = ResourceKind[kind];
+		const { root, directory, extension } = ResourceKind[kind];
 		const prefix = directory === '' ? '' : `${directory}/`;
-		return `assets/${locator.namespace}/${prefix}${locator.path}${extension}`;
+		return `${root}/${locator.namespace}/${prefix}${locator.path}${extension}`;
 	}
 
 	async getResource(kind: ResourceKindName, locator: ResourceLocator): Promise<Buffer | null> {
@@ -116,9 +121,9 @@ export class JarResourceManager implements ResourceManager {
 
 	async listResources(kind: ResourceKindName, namespace: string): Promise<ResourceLocator[]> {
 		const index = await this.getIndex();
-		const { directory, extension } = ResourceKind[kind];
+		const { root, directory, extension } = ResourceKind[kind];
 		// The raw kind has no directory — its prefix must not double the slash.
-		const prefix = directory === '' ? `assets/${namespace}/` : `assets/${namespace}/${directory}/`;
+		const prefix = directory === '' ? `${root}/${namespace}/` : `${root}/${namespace}/${directory}/`;
 		const locators: ResourceLocator[] = [];
 		for (const entryPath of index.entries.keys()) {
 			if (!entryPath.startsWith(prefix) || !entryPath.endsWith(extension) || entryPath.endsWith('/')) {
