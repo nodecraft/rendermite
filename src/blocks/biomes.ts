@@ -6,12 +6,15 @@
  * says where in one to read. A consumer with both can draw a swamp grey-green
  * and a badlands tan instead of tinting every biome as a plains.
  *
- * Vanilla's own climates are the table below rather than a read of the assets,
- * because no client jar contains them — biomes are code in the game and data
- * only in the server's generated reports. The values are transcribed from the
- * vanilla data (via misode/mcmeta) and are a superset across versions: a biome
- * a version does not have simply never appears in one of its worlds, and the
- * climates of the ones it does have do not move between versions.
+ * From 1.19.3 a client jar ships vanilla's own biome definitions under
+ * `data/minecraft/worldgen/biome/`, and those win: they are the version's answer
+ * rather than a transcription of one, which is how a 1.21.1 pack correctly says
+ * a swamp has no dry-foliage colour while a 1.21.9 one says it does.
+ *
+ * The table below covers 1.13 to 1.19.2, whose jars carry none. It is
+ * transcribed from the vanilla data (via misode/mcmeta) and is a superset across
+ * versions: a biome a version does not have simply never appears in one of its
+ * worlds, and the climates of the ones it does have do not move between them.
  *
  * Mods are read rather than transcribed. A modded biome is a datapack file in
  * the jar (`data/<ns>/worldgen/biome/<name>.json`), which is the same shape the

@@ -20,6 +20,7 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import { ensureModrinthJar, vanillaJar } from './fixtures/index.ts';
+import { VANILLA_BIOME_CLIMATES } from '../src/blocks/biomes.ts';
 import { exportBlockPack } from '../src/blocks/export.ts';
 import { builtinPackPath } from '../src/builtin.ts';
 import { prepareModResources } from '../src/mods/prepare.ts';
@@ -337,6 +338,30 @@ describe('block pack contents', () => {
 		// An empty cauldron holds no water to colour, unlike the water one.
 		expect(pack.tints.blocks['minecraft:water_cauldron']['0'].kind).toBe('water');
 		expect(pack.tints.blocks['minecraft:cauldron']).toBeUndefined();
+	});
+
+	it('takes biome climates from the jar where the version ships them', { timeout: 240000 }, async () => {
+		/*
+		 * 1.19.3 is where a client jar started carrying `data/minecraft/worldgen/biome/`, and where it
+		 * does those values are the version's own answer rather than a transcription of a later one. The
+		 * pair below is the whole rule: 1.19.4 states a swamp with no dry-foliage colour, because dry
+		 * foliage did not exist yet, while the table this exporter carries does state one — and 1.18.2,
+		 * whose jar has no biome data at all, comes out as the table exactly.
+		 */
+		const modern = await exportPack('1.19.4-biomes', await prepareVersionResources({
+			version: '1.19.4',
+			jar: vanillaJar('1.19.4'),
+		}));
+		expect(VANILLA_BIOME_CLIMATES['minecraft:swamp'].dryFoliage).toBeDefined();
+		expect(modern.biomes?.['minecraft:swamp']).toBeDefined();
+		expect(modern.biomes?.['minecraft:swamp'].dryFoliage).toBeUndefined();
+		expect(modern.biomes?.['minecraft:swamp']).toMatchObject({ modifier: 'swamp', water: '#617b64' });
+
+		const legacy = await exportPack('1.18.2-biomes', await prepareVersionResources({
+			version: '1.18.2',
+			jar: vanillaJar('1.18.2'),
+		}));
+		expect(legacy.biomes?.['minecraft:swamp']).toEqual(VANILLA_BIOME_CLIMATES['minecraft:swamp']);
 	});
 
 	it('gives blocks the game draws in code a shape and an orientation', { timeout: 180000 }, async () => {
