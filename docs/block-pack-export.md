@@ -153,10 +153,10 @@ is one of `{kind: 'grass'|'foliage'|'dry_foliage'|'water'}`, `{kind: 'constant',
 addresses the triangular half of a colormap (`x = (1 - temperature) * 255`,
 `y = (1 - downfall * temperature) * 255`, each clamped to 0-1 first); `modifier` applies to the grass
 sample afterwards (`dark_forest` is `((c & 0xFEFEFE) + 0x28340A) >> 1`, `swamp` substitutes
-`#6a7039`); an entry with no `water` is `#3f76e4`. Vanilla's climates are transcribed, because they
-are code in the game rather than assets and no client jar carries them; a mod's are read out of the
-`data/<ns>/worldgen/biome/*.json` its jar ships, so a modded pack describes its own biomes and
-nothing else. The file is absent when a pack has no biomes to describe, and a consumer without one
+`#6a7039`); an entry with no `water` is `#3f76e4`. The values come from the jar's own
+`data/<ns>/worldgen/biome/*.json` wherever it ships them — vanilla does from 1.19.3, and a mod always
+does — so a pack states its own version's answer; 1.13 to 1.19.2 fall back to the transcribed table
+in `src/blocks/biomes.ts`. A modded pack describes its own biomes and nothing else. The file is absent when a pack has no biomes to describe, and a consumer without one
 falls back to `tints.json`'s flat plains colours.
 
 **`meta.json`** carries sha256 for every other file, because the consumer caches these immutably per
