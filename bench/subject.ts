@@ -10,6 +10,13 @@
  * as part of whichever side loaded it.
  */
 
+export { buildModelNameIndex, classReader, linkEntityModel } from '../src/entities/link.ts';
+export { identityMappings, isObfuscated, loadMappings } from '../src/entities/mappings.ts';
+export { extractModel } from '../src/entities/model-bytecode.ts';
+export { extractInheritedModel } from '../src/entities/inherit.ts';
+export { loadModelCode } from '../src/entities/model-code.ts';
+export { JarClassReader } from '../src/entities/jar-classes.ts';
+export { parseClassFile } from '../src/entities/classfile.ts';
 export { defaultProperties } from '../src/items/definition.ts';
 export { discoverItems, resolveItem } from '../src/items/discovery.ts';
 export { ModelLoader } from '../src/models/loader.ts';
@@ -22,6 +29,7 @@ export { ResourceLocator } from '../src/resources/locator.ts';
 export { openZip } from '../src/resources/zip-reader.ts';
 export { TextureLoader } from '../src/textures/loader.ts';
 
+export type { ExtractedModel, Part } from '../src/entities/model.ts';
 export type { ResolvedModel } from '../src/models/loader.ts';
 export type { FloatTexture } from '../src/render/blend.ts';
 export type { FaceBuffer } from '../src/render/rasterizer.ts';

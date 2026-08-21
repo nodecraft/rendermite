@@ -76,6 +76,8 @@ blocks/1.21.8/
   tints.json           # plains tints, colormaps, ramps, per-block tint semantics
   colormap/*.png       # the version's own grass/foliage/dry_foliage maps
   items.json           # flat item sprite stacks + their own atlas, for drawing dropped stacks
+  entities.json        # entity names, marker colours, and which model each uses
+  entity-models.json   # entity geometry recovered from the client's own bytecode + its atlas
   failures.json        # anything not fully handled, with reasons, never silent
   meta.json            # version, counts, sha256 of every other file
 ```

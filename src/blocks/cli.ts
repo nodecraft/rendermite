@@ -10,6 +10,7 @@ import { parseArgs } from 'node:util';
 
 import { exportBlockPack } from './export.ts';
 import { builtinPackPath } from '../builtin.ts';
+import { JarClassReader } from '../entities/jar-classes.ts';
 import { prepareModResources } from '../mods/prepare.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../resources/manager.ts';
 import { downloadClientJar } from '../versions/download.ts';
@@ -40,6 +41,8 @@ Options:
       --builtin <dir>      override the vendored geometry pack
       --no-builtin         do not substitute geometry for code-drawn blocks
       --no-items           do not export items.json (flat sprites for non-block items)
+      --no-entities        do not export entities.json (entity names and marker colours)
+      --no-entity-geometry do not read the jar's code for entity model geometry
       --cache-dir <dir>    jar download cache (default ~/.rendermite)
 `;
 
@@ -87,6 +90,8 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			'builtin': { type: 'string' },
 			'no-builtin': { type: 'boolean', default: false },
 			'no-items': { type: 'boolean', default: false },
+			'no-entities': { type: 'boolean', default: false },
+			'no-entity-geometry': { type: 'boolean', default: false },
 			'help': { type: 'boolean', short: 'h', default: false },
 		},
 	});
@@ -110,12 +115,18 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 
 	const cacheDir = values['cache-dir'] ?? path.join(os.homedir(), '.rendermite');
 	let resources: ResourceManager;
+	/*
+	 * Entity geometry comes out of the *code*, so it needs the jar rather than the resource view of it.
+	 * An `--assets` run has none, and exports entity names and colours without shapes.
+	 */
+	let classes: JarClassReader | null = null;
 	if (values.version) {
 		console.log(`Fetching client jar for ${values.version}…`);
-		resources = await prepareVersionResources({
-			version: values.version,
-			jar: await downloadClientJar(values.version, cacheDir),
-		});
+		const jar = await downloadClientJar(values.version, cacheDir);
+		resources = await prepareVersionResources({ version: values.version, jar });
+		if (!values['no-entity-geometry']) {
+			classes = new JarClassReader(jar);
+		}
 	} else {
 		const managers = (values.assets ?? []).map(root => new FolderResourceManager(root));
 		resources = managers.length === 1 ? managers[0] : new LayeredResourceManager(managers);
@@ -147,6 +158,9 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			padding: sizes.padding,
 			maxPageSize: sizes.maxPageSize,
 			items: !values['no-items'],
+			entities: !values['no-entities'],
+			classes: classes ?? undefined,
+			cacheDir,
 			onProgress: (stage, done, total) => {
 				if (done === total || done % 250 === 0) {
 					console.log(`${stage}: ${done}/${total}`);
@@ -157,6 +171,12 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 		console.log(result.items > 0
 			? `${result.items} flat items described in items.json.`
 			: 'No flat item sprites exported.');
+		console.log(result.entities > 0
+			? `${result.entities} entity types described in entities.json.`
+			: 'No entity types exported.');
+		console.log(result.entityModels > 0
+			? `${result.entityModels} entity models recovered from the jar's own code.`
+			: 'No entity geometry recovered.');
 		console.log(result.biomes > 0
 			? `${result.biomes} biomes described in biomes.json.`
 			: 'No biomes to describe; biomes.json not written.');
@@ -164,5 +184,6 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 		return 0;
 	} finally {
 		await closeMods?.();
+		await classes?.close();
 	}
 }

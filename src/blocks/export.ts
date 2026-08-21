@@ -21,6 +21,8 @@ import sharp from 'sharp';
 import { buildBiomeClimates } from './biomes.ts';
 import { INVISIBLE_BLOCKS, blockEntityGeometry, synthesizeVariants } from './block-entities.ts';
 import { collectModels, parseBlockState } from './blockstate-eval.ts';
+import { collectEntities } from './entities.ts';
+import { collectEntityGeometry } from './entity-models.ts';
 import { collectItemSprites } from './item-sprites.ts';
 import { buildObjMesh } from './obj-mesh.ts';
 import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
@@ -33,12 +35,15 @@ import { FolderResourceManager, LayeredResourceManager } from '../resources/mana
 import { TextureLoader } from '../textures/loader.ts';
 
 import type { BlockModelVariant, BlockStateDefinition, BlockStateVariantCase } from './blockstate-eval.ts';
+import type { ClassSource } from './entity-models.ts';
 import type {
 	BlockPackAtlasFile,
 	BlockPackBiomesFile,
 	BlockPackBlockState,
 	BlockPackBlockStatesFile,
 	BlockPackElement,
+	BlockPackEntitiesFile,
+	BlockPackEntityModelsFile,
 	BlockPackFace,
 	BlockPackItemsFile,
 	BlockPackMetaFile,
@@ -83,6 +88,22 @@ export interface ExportBlockPackOptions {
 	 * or a handful of charcoal from. On by default.
 	 */
 	items?: boolean;
+	/**
+	 * Export `entities.json`: every entity type the namespaces register, with a display name and the
+	 * mean colour of its sheet. On by default. No geometry — no jar has any — but it is what lets a
+	 * consumer name and tint the stand-in box it draws for a mob.
+	 */
+	entities?: boolean;
+	/**
+	 * Reads class files, for recovering entity geometry from the client's own code.
+	 *
+	 * Entity models are Java at every version, so without this a pack carries entity names and marker
+	 * colours but no shapes. Absent for an `--assets` run, which has no code to read — the honest
+	 * answer there is no geometry rather than a silent gap.
+	 */
+	classes?: ClassSource;
+	/** Where mappings cache; the jar cache directory. */
+	cacheDir?: string;
 	onProgress?: (stage: string, done: number, total: number) => void;
 }
 
@@ -92,7 +113,7 @@ export interface BlockPackFailure {
 	 * `intentional` is not a failure: it marks a block that is empty because the
 	 * game draws nothing for it. Filter it out to get the real gaps.
 	 */
-	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'intentional';
+	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'entity' | 'intentional';
 	reason: string;
 }
 
@@ -105,6 +126,10 @@ export interface BlockPackResult {
 	biomes: number;
 	/** Flat items described in `items.json`; `0` means the file was not written. */
 	items: number;
+	/** Entity types described in `entities.json`; `0` means the file was not written. */
+	entities: number;
+	/** Distinct entity models in `entity-models.json`; `0` means the file was not written. */
+	entityModels: number;
 	/** Files actually written — the only trustworthy success signal. */
 	writtenFiles: number;
 	failures: BlockPackFailure[];
@@ -879,7 +904,106 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		}
 	}
 
-	// 8. Emit.
+	/*
+	 * 8. Entity types. Independent of everything above — it reads the lang file and the entity sheets,
+	 * neither of which any other step touches — so it is last simply because it is the newest.
+	 */
+	let entityPack: BlockPackEntitiesFile | null = null;
+	let entityModelPack: BlockPackEntityModelsFile | null = null;
+	let entityPages: Array<{ width: number; height: number; data: Uint8ClampedArray; }> = [];
+	if (options.entities ?? true) {
+		const collected = await collectEntities({
+			resources,
+			textures,
+			namespaces,
+			onProgress: (count, total) => report('entities', count, total),
+		});
+		for (const failure of collected.failures) {
+			failures.push({ id: failure.id, kind: 'entity', reason: failure.reason });
+		}
+
+		/*
+		 * Geometry, where there is code to read it out of. Keyed by the class it came from, so the twenty
+		 * entities that are all a `HumanoidModel` share one entry rather than carrying twenty copies of
+		 * the same boxes.
+		 */
+		if (options.classes) {
+			const textureOf = new Map<string, string>();
+			for (const [id, entry] of Object.entries(collected.entities)) {
+				if (entry.texture) {
+					textureOf.set(id, entry.texture);
+				}
+			}
+			const geometry = await collectEntityGeometry({
+				version,
+				cacheDir: options.cacheDir ?? output,
+				classes: options.classes,
+				entityIds: Object.keys(collected.entities),
+				textureOf,
+				// For the GeckoLib mobs, whose geometry is a `.geo.json` asset rather than code
+				resources,
+				onProgress: (count, total) => report('entity geometry', count, total),
+			});
+			for (const failure of geometry.failures) {
+				failures.push({ id: failure.id, kind: 'entity', reason: failure.reason });
+			}
+			for (const [id, model] of geometry.modelOf) {
+				collected.entities[id].model = model;
+			}
+			if (Object.keys(geometry.models).length > 0) {
+				const sheet = await buildSpriteSheet(geometry.spriteIds, textures, {
+					padding: options.padding,
+					maxPageSize: options.maxPageSize,
+					onProgress: (count, total) => report('entity sprites', count, total),
+				});
+				for (const failure of sheet.failures) {
+					failures.push({ id: failure.id, kind: 'sprite', reason: failure.reason });
+				}
+				/*
+				 * A cube's `uv` addresses the mob's own sheet, and the sheet is right here: its real size
+				 * beats whatever the code stated, which before 1.17 is often nothing at all. Only where every
+				 * entity sharing the model agrees — a boat and a chest boat share one model across a 128x64
+				 * and a 128x128 sheet, so a consumer has to prefer the sprite's own size regardless.
+				 */
+				const sheetSizes = new Map<string, Set<string>>();
+				for (const [id, model] of geometry.modelOf) {
+					const sprite = sheet.sprites[collected.entities[id].texture ?? ''];
+					if (sprite) {
+						const sizes = sheetSizes.get(model) ?? new Set<string>();
+						sizes.add(`${sprite.w}x${sprite.h}`);
+						sheetSizes.set(model, sizes);
+					}
+				}
+				for (const [model, sizes] of sheetSizes) {
+					const [only] = [...sizes];
+					if (sizes.size === 1) {
+						const [width, height] = only.split('x').map(Number);
+						geometry.models[model].textureSize = [width, height];
+					}
+				}
+				entityPages = sheet.pages;
+				entityModelPack = {
+					padding: sheet.padding,
+					pages: entityPages.map((page, index) => {
+						return { file: `entity-atlas-${index}.png`, width: page.width, height: page.height };
+					}),
+					sprites: sortedByKey(sheet.sprites),
+					models: sortedByKey(geometry.models),
+				};
+				// A sheet that never reached the atlas would draw the mob in the missing texture
+				for (const [id, entry] of Object.entries(collected.entities)) {
+					if (entry.texture && sheet.missing.has(entry.texture)) {
+						delete collected.entities[id].texture;
+					}
+				}
+			}
+		}
+		if (Object.keys(collected.entities).length > 0) {
+			entityPack = sortedByKey(collected.entities);
+		}
+	}
+
+	// 9. Emit.
 	await mkdir(output, { recursive: true });
 	const hashes: Record<string, string> = {};
 	let writtenFiles = 0;
@@ -910,6 +1034,18 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	if (itemPack) {
 		await emit('items.json', JSON.stringify(itemPack satisfies BlockPackItemsFile));
 	}
+	if (entityPack) {
+		await emit('entities.json', JSON.stringify(entityPack satisfies BlockPackEntitiesFile));
+	}
+	for (const [index, page] of entityPages.entries()) {
+		const raw = Buffer.from(page.data.buffer, page.data.byteOffset, page.data.byteLength);
+		await emit(`entity-atlas-${index}.png`, await sharp(raw, { raw: { width: page.width, height: page.height, channels: 4 } })
+			.png({ compressionLevel: 9 })
+			.toBuffer());
+	}
+	if (entityModelPack) {
+		await emit('entity-models.json', JSON.stringify(entityModelPack satisfies BlockPackEntityModelsFile));
+	}
 	for (const file of tints.files) {
 		await emit(file.path, file.data);
 	}
@@ -939,6 +1075,8 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		pages: sheet.pages.length,
 		biomes: Object.keys(biomes.pack).length,
 		items: Object.keys(itemPack?.items ?? {}).length,
+		entities: Object.keys(entityPack ?? {}).length,
+		entityModels: Object.keys(entityModelPack?.models ?? {}).length,
 		failures: failures.length,
 	};
 	// meta.json hashes the pack, so it is written last and hashes nothing of itself.

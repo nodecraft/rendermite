@@ -183,6 +183,105 @@ export interface BlockPackItemsFile {
 	items: Record<string, ItemPackEntry>;
 }
 
+/**
+ * One entity type: what to call it, and what colour it is.
+ *
+ * No geometry, because no jar has any — entity models are Java code at every version. What a consumer
+ * can do with this is name the stand-in box it draws and tint it like the animal, which is the
+ * difference between a field of arbitrary colours and a readable one.
+ */
+export interface EntityPackEntry {
+	/** English display name, from the jar's own lang file. */
+	name: string;
+	/**
+	 * Mean colour of the opaque pixels of the entity's sheet, `#rrggbb`.
+	 *
+	 * Absent for everything that is not a mob — an item entity, a falling block, a marker, a display,
+	 * a thrown projectile — because those draw from an item or a block and have no sheet of their own.
+	 * None is invented for them.
+	 */
+	color?: string;
+	/**
+	 * The sheet the colour came from, and what the model's `uv` values address. A sprite id in
+	 * `entity-models.json`'s atlas once that file is present.
+	 */
+	texture?: string;
+	/** Key into `entity-models.json`'s `models`, when geometry was recovered for this entity. */
+	model?: string;
+}
+
+/**
+ * `entities.json`, by entity id. The registry read off the lang file, which is the closest thing a jar
+ * carries to it. Absent from a pack whose namespaces register no entities.
+ */
+export type BlockPackEntitiesFile = Record<string, EntityPackEntry>;
+
+/** One box of a part, in the model's own space, exactly as the game's own builder stated it. */
+/** The six faces a box can carry its own texture rect on. */
+export type EntityPackCubeFace = 'north' | 'south' | 'east' | 'west' | 'up' | 'down';
+
+export interface EntityPackCube {
+	/** Minimum corner. */
+	origin: Vec3;
+	size: Vec3;
+	/** Texture offset in pixels on the entity's own sheet, as `texOffs` set it. */
+	uv: [number, number];
+	/** Grows the box on every side; `CubeDeformation`, or a builder's `delta`. */
+	inflate?: number;
+	mirror?: true;
+	/**
+	 * Per-face texture rects, which replace the box unwrap `uv` implies wherever they are present.
+	 *
+	 * Java has no such thing, since `addBox` always unwraps the same way, but bedrock geometry does and
+	 * leans on it: 56% of the cubes across four GeckoLib mods state their faces individually. A consumer
+	 * that ignores this draws over half of every such mob from the wrong part of its sheet.
+	 */
+	faces?: Partial<Record<EntityPackCubeFace, { uv: [number, number]; size: [number, number]; }>>;
+}
+
+/** One bone: where it pivots, what it is made of, and what hangs off it. */
+export interface EntityPackPart {
+	name: string;
+	/** Pivot relative to the parent bone. */
+	pivot: Vec3;
+	/** Radians about x, y, z, as `PartPose.offsetAndRotation` states them. */
+	rotation: Vec3;
+	cubes: EntityPackCube[];
+	children: EntityPackPart[];
+}
+
+/**
+ * One entity model: a bone hierarchy of boxes, recovered from the client's own code.
+ *
+ * `textureSize` is the sheet the `uv` values are in, which is *not* the atlas page — a consumer maps
+ * `uv` through it into the sprite's rect, exactly as it does for a block face.
+ *
+ * **Prefer the sprite's own `w`/`h` where the entity has one**, and keep this as the fallback. One
+ * model can be drawn on two differently sized sheets: from 1.21.4 a boat and a chest boat are both a
+ * `BoatModel`, on a 128x64 and a 128x128 sheet respectively, so no single value here is right for both.
+ */
+export interface EntityPackModel {
+	textureSize: [number, number];
+	parts: EntityPackPart[];
+	/** Anything the extraction had to skip or assume, so a consumer can distrust it knowingly. */
+	notes?: string[];
+}
+
+/**
+ * `entity-models.json`. Self-contained like `items.json`, with its own atlas of entity sheets, so a
+ * consumer that never draws a mob does not fetch any of it.
+ *
+ * `models` is keyed by the class the geometry came from, and `entities.json`'s `model` points at it —
+ * several entities share one model (every zombie is a `HumanoidModel`), and keying by class is what
+ * makes that one entry rather than twenty copies.
+ */
+export interface BlockPackEntityModelsFile {
+	padding: number;
+	pages: BlockPackAtlasPage[];
+	sprites: Record<string, BlockPackSprite>;
+	models: Record<string, EntityPackModel>;
+}
+
 /** `meta.json`, written last because it hashes every other file. */
 export interface BlockPackMetaFile {
 	generator: string;
@@ -197,6 +296,10 @@ export interface BlockPackMetaFile {
 		biomes: number;
 		/** Flat items in `items.json`; `0` means the pack has none and the file is absent. */
 		items: number;
+		/** Entity types in `entities.json`; `0` means the pack has none and the file is absent. */
+		entities: number;
+		/** Distinct entity models in `entity-models.json`; `0` means the file is absent. */
+		entityModels: number;
 		failures: number;
 	};
 	/** sha256 per file, enough to verify a cached copy without refetching it. */

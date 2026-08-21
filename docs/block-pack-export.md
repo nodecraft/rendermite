@@ -102,6 +102,9 @@ Two changes landed outside `src/blocks/` and both benefit the icon path too:
   colormap/*.png       the version's own grass/foliage/dry_foliage maps
   items.json           item id  -> flat layer sprites, with its own atlas (absent when there are none)
   item-atlas-N.png     the item sheet's own page(s), addressed by items.json
+  entities.json        entity id -> display name, marker colour, sheet, model (absent when none)
+  entity-models.json   model id  -> bone hierarchy of boxes, with its own atlas (entity-geometry.md)
+  entity-atlas-N.png   the entity sheets those models address
   failures.json        every block, model, sprite, tintindex and item the run could not fully handle
   meta.json            version, counts, sha256 of every other file
 ```
@@ -176,6 +179,34 @@ flat sheaf and the block of the same id is a crop cross.
 The file is **self-contained** — its own `padding`, `pages` and `sprites`, on its own `item-atlas-N.png`
 pages rather than the block atlas's. A consumer that only draws blocks never fetches it at all; one
 drawing a world's dropped stacks fetches it once it finds a stack of something that is not a block.
+
+**`entities.json`.** Every entity type the namespaces register, as `{ name, color?, texture?, model? }`.
+
+There is no geometry here and there cannot be: **no jar contains entity models, at any version** —
+they are Java code, and 26.2 ships 850 entity *textures* against zero entity models. What a consumer
+can do with this instead is name the stand-in box it draws for a mob and tint it like the animal, which
+is the difference between a field of arbitrary colours and a readable one.
+
+The registry is the lang file: `entity.<ns>.<name>` is written per registered type by datagen, so it
+is the closest thing a jar carries to the entity registry. Keys with more segments are a variant's own
+label (`entity.minecraft.villager.farmer`) and are not types.
+
+`color` is the mean of the opaque pixels of the entity's own sheet — crude on purpose, since it is a
+marker's tint rather than a render. It is **absent for everything that is not a mob**: an item entity,
+a falling block, a marker, a display, a thrown projectile all draw from an item or a block and have no
+sheet of their own, so none is invented for them. On 1.21.1 that is 111 of 132 types coloured.
+
+Finding the sheet is the fiddly part, and `texture` carries the answer so the geometry does not have to
+solve it again — `model` points into **`entity-models.json`**, which is that geometry. Entity models are
+Java code at every version, so recovering them means reading the client's own bytecode, or converting
+the bedrock `.geo.json` a GeckoLib mod ships in place of it; see `docs/entity-geometry.md` for how, and
+for what it will not do. A cube there may carry `faces`, per-face texture rects that replace the box
+unwrap `uv` implies — bedrock geometry leans on them and a Java model never has them. Most mobs are filed under their own name; the rest
+are named after a *variant* (`entity/rabbit/brown`, `entity/guardian_elder`) or with the underscores
+squashed out (`entity/armorstand/`, `entity/slime/magmacube`), and both are matched. The search never
+leaves `entity/` — widening it tints a marker off whatever block happens to share a word — and never
+takes a projectile or a piece of equipment filed in a mob's own directory, or a llama comes out the
+colour of its own spit.
 
 **`meta.json`** carries sha256 for every other file, because the consumer caches these immutably per
 version the same way `icons/<version>/` is cached today.
@@ -270,9 +301,12 @@ blocks/modded/<namespace>/   one mod's namespace, fetched on demand
 | `biomes.json` | 4 KB | 1 KB | only for real biome tints |
 | `items.json` | 170 KB | 14 KB | only for drawing dropped items |
 | `item-atlas-0.png` | 86 KB | 86 KB | only for drawing dropped items |
+| `entities.json` | 12 KB | 2 KB | only for naming and tinting entities |
+| `entity-models.json` | 90 KB | 12 KB | only for drawing entity geometry |
+| `entity-atlas-0.png` | 118 KB | 118 KB | only for drawing entity geometry |
 | `failures.json` | 10 KB | 1 KB | diagnostics only, never at runtime |
 | `meta.json` | 1 KB | 1 KB | always |
-| **total** | **3.5 MB** | **607 KB** | |
+| **total** | **3.7 MB** | **739 KB** | |
 
 An eight-mod pack (Create, IE, Mekanism, AE2, Botania, Supplementaries, Quark, Farmer's Delight) is
 16.7 MB on disk and **1.8 MB transferred**, on one 2048² page.
@@ -284,8 +318,10 @@ per file is enough to verify a cached copy without refetching it. Serve the JSON
 
 **Load order.** `meta.json` first (counts and hashes, 1 KB), then `atlas-0.png` in parallel with
 `blockstates.json` + `models.json` + `atlas.json`. Nothing needs `failures.json` at runtime,
-nothing needs `colormap/` until biome tints are wired up, and nothing needs `items.json` or
-`item-atlas-N.png` until something draws a dropped stack.
+nothing needs `colormap/` until biome tints are wired up, nothing needs `items.json` or
+`item-atlas-N.png` until something draws a dropped stack, nothing needs `entities.json` until something
+draws an entity, and nothing needs `entity-models.json` or `entity-atlas-N.png` until it draws one as
+more than a box.
 
 **Knowing what you do not have.** The pack answers this itself, without the sidecar:
 

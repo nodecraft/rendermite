@@ -19,10 +19,11 @@ import path from 'node:path';
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
-import { ensureModrinthJar, vanillaJar } from './fixtures/index.ts';
+import { ensureModrinthJar, fixturesDir, vanillaJar } from './fixtures/index.ts';
 import { VANILLA_BIOME_CLIMATES } from '../src/blocks/biomes.ts';
 import { exportBlockPack } from '../src/blocks/export.ts';
 import { builtinPackPath } from '../src/builtin.ts';
+import { JarClassReader } from '../src/entities/jar-classes.ts';
 import { prepareModResources } from '../src/mods/prepare.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { prepareVersionResources } from '../src/versions/prepare.ts';
@@ -53,6 +54,24 @@ const ASSET_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
 	// spyglass, drawn by the game from geometry the item sheet cannot carry. Named
 	// so that anything *else* landing in the item sheet's failures is a real gap.
 	{ kind: 'item', reason: /^item model is not a flat sprite stack and the pack describes no block of this id$/ },
+	/*
+	 * An entity with no sheet of its own: an item entity, a falling block, a marker, a display, a thrown
+	 * projectile. All real types that draw from an item or a block, so no colour is invented for them.
+	 * Named by reason so that anything *else* in the entity table is a real gap.
+	 */
+	{ kind: 'entity', reason: /^no entity texture found; exported without a colour$/ },
+	{ kind: 'entity', reason: /has no opaque pixels; exported without a colour$/ },
+	/*
+	 * Shape recovered, sheet not. Both cases in vanilla are code-level texture aliases with nothing in
+	 * the assets connecting them: a giant draws the zombie's skin, and the killer bunny draws
+	 * `rabbit/caerbannog`. 26.2 has none at all. The mob still draws, in the missing texture.
+	 */
+	{ kind: 'entity', reason: /but no entity texture resolved$/ },
+	/*
+	 * 1.13.x is obfuscated and predates published mappings, so nothing can be linked to a class there.
+	 * Recorded once against the version rather than once per mob, and it is the only era affected.
+	 */
+	{ kind: 'entity', reason: /^no entity geometry: .*1\.14\.4/ },
 ];
 
 /**
@@ -141,6 +160,19 @@ interface Pack {
 	tints: { flat: Record<string, string>; blocks: Record<string, Record<string, { kind: string; }>>; };
 	/** `biomes.json`, which a pack with no biomes to describe does not write at all. */
 	biomes: Record<string, { temperature: number; downfall: number; water?: string; modifier?: string; grass?: string; foliage?: string; dryFoliage?: string; }> | null;
+	/** `entities.json`, absent from a pack whose namespaces register no entities. */
+	entities: Record<string, { name: string; color?: string; texture?: string; model?: string; }> | null;
+	/** `entity-models.json`, absent unless the export was given code to read geometry out of. */
+	entityModels: {
+		padding: number;
+		pages: Array<{ file: string; width: number; height: number; }>;
+		sprites: Record<string, { page: number; x: number; y: number; w: number; h: number; }>;
+		models: Record<string, {
+			textureSize: [number, number];
+			parts: Array<{ name: string; pivot: number[]; rotation: number[]; cubes: Array<{ origin: number[]; size: number[]; uv: number[]; }>; children: unknown[]; }>;
+			notes?: string[];
+		}>;
+	} | null;
 	/** `items.json`, likewise absent from a pack with no flat items. */
 	items: {
 		padding: number;
@@ -150,10 +182,24 @@ interface Pack {
 	} | null;
 }
 
-async function exportPack(name: string, resources: ResourceManager, namespaces?: string[]): Promise<Pack> {
+async function exportPack(
+	name: string,
+	resources: ResourceManager,
+	namespaces?: string[],
+	/** A jar to read entity geometry out of; without one the pack carries names and colours only. */
+	classes?: JarClassReader,
+): Promise<Pack> {
 	const directory = path.join(packRoot, name);
 	// The vendored pack is what gives chests, shulker boxes and signs a shape.
-	const result = await exportBlockPack({ resources, output: directory, version: name, namespaces, builtin: builtinPackPath('modern') });
+	const result = await exportBlockPack({
+		resources,
+		output: directory,
+		version: name,
+		namespaces,
+		builtin: builtinPackPath('modern'),
+		classes,
+		cacheDir: fixturesDir,
+	});
 	const read = async <T>(file: string): Promise<T> => JSON.parse(await readFile(path.join(directory, file), 'utf8')) as T;
 	return {
 		result,
@@ -165,6 +211,10 @@ async function exportPack(name: string, resources: ResourceManager, namespaces?:
 		tints: await read<Pack['tints']>('tints.json'),
 		biomes: existsSync(path.join(directory, 'biomes.json')) ? await read<NonNullable<Pack['biomes']>>('biomes.json') : null,
 		items: existsSync(path.join(directory, 'items.json')) ? await read<NonNullable<Pack['items']>>('items.json') : null,
+		entities: existsSync(path.join(directory, 'entities.json')) ? await read<NonNullable<Pack['entities']>>('entities.json') : null,
+		entityModels: existsSync(path.join(directory, 'entity-models.json'))
+			? await read<NonNullable<Pack['entityModels']>>('entity-models.json')
+			: null,
 	};
 }
 
@@ -211,6 +261,49 @@ function assertSelfContained(pack: Pack): void {
 		expect(Number.isSafeInteger(Math.log2(page.width))).toBe(true);
 		expect(Number.isSafeInteger(Math.log2(page.height))).toBe(true);
 	}
+	if (pack.entityModels) {
+		/*
+		 * The entity table points at models by the class they came from, several entities to one — every
+		 * zombie in the game is a `HumanoidModel`. A dangling pointer draws nothing where a mob should be.
+		 */
+		for (const [id, entry] of Object.entries(pack.entities ?? {})) {
+			if (entry.model !== undefined) {
+				expect(pack.entityModels.models, `${id} names ${entry.model}`).toHaveProperty([entry.model]);
+			}
+		}
+		for (const [modelId, model] of Object.entries(pack.entityModels.models)) {
+			expect(model.parts.length, modelId).toBeGreaterThan(0);
+			expect(model.textureSize[0], modelId).toBeGreaterThan(0);
+		}
+		/*
+		 * A cube's `uv` is in the sheet the model states, so a stated size that is not the sheet the mob is
+		 * drawn with garbles every face on it. Asserted only where every entity sharing the model draws on
+		 * the same size of sheet: a boat and a chest boat are one `BoatModel` on a 128x64 and a 128x128
+		 * sheet, which is why a consumer prefers the sprite's own size to this at all.
+		 */
+		const sheetsOf = new Map<string, Set<string>>();
+		for (const entry of Object.values(pack.entities ?? {})) {
+			const sprite = entry.texture ? pack.entityModels.sprites[entry.texture] : undefined;
+			if (entry.model && sprite) {
+				sheetsOf.set(entry.model, (sheetsOf.get(entry.model) ?? new Set()).add(`${sprite.w}x${sprite.h}`));
+			}
+		}
+		for (const [modelId, sheets] of sheetsOf) {
+			const [only] = [...sheets];
+			if (sheets.size === 1) {
+				expect(pack.entityModels.models[modelId].textureSize.join('x'), modelId).toBe(only);
+			}
+		}
+		for (const sprite of Object.values(pack.entityModels.sprites)) {
+			const page = pack.entityModels.pages[sprite.page];
+			expect(page).toBeDefined();
+			expect(sprite.x + sprite.w + pack.entityModels.padding).toBeLessThanOrEqual(page.width);
+			expect(sprite.y + sprite.h + pack.entityModels.padding).toBeLessThanOrEqual(page.height);
+		}
+		for (const page of pack.entityModels.pages) {
+			expect(page.file).toMatch(/^entity-atlas-\d+\.png$/);
+		}
+	}
 	if (pack.items) {
 		// The item sheet is its own atlas, so it carries its own version of every
 		// guarantee above: a dangling layer sprite draws a hole where an item was.
@@ -237,20 +330,25 @@ interface VersionCase {
 	sprites: number;
 	/** Flat items in `items.json`; a floor for the same reason. */
 	items: number;
+	/** Entity types in `entities.json`, and how many of those carry a marker colour. */
+	entities: number;
+	entityColours: number;
+	/** Distinct entity models recovered from the jar's code; shared, so far below the type count. */
+	entityModels: number;
 }
 
 const CASES: VersionCase[] = [
 	// The floor. No `atlases/` and no items/ definitions, but fully namespaced.
-	{ version: '1.13.2', blocks: 550, models: 850, sprites: 460, items: 450 },
+	{ version: '1.13.2', blocks: 550, models: 850, sprites: 460, items: 450, entities: 70, entityColours: 55, entityModels: 0 },
 	// Immediately below the atlases/ introduction — the empty resolver is correct.
-	{ version: '1.18.2', blocks: 850, models: 1450, sprites: 720, items: 580 },
+	{ version: '1.18.2', blocks: 850, models: 1450, sprites: 720, items: 580, entities: 95, entityColours: 75, entityModels: 55 },
 	// Immediately above it.
-	{ version: '1.19.4', blocks: 950, models: 1650, sprites: 790, items: 620 },
+	{ version: '1.19.4', blocks: 950, models: 1650, sprites: 790, items: 620, entities: 100, entityColours: 80, entityModels: 60 },
 	// Either side of the models → modern era boundary.
-	{ version: '1.21.1', blocks: 1000, models: 1800, sprites: 900, items: 950 },
-	{ version: '1.21.4', blocks: 1040, models: 1850, sprites: 930, items: 1000 },
+	{ version: '1.21.1', blocks: 1000, models: 1800, sprites: 900, items: 950, entities: 125, entityColours: 100, entityModels: 70 },
+	{ version: '1.21.4', blocks: 1040, models: 1850, sprites: 930, items: 1000, entities: 125, entityColours: 100, entityModels: 72 },
 	// Current.
-	{ version: '26.2', blocks: 1140, models: 2200, sprites: 1140, items: 1150 },
+	{ version: '26.2', blocks: 1140, models: 2200, sprites: 1140, items: 1150, entities: 130, entityColours: 105, entityModels: 74 },
 ];
 
 describe.each(CASES)('block pack for $version', (testCase) => {
@@ -259,12 +357,20 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 			version: testCase.version,
 			jar: vanillaJar(testCase.version),
 		});
-		const pack = await exportPack(testCase.version, resources);
+		const classes = new JarClassReader(vanillaJar(testCase.version));
+		const pack = await exportPack(testCase.version, resources, undefined, classes);
+		await classes.close();
 
 		expect(pack.result.blocks).toBeGreaterThanOrEqual(testCase.blocks);
 		expect(pack.result.models).toBeGreaterThanOrEqual(testCase.models);
 		expect(pack.result.sprites).toBeGreaterThanOrEqual(testCase.sprites);
 		expect(pack.result.items).toBeGreaterThanOrEqual(testCase.items);
+		expect(pack.result.entities).toBeGreaterThanOrEqual(testCase.entities);
+		/*
+		 * Geometry recovered from the jar's own code. Models are shared, so this is well under the entity
+		 * count — the floor is what catches the extraction silently stopping.
+		 */
+		expect(pack.result.entityModels).toBeGreaterThanOrEqual(testCase.entityModels);
 		// Vanilla stitches into one page across the whole range; a second one would
 		// mean the packer or the sprite set changed shape.
 		expect(pack.result.pages).toBe(1);
@@ -305,6 +411,25 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		// drawing only blocks never fetches the item sheet at all.
 		for (const page of pack.items?.pages ?? []) {
 			expect(page.file).toMatch(/^item-atlas-\d+\.png$/);
+		}
+
+		/*
+		 * Every entity type the version registers, named, and most of them with a marker colour. The ones
+		 * without are the types that draw from an item or a block and have no sheet of their own, which is
+		 * why this is a share rather than all of them.
+		 */
+		expect(pack.entities).not.toBeNull();
+		expect(pack.entities?.['minecraft:cow']?.name).toBe('Cow');
+		expect(pack.entities?.['minecraft:cow']?.color).toMatch(/^#[\da-f]{6}$/);
+		// An item entity draws the stack it holds, so it has no colour of its own and none is invented
+		expect(pack.entities?.['minecraft:item']).toStrictEqual({ name: 'Item' });
+		const coloured = Object.values(pack.entities ?? {}).filter(entry => entry.color);
+		expect(coloured.length).toBeGreaterThanOrEqual(testCase.entityColours);
+		// A colour taken from outside `entity/` is a marker tinted like whatever block shares a word
+		for (const [id, entry] of Object.entries(pack.entities ?? {})) {
+			if (entry.texture) {
+				expect(entry.texture, id).toMatch(/^[a-z\d_.-]+:entity\//);
+			}
 		}
 
 		// Vendored geometry is a guess about a block the assets do not describe.
