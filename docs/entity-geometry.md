@@ -209,8 +209,10 @@ calls were followed; the last was the donkey, whose chest is added inside a `Mes
 consumed, which takes two hops through the class file: the `invokedynamic` names a row of
 `BootstrapMethods`, and that row's method handle names the body. A mod's model can still land here.
 
-**1.13.x gets nothing.** Obfuscated, and from before Mojang published the maps. Reported once against
-the version rather than once per mob.
+**Anything before 1.14.4 gets nothing.** Obfuscated, and from before Mojang published the maps — which
+start at 1.14.4 exactly, so 1.13 through 1.14.3 are all in this position rather than only the 1.13
+line. Reported once against the version rather than once per mob; those packs still carry entity names
+and marker colours, which need no mappings.
 
 **A model registered dynamically is not found.** The bedrock path is a search by name, because the
 registration is a Java call returning a resource location. It handles the ways mods actually spell

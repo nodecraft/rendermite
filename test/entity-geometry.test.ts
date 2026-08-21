@@ -498,24 +498,26 @@ describe('a mod entity drawn with a vanilla model', () => {
 });
 
 describe('layeredClasses', () => {
+	/** A class source over strings, since what is being tested is the layering rather than any jar. */
+	const source = (entries: Record<string, string>): ClassSource => {
+		return {
+			list: async () => Object.keys(entries),
+			read: async (name: string) => {
+				const held = entries[name];
+				return held ? new TextEncoder().encode(held) : null;
+			},
+			close: async () => {
+				// Nothing to release: these are strings rather than a jar handle
+			},
+		};
+	};
+
 	/**
 	 * A modded export layers the mods' classes over the client's. Before that the class source was the
 	 * client jar alone, so a mod's own model classes were never read at all and its mobs came out as
 	 * boxes however good the interpreter was.
 	 */
 	it('reads through the layers, first match winning', async () => {
-		const source = (entries: Record<string, string>): ClassSource => {
-			return {
-				list: async () => Object.keys(entries),
-				read: async (name: string) => {
-					const held = entries[name];
-					return held ? new TextEncoder().encode(held) : null;
-				},
-				close: async () => {
-					// Nothing to release: these are strings rather than a jar handle
-				},
-			};
-		};
 		const layered = layeredClasses([
 			source({ shared: 'mod', only: 'mod' }),
 			source({ shared: 'vanilla', other: 'vanilla' }),
@@ -530,6 +532,35 @@ describe('layeredClasses', () => {
 		expect(await text('shared')).toBe('mod');
 		expect(await text('other')).toBe('vanilla');
 		expect(await text('absent')).toBeNull();
+	});
+
+	/**
+	 * A layer that cannot be read at all is skipped rather than fatal.
+	 *
+	 * Because one exists: `tinkers_ingenuity-1.4.5beta.jar` ships a stored entry whose compressed and
+	 * uncompressed sizes disagree, so yauzl refuses the archive. The resource side already rejects such a
+	 * jar and exports the rest of the pack, and until this matched it, that one mod out of fourteen
+	 * hundred took the whole run down with it.
+	 */
+	it('skips a layer that cannot be read', async () => {
+		const broken: ClassSource = {
+			list: async () => {
+				throw new Error('compressed/uncompressed size mismatch for stored file: 2 != 0');
+			},
+			read: async () => {
+				throw new Error('compressed/uncompressed size mismatch for stored file: 2 != 0');
+			},
+			close: async () => {
+				throw new Error('already closed');
+			},
+		};
+		const layered = layeredClasses([broken, source({ kept: 'kept' })]);
+
+		expect(await layered.list()).toStrictEqual(['kept']);
+		expect(await layered.read('kept')).not.toBeNull();
+		expect(await layered.read('absent')).toBeNull();
+		// And closing the good one is not skipped because the bad one threw
+		await expect(layered.close()).resolves.toBeUndefined();
 	});
 });
 
