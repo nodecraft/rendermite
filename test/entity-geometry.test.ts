@@ -29,6 +29,7 @@ import { loadModelCode } from '../src/entities/model-code.ts';
 import { JarResourceManager } from '../src/resources/jar.ts';
 import { ResourceLocator } from '../src/resources/locator.ts';
 
+import type { ClassSource } from '../src/entities/jar-classes.ts';
 import type { ExtractedModel, Part } from '../src/entities/model.ts';
 
 const mappingCache = path.join(import.meta.dirname, '..', '.work', 'fixtures');
@@ -466,14 +467,17 @@ describe('a mod entity drawn with a vanilla model', () => {
 	it('finds the vanilla model under a mod id', { timeout: 120000 }, async () => {
 		const { classes, context } = await openVersion('1.21.1');
 		try {
+			const classOf = async (entityId: string): Promise<string | undefined> => {
+				const link = await linkEntityModel(entityId, context);
+				return link?.className;
+			};
 			const horse = await linkEntityModel('ars_nouveau:summon_horse', context);
 			expect(horse?.className).toContain('HorseModel');
 			expect(horse?.route).toBe('vanilla-name');
 
-			expect((await linkEntityModel('ars_nouveau:ally_vex', context))?.className).toContain('VexModel');
+			expect(await classOf('ars_nouveau:ally_vex')).toContain('VexModel');
 			// Longest first, so this is the iron golem rather than anything merely named `iron`
-			expect((await linkEntityModel('somemod:iron_golem_spawner', context))?.className)
-				.toContain('IronGolemModel');
+			expect(await classOf('somemod:iron_golem_spawner')).toContain('IronGolemModel');
 		} finally {
 			await classes.close();
 		}
@@ -500,19 +504,32 @@ describe('layeredClasses', () => {
 	 * boxes however good the interpreter was.
 	 */
 	it('reads through the layers, first match winning', async () => {
-		const source = (entries: Record<string, string>) => {
+		const source = (entries: Record<string, string>): ClassSource => {
 			return {
 				list: async () => Object.keys(entries),
-				read: async (name: string) => entries[name] ? new TextEncoder().encode(entries[name]) : null,
-				close: async () => undefined,
+				read: async (name: string) => {
+					const held = entries[name];
+					return held ? new TextEncoder().encode(held) : null;
+				},
+				close: async () => {
+					// Nothing to release: these are strings rather than a jar handle
+				},
 			};
 		};
-		const layered = layeredClasses([source({ shared: 'mod', only: 'mod' }), source({ shared: 'vanilla', other: 'vanilla' })]);
+		const layered = layeredClasses([
+			source({ shared: 'mod', only: 'mod' }),
+			source({ shared: 'vanilla', other: 'vanilla' }),
+		]);
+		const text = async (name: string): Promise<string | null> => {
+			const bytes = await layered.read(name);
+			return bytes === null ? null : new TextDecoder().decode(bytes);
+		};
 
-		expect((await layered.list()).toSorted()).toStrictEqual(['only', 'other', 'shared']);
-		expect(new TextDecoder().decode(await layered.read('shared') as Uint8Array)).toBe('mod');
-		expect(new TextDecoder().decode(await layered.read('other') as Uint8Array)).toBe('vanilla');
-		expect(await layered.read('absent')).toBeNull();
+		const names = await layered.list();
+		expect(names.toSorted((left, right) => left.localeCompare(right))).toStrictEqual(['only', 'other', 'shared']);
+		expect(await text('shared')).toBe('mod');
+		expect(await text('other')).toBe('vanilla');
+		expect(await text('absent')).toBeNull();
 	});
 });
 
