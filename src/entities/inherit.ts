@@ -13,7 +13,7 @@
  */
 
 import { parseClassFile } from './classfile.ts';
-import { mergeModels } from './merge.ts';
+import { dedupeCubes, mergeModels } from './merge.ts';
 import { extractModel } from './model-bytecode.ts';
 
 import type { ClassFile } from './classfile.ts';
@@ -89,5 +89,6 @@ export async function extractInheritedModel(
 		});
 		model = mergeModels(model, inheritedModel);
 	}
-	return model;
+	// Last, so it catches a duplicate that only became one once an ancestor's parts were merged in
+	return dedupeCubes(model);
 }

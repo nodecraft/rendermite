@@ -19,7 +19,7 @@
  * id → sheet mapping already resolved, which is the fiddly half of the problem.
  */
 
-import { findMobTexture, tokens } from '../resources/entity-textures.ts';
+import { findMobTexture, isOverlayPath, tokens } from '../resources/entity-textures.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
 import type { EntityPackEntry } from './pack-format.ts';
@@ -151,6 +151,10 @@ async function findVariantTexture(
 		if (tokens(leaf).some(token => NOT_THE_MOB.has(token))) {
 			continue;
 		}
+		// An overlay's own directory says what it is, whatever the file inside it is called
+		if (isOverlayPath(locator.path)) {
+			continue;
+		}
 		const candidate = tokens(locator.path);
 		let score = 0;
 		for (const token of wanted) {
@@ -165,9 +169,25 @@ async function findVariantTexture(
 		if (score === 0) {
 			continue;
 		}
-		// Every token matched and nothing else in the way is the ideal; past that, shorter wins
+		/*
+		 * Ranked in three tiers, because token overlap alone ties far too often and the tie-break was
+		 * length — which picked whichever file happened to have the shortest name.
+		 *
+		 * **The family's own folder wins outright.** A sheet under a directory named after part of the
+		 * entity is a member of that family: a trader llama's body is `entity/llama/gray`, which tied with
+		 * `entity/wandering_trader` — the *human* trader's skin — and lost for being one character longer.
+		 * The folder's own tokens all have to appear in the name, so `entity/chest_boat/` qualifies for a
+		 * chest boat and `entity/chest/` still qualifies but then loses on overlap.
+		 *
+		 * **Then the file naming the mob.** Every sheet in `entity/horse/` is in the family, so without
+		 * this a horse took `mule` over `horse_white` on the same length tie-break.
+		 */
+		const folder = locator.path.split('/').slice(1, -1);
+		const inFamily = folder.length > 0
+			&& folder.flatMap(segment => tokens(segment)).every(token => wanted.includes(token));
+		const named = tokens(leaf).some(token => wanted.includes(token));
 		const depth = locator.path.split('/').length;
-		score = score * 10 - depth - candidate.length;
+		score = (inFamily ? 1000 : 0) + score * 10 + (named ? 5 : 0) - depth - candidate.length;
 		if (score > bestScore) {
 			best = locator;
 			bestScore = score;

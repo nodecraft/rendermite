@@ -60,6 +60,31 @@ export const HEAD_LAYOUTS: Record<string, string> = {
  * live at entity/<mob>.png or entity/<mob>/<mob>.png depending on the mod, and a
  * head only ever wants the base skin — never a blink or armour overlay.
  */
+/**
+ * Directories that hold an *overlay* rather than a mob.
+ *
+ * Matched as whole path segments rather than as tokens, because a token would take `chest_boat` out
+ * along with `chest`. A trader llama is the case that needed it: its sheet is filed as
+ * `entity/llama/decor/trader_llama`, whose leaf is exactly the mob's name — so a search by name found
+ * the carpet it wears, which is a few opaque pixels on a transparent sheet, and the llama underneath
+ * came out invisible on most of its faces.
+ */
+export const OVERLAY_DIRECTORIES = new Set([
+	'decor',
+	'armor',
+	'markings',
+	'glow',
+	'eyes',
+	'overlay',
+	'saddle',
+	'harness',
+]);
+
+/** Whether a texture is filed inside one of those, whatever the file itself is called. */
+export function isOverlayPath(path: string): boolean {
+	return path.split('/').slice(0, -1).some(segment => OVERLAY_DIRECTORIES.has(segment));
+}
+
 export async function findMobTexture(
 	resources: ResourceManager,
 	namespace: string,
@@ -78,7 +103,7 @@ export async function findMobTexture(
 		let best: ResourceLocator | null = null;
 		for (const locator of await resources.listResources('texture', source)) {
 			const leaf = locator.path.split('/').pop();
-			if (!locator.path.startsWith('entity/') || leaf !== mob) {
+			if (!locator.path.startsWith('entity/') || leaf !== mob || isOverlayPath(locator.path)) {
 				continue;
 			}
 			if (best === null || locator.path.length < best.path.length) {

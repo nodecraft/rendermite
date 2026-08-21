@@ -20,6 +20,36 @@ export const fixturesDir = path.join(import.meta.dirname, '..', '..', '.work', '
 
 export const vanillaJar = (version: string): string => path.join(fixturesDir, `${version}-client.jar`);
 
+/** Retryable transport failures and the server statuses worth another attempt. */
+const RETRY_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
+const RETRY_DELAYS = [1000, 3000, 8000];
+
+/**
+ * Fixture downloads are the only network dependency in the suite, and a single
+ * dropped connection to Mojang's or Modrinth's CDN would otherwise fail CI on a
+ * flake rather than on anything about the code.
+ */
+async function fetchRetry(url: string, init?: RequestInit): Promise<Response> {
+	let lastError: unknown;
+	for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+		if (attempt > 0) {
+			await new Promise((resolve) => {
+				setTimeout(resolve, RETRY_DELAYS[attempt - 1]);
+			});
+		}
+		try {
+			const response = await fetch(url, init);
+			if (response.ok || !RETRY_STATUS.has(response.status)) {
+				return response;
+			}
+			lastError = new Error(`${url} responded ${response.status}`);
+		} catch (error) {
+			lastError = error;
+		}
+	}
+	throw lastError;
+}
+
 interface VersionIndex {
 	stable: Record<string, { client: string; }>;
 	snapshot: Record<string, { client: string; }>;
@@ -32,7 +62,7 @@ async function versionIndex(): Promise<VersionIndex> {
 		const cache = path.join(fixturesDir, 'mcversions.json');
 		if (!existsSync(cache)) {
 			await mkdir(fixturesDir, { recursive: true });
-			const response = await fetch('https://mcversions.net/mcversions.json');
+			const response = await fetchRetry('https://mcversions.net/mcversions.json');
 			if (!response.ok) {
 				throw new Error(`mcversions.net index fetch failed: ${response.status}`);
 			}
@@ -40,6 +70,10 @@ async function versionIndex(): Promise<VersionIndex> {
 		}
 		return JSON.parse(await readFile(cache, 'utf8')) as VersionIndex;
 	})();
+	// A rejected promise must not stick, or one flake fails every later version.
+	indexPromise.catch(() => {
+		indexPromise = null;
+	});
 	return indexPromise;
 }
 
@@ -55,7 +89,7 @@ export async function ensureVanillaJar(version: string): Promise<string> {
 		throw new Error(`Version ${version} not found in the mcversions index`);
 	}
 	await mkdir(fixturesDir, { recursive: true });
-	const response = await fetch(entry.client);
+	const response = await fetchRetry(entry.client);
 	if (!response.ok) {
 		throw new Error(`Client jar download failed for ${version}: ${response.status}`);
 	}
@@ -101,7 +135,7 @@ export async function ensureModrinthJar(spec: ModrinthSpec): Promise<string> {
 		game_versions: JSON.stringify([spec.gameVersion]),
 		loaders: JSON.stringify([spec.loader]),
 	});
-	const response = await fetch(`https://api.modrinth.com/v2/project/${spec.slug}/version?${query}`, {
+	const response = await fetchRetry(`https://api.modrinth.com/v2/project/${spec.slug}/version?${query}`, {
 		headers: { 'user-agent': 'nodecraft/renderchest tests (https://nodecraft.com)' },
 	});
 	if (!response.ok) {
@@ -115,7 +149,7 @@ export async function ensureModrinthJar(spec: ModrinthSpec): Promise<string> {
 		throw new Error(`No matching Modrinth version for ${spec.slug} ${spec.versionNumber ?? spec.gameVersion}`);
 	}
 	const file = version.files.find(entry => entry.primary) ?? version.files[0];
-	const download = await fetch(file.url);
+	const download = await fetchRetry(file.url);
 	if (!download.ok) {
 		throw new Error(`Modrinth download failed for ${spec.slug}: ${download.status}`);
 	}
