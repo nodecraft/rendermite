@@ -38,28 +38,47 @@ export interface ClassSource {
  * link to a *vanilla* model — `ars_nouveau:summon_horse` is the game's own horse.
  */
 export function layeredClasses(sources: readonly ClassSource[]): ClassSource {
+	/*
+	 * A layer that cannot be read is skipped rather than fatal, because a mod jar that cannot be read at
+	 * all is a real thing: `tinkers_ingenuity-1.4.5beta.jar` ships a stored entry whose compressed and
+	 * uncompressed sizes disagree, and yauzl refuses the archive. The *resource* side already rejects
+	 * such a jar and carries on with the rest of the pack, so the class side has to agree — otherwise one
+	 * malformed jar out of fourteen hundred takes the whole export down with it.
+	 */
 	return {
 		list: async () => {
 			const names = new Set<string>();
 			for (const source of sources) {
-				for (const name of await source.list()) {
-					names.add(name);
+				try {
+					for (const name of await source.list()) {
+						names.add(name);
+					}
+				} catch {
+					continue;
 				}
 			}
 			return [...names];
 		},
 		read: async (internalName) => {
 			for (const source of sources) {
-				const bytes = await source.read(internalName);
-				if (bytes) {
-					return bytes;
+				try {
+					const bytes = await source.read(internalName);
+					if (bytes) {
+						return bytes;
+					}
+				} catch {
+					continue;
 				}
 			}
 			return null;
 		},
 		close: async () => {
 			for (const source of sources) {
-				await source.close();
+				try {
+					await source.close();
+				} catch {
+					continue;
+				}
 			}
 		},
 	};

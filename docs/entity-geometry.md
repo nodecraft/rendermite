@@ -49,6 +49,18 @@ Models are keyed by the **class** they came from, and several entities point at 
 drowned are both drawn by the zombie's model, and a minecart's five variants are one `MinecartModel`.
 On 1.21.1 that is 102 entities sharing 78 models.
 
+A cube carries two more fields where they apply. **`inflate`** grows it on every axis, which is how the
+game draws a layer over another without them fighting for the same pixels: an illusioner's robe is his
+body plus 0.45. It comes from a `CubeDeformation`, or from a float argument to `addBox` — and only from
+a float, because `addBox`'s longest overload ends in two *ints* that are texture coordinates, and
+reading one of those as an inflate grew the ender dragon's boxes by up to 220 pixels.
+
+**`mirror`** says the box is textured as though flipped in x, which is two effects rather than one: the
+two side faces take each other's rect, and `u` runs the other way on the four faces whose `u` follows
+x. Half of a guardian's side plates and spikes are built this way, and reading `CubeListBuilder.mirror()`
+as one more no-arg accessor to ignore left each of them sampling the blank half of its sheet — which
+looks exactly like a missing side.
+
 `textureSize` is the sheet a cube's `uv` is in, which is *not* the atlas page — map `uv` through it into
 the sprite's rect, exactly as a block face does. **Prefer the sprite's own `w`/`h` and keep this as the
 fallback**: from 1.21.4 a boat and a chest boat are both a `BoatModel` drawn on a 128x64 and a 128x128
@@ -149,6 +161,22 @@ falling block, a marker, the display entities, the projectiles it draws as item 
 that a version adding a mob cannot slip through as "expected to have nothing": the coverage test fails
 on any type that is neither linked nor listed.
 
+## Which sheet a mob is drawn with
+
+The `texture` in `entities.json` used to be a source of a marker colour, where being one folder out cost
+nothing visible. Now it is what the geometry is *drawn on*, so the search in `src/blocks/entities.ts`
+ranks candidates in three tiers: a sheet inside the mob's own folder family, then one whose file name
+names the mob, then the shallowest and shortest path. Overlay folders — `decor`, `armor`, `markings`,
+`glow`, `eyes`, `overlay`, `saddle`, `harness` — are excluded outright.
+
+All three tiers earn their place, and each was a real mistake:
+
+- a trader llama's *own* name is a file, `entity/llama/decor/trader_llama`, which is the carpet it
+  wears: a few opaque pixels on transparency, leaving the llama underneath invisible.
+- with that out, `entity/wandering_trader` tied on token overlap and won on being a character shorter,
+  putting a human trader's skin on a llama.
+- and inside `entity/horse/` every sheet is family, so a horse took the mule's.
+
 ## Coverage
 
 Share of the entity types that *should* have geometry, from the version matrix in
@@ -156,15 +184,15 @@ Share of the entity types that *should* have geometry, from the version matrix i
 
 | version | with geometry | share | cubes | distinct models |
 | --- | --- | --- | --- | --- |
-| 1.14.4 | 82 | 100% | 719 | 61 |
-| 1.16.5 | 88 | 100% | 798 | 65 |
-| 1.18.2 | 91 | 100% | 814 | 67 |
-| 1.19.4 | 98 | 100% | 898 | 74 |
-| 1.21.1 | 102 | 100% | 939 | 78 |
-| 1.21.4 | 125 | 100% | 1171 | 81 |
-| 1.21.8 | 126 | 100% | 1148 | 82 |
-| 1.21.11 | 132 | 100% | 1223 | 85 |
-| 26.2 | 133 | 100% | 1256 | 85 |
+| 1.14.4 | 82 | 100% | 745 | 61 |
+| 1.16.5 | 88 | 100% | 801 | 65 |
+| 1.18.2 | 91 | 100% | 870 | 67 |
+| 1.19.4 | 98 | 100% | 954 | 74 |
+| 1.21.1 | 102 | 100% | 993 | 78 |
+| 1.21.4 | 125 | 100% | 1300 | 81 |
+| 1.21.8 | 126 | 100% | 1277 | 82 |
+| 1.21.11 | 132 | 100% | 1352 | 85 |
+| 26.2 | 133 | 100% | 1380 | 85 |
 
 Every entity type that should have geometry has it, on every version from 1.14.4 up. The coverage test
 asserts that exactly rather than with an allowance, so a new mob that links to nothing fails the build,
@@ -190,14 +218,29 @@ extract and ~0.7 ms to link. A 546-pack seed pays about a minute for the lot.
 
 ## What it will not do
 
-**A builder with a loop stops at the loop, and says so.** Following one emits every segment at the same
-place, and a wrong shape is worse than a recorded gap, so what was built before the loop is kept and
-the rest is not. Seven vanilla models are in this position and they are all the same kind of thing: a
-ghast's nine tentacles, a squid's arms, a guardian's spikes, the ender dragon's neck and tail.
+**A builder with a loop it cannot bound stops at the loop, and says so.** Bounded ones are followed:
+`iinc` counts, a conditional whose two operands are both known is decided, and a backward `goto` is
+taken up to 64 times per site under a global step budget. That is what a segmented model is made of —
+a ghast's nine tentacles, a squid's arms, a guardian's twelve spikes, the ender dragon's neck and tail
+— and refusing them left a magma cube as one cube and a ghast bald.
+
+Unbounded is the honest remainder: a loop over something the interpreter cannot evaluate keeps what was
+built before it and notes the rest, because emitting every segment at the same place is worse than a
+recorded gap. A piglin's is the vanilla example.
+
+Two traps came with this. An array's `arraylength` has to report its real length, or a
+`for (i = 0; i < parts.length; i++)` runs zero times the moment conditionals are decided — which cost
+an endermite all its geometry. And `<clinit>` has to run before a `getstatic`, once, or a builder
+reading a static table of offsets gets unknowns.
 
 **Conditionals are taken, and noted.** A model builder's branches are all on a constructor argument — a
 `CubeDeformation`, a baby-variant flag — so every arm builds a real shape and the fall-through is one
 of them. The model carries a note saying which of several shapes it is.
+
+Where two arms build the *same* box, only one is kept. `HorseModel` builds `left_hind_leg` and
+`left_hind_baby_leg` at identical coordinates, and two coplanar boxes are exactly what z-fighting is,
+so `dedupeCubes` drops the later of any pair agreeing on accumulated pivot, rotation, origin, size, uv
+and inflate. Where the arms differ, both survive and the note stands.
 
 **A part whose parent cannot be identified comes out as a disconnected root.** It keeps its own pose
 and hangs from the model root instead, which is the most that can honestly be said about it, and the
@@ -209,8 +252,10 @@ calls were followed; the last was the donkey, whose chest is added inside a `Mes
 consumed, which takes two hops through the class file: the `invokedynamic` names a row of
 `BootstrapMethods`, and that row's method handle names the body. A mod's model can still land here.
 
-**1.13.x gets nothing.** Obfuscated, and from before Mojang published the maps. Reported once against
-the version rather than once per mob.
+**Anything before 1.14.4 gets nothing.** Obfuscated, and from before Mojang published the maps — which
+start at 1.14.4 exactly, so 1.13 through 1.14.3 are all in this position rather than only the 1.13
+line. Reported once against the version rather than once per mob; those packs still carry entity names
+and marker colours, which need no mappings.
 
 **A model registered dynamically is not found.** The bedrock path is a search by name, because the
 registration is a Java call returning a resource location. It handles the ways mods actually spell

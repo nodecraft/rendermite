@@ -79,9 +79,52 @@ interface Handle {
 	orphaned?: boolean;
 	/** Whether `pendingUv` came from `new ModelRenderer(this, x, y)`, which is authoritative. */
 	uvFromConstructor?: boolean;
+	/**
+	 * How far a `CubeDeformation` grows a box, for the handle that *is* one.
+	 *
+	 * It has to be carried on the handle because a deformation is an object: `new CubeDeformation(0.5)`
+	 * passed to `addBox` is where an overlay layer gets the room it needs to sit outside the body it
+	 * covers. Read as zero, an illager's robe lands exactly on its chest and the two z-fight.
+	 */
+	deformation?: number;
 }
 
 const NUMERIC = new Set(['F', 'D', 'I', 'J', 'S', 'B', 'C']);
+
+/**
+ * Whether a conditional jump is taken, for the opcodes that compare numbers.
+ *
+ * The single-operand forms (`ifeq` … `ifle`) test against zero and the two-operand forms (`if_icmpeq`
+ * …) against each other, so both reduce to the sign of `left - right`.
+ */
+function compare(op: number, left: number, right: number): boolean {
+	const difference = left - right;
+	switch (op) {
+		case 0x99:
+		case 0x9F: {
+			return difference === 0;
+		}
+		case 0x9A:
+		case 0xA0: {
+			return difference !== 0;
+		}
+		case 0x9B:
+		case 0xA1: {
+			return difference < 0;
+		}
+		case 0x9C:
+		case 0xA2: {
+			return difference >= 0;
+		}
+		case 0x9D:
+		case 0xA3: {
+			return difference > 0;
+		}
+		default: {
+			return difference <= 0;
+		}
+	}
+}
 
 /** Every entity sheet is a power of two, at least 16 in each direction. A texture offset rarely is. */
 function isSheetSize(width: number, height: number): boolean {
@@ -118,6 +161,21 @@ const TEXTURE_HEIGHT_FIELDS = new Set(['texHeight', 'textureHeight']);
 const MAX_INLINE_DEPTH = 5;
 /** Frames per method. A model spends a handful; the cap is there so a strange jar cannot spend all day. */
 const INLINE_BUDGET = 96;
+
+/**
+ * Instructions per extraction, shared across every frame.
+ *
+ * A model builder is a few hundred instructions and the longest vanilla loop runs a few thousand, so
+ * this is two orders of magnitude of headroom — and it is what makes following a backward goto safe: a
+ * loop whose bound cannot be worked out stops here instead of spinning.
+ */
+const STEP_BUDGET = 200000;
+
+/** Elements tracked per array. A table of segment sizes is a handful; nothing here needs thousands. */
+const MAX_ARRAY = 1024;
+
+/** Times round a loop. Vanilla's longest builds sixteen segments, so this is generous by four times. */
+const MAX_ITERATIONS = 64;
 /** How far up a hierarchy to look for an inherited method, which is as deep as a model hierarchy goes. */
 const MAX_METHOD_HOPS = 6;
 
@@ -137,6 +195,18 @@ interface Shared {
 	resolve: (internalName: string) => ClassFile | null;
 	/** Nested frames left to spend, so a wide hierarchy cannot turn a 7 ms jar into a slow one. */
 	budget: number;
+	/**
+	 * Static fields, by `owner.name`.
+	 *
+	 * A model that builds a row of segments keeps their sizes in a `static final int[][]` and indexes it
+	 * by the loop counter — `SilverfishModel`, `EndermiteModel` and `BlazeModel` all do. Without the
+	 * table those boxes come out at size zero, which is a blaze with no rods.
+	 */
+	statics: Map<string, Value>;
+	/** Classes whose `<clinit>` has been run, so the tables above are filled exactly once. */
+	initialised: Set<string>;
+	/** Instructions left to run, which is what bounds a loop this cannot work the end of out. */
+	steps: number;
 }
 
 function newShared(resolve: (internalName: string) => ClassFile | null): Shared {
@@ -149,6 +219,9 @@ function newShared(resolve: (internalName: string) => ClassFile | null): Shared 
 		nextHandle: 1,
 		resolve,
 		budget: INLINE_BUDGET,
+		statics: new Map(),
+		initialised: new Set(),
+		steps: STEP_BUDGET,
 	};
 }
 
@@ -181,6 +254,8 @@ class Interpreter {
 	private readonly locals = new Map<number, Value>();
 	private readonly shared: Shared;
 	private readonly depth: number;
+	/** How many times each backward jump has been taken, so an undecidable loop cannot spin. */
+	private readonly loops = new Map<number, number>();
 	/** What this frame returned, for the caller that inlined it. */
 	private returned: Value | null = null;
 
@@ -215,6 +290,24 @@ class Interpreter {
 	}
 
 	/**
+	 * Runs a class's `<clinit>` once, so its static tables can be read.
+	 *
+	 * Only for model code, and only once per class per extraction: the point is a table of numbers, and
+	 * anything else a static initialiser does is of no interest here.
+	 */
+	private initialise(owner: string): void {
+		if (this.shared.initialised.has(owner) || this.depth >= MAX_INLINE_DEPTH) {
+			return;
+		}
+		this.shared.initialised.add(owner);
+		const target = findMethod(this.shared.resolve, owner, '<clinit>', '()V');
+		if (!target) {
+			return;
+		}
+		new Interpreter(this.shared, this.depth + 1).run(target.code, target.classFile);
+	}
+
+	/**
 	 * Interprets a call into the model's own code, with the arguments it was actually given.
 	 *
 	 * This is what makes an inherited part come out right. `CowModel` calls `super(12, 0)` and the legs
@@ -243,6 +336,13 @@ class Interpreter {
 		frame.seed(receiver, descriptor, args);
 		// A frame that gave up part way still built something, and its boxes are already in `shared`
 		return frame.run(target.code, target.classFile) ? frame.returned : null;
+	}
+
+	/** Records a note once, since every candidate method would otherwise repeat it. */
+	private note(message: string): void {
+		if (!this.shared.notes.includes(message)) {
+			this.shared.notes.push(message);
+		}
 	}
 
 	private pop(): Value {
@@ -299,12 +399,29 @@ class Interpreter {
 		const named = args[0] === 'Ljava/lang/String;' && floats >= 6 && args.length >= 7 && NUMERIC.has(args[6]);
 		const first = named ? 1 : 0;
 		if (target && (named || (floats >= 6 && args.length >= 6 && NUMERIC.has(args[0]) && NUMERIC.has(args[5])))) {
+			/*
+			 * How much the box grows, from whichever of the three ways this call states it.
+			 *
+			 * The trap is that `delta` is not the only thing that can follow the six numbers. There is an
+			 * old overload `addBox(name, x, y, z, w, h, d, delta, texU, texV)`, and taking the *first* extra
+			 * number regardless of type read a **texture coordinate** as an inflate: the ender dragon's
+			 * boxes came out grown by 176 pixels — eleven blocks — which is the black slab the gallery drew
+			 * where a dragon should be. A delta is always a float; texture coordinates are always ints.
+			 */
 			const extra = args.slice(first + 6);
+			const floatAt = extra.findIndex(arg => arg === 'F' || arg === 'D');
+			const deformed = taken.find(value => value.kind === 'object' && value.handle.deformation !== undefined);
+			let inflate = target.pendingInflate;
+			if (floatAt !== -1) {
+				inflate = this.number(taken[first + 6 + floatAt]);
+			} else if (deformed?.kind === 'object') {
+				inflate = deformed.handle.deformation ?? 0;
+			}
 			target.cubes.push({
 				origin: [numbers[first], numbers[first + 1], numbers[first + 2]],
 				size: [numbers[first + 3], numbers[first + 4], numbers[first + 5]],
 				uv: [...target.pendingUv],
-				inflate: extra.some(arg => NUMERIC.has(arg)) ? this.number(taken[first + 6]) : target.pendingInflate,
+				inflate,
 				mirror: target.pendingMirror || (extra.includes('Z') && this.number(taken[args.length - 1]) === 1),
 			});
 			this.push(returns === 'V' ? null : receiver);
@@ -435,6 +552,21 @@ class Interpreter {
 			return;
 		}
 
+		/*
+		 * `mirror()`, which is a no-arg call on a builder that hands the same builder back.
+		 *
+		 * Told apart from `getRoot()` and `create()` by exactly that: a *self*-returning instance call is
+		 * a fluent modifier of the thing it was called on, while `getRoot()` returns a different type and
+		 * `create()` is static. Swallowing it cost the mirrored half of every box built that way — a
+		 * guardian's two side plates share one texture offset, and the second one needs the flip to take
+		 * its picture from the same place. Without it, one side of the guardian sampled blank sheet.
+		 */
+		if (args.length === 0 && target && returns === `L${owner};`) {
+			target.pendingMirror = true;
+			this.push(receiver);
+			return;
+		}
+
 		// getRoot() / create() — no arguments, returns the thing to build on
 		if (args.length === 0 && returns.startsWith('L')) {
 			if (target) {
@@ -463,6 +595,10 @@ class Interpreter {
 	run(code: Uint8Array, constants: ClassFile): boolean {
 		let at = 0;
 		while (at < code.length) {
+			if (this.shared.steps-- <= 0) {
+				this.note('ran past the step budget, so the shape is only as far as it got');
+				return false;
+			}
 			const op = code[at++];
 			switch (true) {
 				// aconst_null
@@ -537,10 +673,11 @@ class Interpreter {
 					break;
 				}
 				case ARRAY_LOADS.has(op): {
-					// aaload / iaload / faload: an element of an array the builder filled
-					this.pop();
+					// aaload / iaload / faload: the element the index names, which for a loop is the counter
+					const index = this.pop();
 					const array = this.pop();
-					this.push(array.kind === 'array' ? array.items[0] ?? { kind: 'unknown' } : { kind: 'unknown' });
+					const at = index.kind === 'number' ? index.value : 0;
+					this.push(array.kind === 'array' ? array.items[at] ?? { kind: 'unknown' } : { kind: 'unknown' });
 					break;
 				}
 				// shifts and bitwise ops, which appear in an index calculation rather than in geometry
@@ -565,18 +702,23 @@ class Interpreter {
 					return true;
 				}
 				case op === 0xBE: {
-					// arraylength
-					this.pop();
-					this.push({ kind: 'number', value: 0 });
+					/*
+					 * arraylength, truthfully. It used to answer zero, which was harmless while conditionals
+					 * were guessed and fatal once they were decided: `for (i = 0; i < parts.length; i++)`
+					 * became a loop that never runs, and an endermite lost every segment it has.
+					 */
+					const array = this.pop();
+					this.push(array.kind === 'array' ? { kind: 'number', value: array.items.length } : { kind: 'unknown' });
 					break;
 				}
 				case ARRAY_STORES.has(op): {
 					// value, index, array — all eight, since a silverfish builds its segments from one
 					const value = this.pop();
-					this.pop();
+					const index = this.pop();
 					const array = this.pop();
 					if (array.kind === 'array') {
-						array.items.push(value);
+						// At its index rather than appended: a table read back by index has to agree with itself
+						array.items[index.kind === 'number' ? index.value : array.items.length] = value;
 					}
 					break;
 				}
@@ -635,8 +777,11 @@ class Interpreter {
 					break;
 				}
 				case op === 0x84: {
-					// iinc
+					// iinc: the loop counter, without which a followed loop would never end
+					const slot = code[at];
+					const step = (code[at + 1] << 24) >> 24;
 					at += 2;
+					this.locals.set(slot, { kind: 'number', value: this.number(this.locals.get(slot) ?? { kind: 'unknown' }) + step });
 					break;
 				}
 				case RETURNS.has(op): {
@@ -647,14 +792,30 @@ class Interpreter {
 					return true;
 				}
 				case op === 0xB2: {
-					// getstatic — an enum constant or a shared CubeDeformation
+					/*
+					 * getstatic. An enum constant or a shared `CubeDeformation` is opaque and stays that way,
+					 * but a static *table* is not: running the owner's `<clinit>` once fills it, which is the
+					 * only way a `static final int[][]` of segment sizes can be read back.
+					 */
+					const index = (code[at] << 8) | code[at + 1];
 					at += 2;
-					this.push({ kind: 'unknown' });
+					const reference = constants.reference(index);
+					const key = reference ? `${reference.owner}.${reference.name}` : '';
+					if (reference && !this.shared.statics.has(key)) {
+						this.initialise(reference.owner);
+					}
+					this.push(this.shared.statics.get(key) ?? { kind: 'unknown' });
 					break;
 				}
 				case op === 0xB3: {
+					// putstatic: what a `<clinit>` leaves behind for the builder to read
+					const index = (code[at] << 8) | code[at + 1];
 					at += 2;
-					this.pop();
+					const value = this.pop();
+					const reference = constants.reference(index);
+					if (reference) {
+						this.shared.statics.set(`${reference.owner}.${reference.name}`, value);
+					}
 					break;
 				}
 				case op === 0xB4: {
@@ -716,6 +877,15 @@ class Interpreter {
 						}
 						const objectRef = this.pop();
 						/*
+						 * A single float into a fresh object is a `CubeDeformation`, which is how a 1.17+ model
+						 * states how far a box grows. Three floats is the per-axis form; the largest is used,
+						 * since a `Cube` carries one number and the point of it is to clear the layer beneath.
+						 */
+						if (objectRef.kind === 'object' && args.length > 0 && args.length <= 3
+							&& args.every(arg => arg === 'F')) {
+							objectRef.handle.deformation = Math.max(...taken.map(value => this.number(value)));
+						}
+						/*
 						 * `new ModelRenderer(this, 18, 4)` is where a pre-1.17 part gets its texture offset,
 						 * and the only place: that era has no `texOffs` call to read it from, so without this
 						 * every box of every model before 1.17 is addressed at the top left of the sheet.
@@ -741,16 +911,15 @@ class Interpreter {
 					this.push({ kind: 'object', handle: this.handle() });
 					break;
 				}
-				case op === 0xBC: {
-					at += 1;
-					this.pop();
-					this.push({ kind: 'array', items: [] });
-					break;
-				}
-				case op === 0xBD: {
-					at += 2;
-					this.pop();
-					this.push({ kind: 'array', items: [] });
+				// newarray / anewarray: sized up front, so `arraylength` can answer before anything is stored
+				case op === 0xBC || op === 0xBD: {
+					at += op === 0xBC ? 1 : 2;
+					const length = this.pop();
+					const size = length.kind === 'number' ? Math.min(Math.max(length.value, 0), MAX_ARRAY) : 0;
+					this.push({ kind: 'array',
+						items: Array.from({ length: size }, () => {
+							return { kind: 'unknown' as const };
+						}) });
 					break;
 				}
 				case op === 0xC0: {
@@ -784,12 +953,32 @@ class Interpreter {
 				 * alternative is losing the model outright.
 				 */
 				case op >= 0x99 && op <= 0xA6: {
-					const comparisons = op >= 0x9F ? 2 : 1;
-					for (let count = 0; count < comparisons; count++) {
-						this.pop();
-					}
+					/*
+					 * A conditional whose operands are both known is *decided*, which is what lets a counted
+					 * loop end: `for (int i = 0; i < 8; i++)` is a comparison against a constant, and until
+					 * this was evaluated the loop could only be refused. Deciding it also stops a model
+					 * emitting both arms of a branch it could have known the answer to.
+					 *
+					 * One whose operands are not known is still taken and noted, as before: a builder's
+					 * branches turn on constructor arguments, and both arms build a real shape.
+					 */
+					const twoOperands = op >= 0x9F;
+					const right = this.pop();
+					const left = twoOperands ? this.pop() : { kind: 'number', value: 0 } as Value;
+					const offset = (((code[at] << 8) | code[at + 1]) << 16) >> 16;
 					at += 2;
-					this.shared.branched = true;
+					const decided = left.kind === 'number' && right.kind === 'number'
+						// if_acmp* compares references, which are never numbers worth deciding on
+						&& op <= 0xA4
+						? compare(op, twoOperands ? left.value : right.value, twoOperands ? right.value : 0)
+						: null;
+					if (decided === null) {
+						this.shared.branched = true;
+						break;
+					}
+					if (decided) {
+						at += offset - 3;
+					}
 					break;
 				}
 				case op === 0xC6 || op === 0xC7: {
@@ -801,16 +990,30 @@ class Interpreter {
 				}
 				case op === 0xA7: {
 					/*
-					 * goto. Forward is the tail of an if/else and safe to follow; backward is a loop, and
-					 * following it would either spin or emit the same boxes twice.
+					 * goto. Forward is the tail of an if/else; backward is a loop, and now that the conditional
+					 * at its head is decided rather than guessed, following it is what builds the shape: a
+					 * ghast's nine tentacles, a magma cube's eight segments and an endermite's four are all
+					 * counted loops, and refusing them left the ghast bald and the magma cube a flat slab.
+					 *
+					 * A loop whose head this *cannot* decide would spin, because an undecided conditional
+					 * falls through every time round. So each backward jump is counted, and one that goes
+					 * round more times than any real model does is abandoned where it stands — with its own
+					 * geometry kept, since a partial shape beats none.
 					 */
 					const offset = (((code[at] << 8) | code[at + 1]) << 16) >> 16;
-					if (offset <= 0) {
-						this.shared.notes.push('backward goto: the builder loops, so its geometry is not recoverable');
-						return false;
+					at += 2;
+					if (offset > 0) {
+						at += offset - 3;
+						break;
 					}
-					at += offset - 1;
-					this.shared.branched = true;
+					const site = at - 3;
+					const round = (this.loops.get(site) ?? 0) + 1;
+					this.loops.set(site, round);
+					if (round > MAX_ITERATIONS) {
+						this.note(`a loop at ${site} went round more than ${MAX_ITERATIONS} times, so the shape is only as far as it got`);
+						break;
+					}
+					at += offset - 3;
 					break;
 				}
 				// fcmp/dcmp/lcmp: push a comparison result nothing downstream reads

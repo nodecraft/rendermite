@@ -10,6 +10,8 @@
 
 import type { ExtractedModel, Part } from './model.ts';
 
+type Vec3 = readonly [number, number, number];
+
 /** A root the interpreter had to invent, because a `MeshDefinition`'s root part is anonymous. */
 const SYNTHETIC_ROOT = /^part\d+$/;
 
@@ -53,6 +55,59 @@ export function mergeModels(base: ExtractedModel, extra: ExtractedModel): Extrac
 		textureSize: base.textureSize[0] === 64 && base.textureSize[1] === 32 ? extra.textureSize : base.textureSize,
 		parts,
 		notes,
+	};
+}
+
+/**
+ * Drops boxes that land exactly where one already is.
+ *
+ * A model builder's branches are all taken, because they turn on a constructor argument this cannot
+ * know — a `CubeDeformation`, a baby-variant flag — so a model that builds one shape *or* another
+ * emits both. Where the two arms differ, that is the honest answer and the model says so in a note.
+ * Where they agree, it is four legs drawn twice in the same place: `HorseModel` builds
+ * `left_hind_leg` and `left_hind_baby_leg` at identical coordinates, and two coplanar boxes are
+ * exactly what z-fighting is.
+ *
+ * Keyed on the accumulated pivot and rotation rather than on evaluated corners, since duplicates come
+ * from one builder running twice and land on identical frames. The first is kept: a builder states the
+ * ordinary shape before the variant.
+ */
+export function dedupeCubes(model: ExtractedModel): ExtractedModel {
+	const seen = new Set<string>();
+	const round = (value: number): string => value.toFixed(4);
+	const walk = (part: Part, pivot: Vec3, rotation: Vec3): Part => {
+		const at: Vec3 = [pivot[0] + part.pivot[0], pivot[1] + part.pivot[1], pivot[2] + part.pivot[2]];
+		const spun: Vec3 = [
+			rotation[0] + part.rotation[0],
+			rotation[1] + part.rotation[1],
+			rotation[2] + part.rotation[2],
+		];
+		const cubes = part.cubes.filter((cube) => {
+			const key = [
+				...at.map(round),
+				...spun.map(round),
+				...cube.origin.map(round),
+				...cube.size.map(round),
+				...cube.uv.map(round),
+				round(cube.inflate),
+			].join('|');
+			if (seen.has(key)) {
+				return false;
+			}
+			seen.add(key);
+			return true;
+		});
+		const children = part.children
+			.map(child => walk(child, at, spun))
+			// A part whose only box was a duplicate, with nothing under it, is not geometry any more
+			.filter(child => child.cubes.length > 0 || child.children.length > 0);
+		return { ...part, cubes, children };
+	};
+	return {
+		...model,
+		parts: model.parts
+			.map(part => walk(part, [0, 0, 0], [0, 0, 0]))
+			.filter(part => part.cubes.length > 0 || part.children.length > 0),
 	};
 }
 

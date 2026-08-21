@@ -430,6 +430,157 @@ describe('parts built by another class', () => {
 	});
 });
 
+describe('what a box grows by', () => {
+	/**
+	 * `delta` is a float and a texture coordinate is an int, and taking the first number after the six
+	 * regardless read `texU` as an inflate. The ender dragon's boxes came out grown by 176 pixels —
+	 * eleven blocks — which the gallery drew as a black slab across the sky where a dragon should be.
+	 */
+	it('never reads a texture coordinate as an inflate', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.1');
+		try {
+			const link = await linkEntityModel('ender_dragon', context);
+			const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+			const grown = allCubes(model as ExtractedModel).filter(entry => entry.cube.inflate > 1);
+
+			expect(grown).toStrictEqual([]);
+			// A dragon is large, but an eleven-block box is not large, it is wrong
+			const spans = allCubes(model as ExtractedModel).map(entry => Math.max(...entry.cube.size));
+			expect(Math.max(...spans)).toBeLessThan(100);
+		} finally {
+			await classes.close();
+		}
+	});
+
+	/**
+	 * A `CubeDeformation` is an object, so the number inside it has to be carried on the handle. Read as
+	 * zero, an illager's robe lands exactly on the chest it covers and the two z-fight — which is what
+	 * the illusioner was doing.
+	 */
+	it('reads the deformation an overlay layer is given', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.1');
+		try {
+			const link = await linkEntityModel('illusioner', context);
+			const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+			const cubes = allCubes(model as ExtractedModel);
+			const robe = cubes.filter(entry => entry.cube.inflate > 0);
+
+			expect(robe.length).toBeGreaterThan(0);
+			// The robe is a second box on the body, and it has to sit outside it
+			const body = cubes.filter(entry => entry.part === 'body');
+			expect(body.length).toBe(2);
+			expect(body.some(entry => entry.cube.inflate > 0)).toBe(true);
+		} finally {
+			await classes.close();
+		}
+	});
+});
+
+describe('a loop', () => {
+	/**
+	 * A counted loop is what a row of segments is written as, and refusing to follow one left a magma
+	 * cube as a single flat slab and a ghast with no tentacles at all. Following it needs three things:
+	 * `iinc` to actually increment, a comparison against a constant to be *decided* rather than guessed,
+	 * and `arraylength` to answer truthfully.
+	 */
+	it('builds the segments a counted loop makes', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.1');
+		try {
+			const counts = new Map<string, number>();
+			for (const id of ['magma_cube', 'ghast', 'squid', 'endermite']) {
+				const link = await linkEntityModel(id, context);
+				const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+				counts.set(id, cubesOf(model as ExtractedModel));
+			}
+
+			// A magma cube is eight segments, a ghast a body and nine tentacles, a squid a body and eight arms
+			expect(counts.get('magma_cube')).toBeGreaterThanOrEqual(8);
+			expect(counts.get('ghast')).toBeGreaterThanOrEqual(10);
+			expect(counts.get('squid')).toBeGreaterThanOrEqual(9);
+			expect(counts.get('endermite')).toBeGreaterThanOrEqual(4);
+		} finally {
+			await classes.close();
+		}
+	});
+
+	/**
+	 * And a loop this cannot decide the end of is abandoned rather than followed forever. The piglins
+	 * have one: it spun to the step budget on every candidate method until each backward jump was
+	 * counted, which cost a second per model and said so six times.
+	 */
+	it('abandons a loop it cannot bound, keeping what it built', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.8');
+		try {
+			const link = await linkEntityModel('piglin', context);
+			const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+
+			// A whole humanoid, and no note about a budget
+			expect(cubesOf(model as ExtractedModel)).toBeGreaterThanOrEqual(12);
+			expect((model as ExtractedModel).notes.filter(note => note.includes('step budget'))).toStrictEqual([]);
+		} finally {
+			await classes.close();
+		}
+	});
+});
+
+describe('duplicate boxes', () => {
+	/**
+	 * Where both arms of an undecidable branch build the *same* box, the model gets it twice: `HorseModel`
+	 * builds `left_hind_leg` and `left_hind_baby_leg` at identical coordinates, and two coplanar boxes
+	 * are exactly what z-fighting is. Where the arms differ, both are kept and the model says so.
+	 */
+	it('keeps one of a box built twice in the same place', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.1');
+		try {
+			const link = await linkEntityModel('horse', context);
+			const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+			const seen = new Set<string>();
+			const clashes: string[] = [];
+			for (const entry of allCubes(model as ExtractedModel)) {
+				const key = [...entry.cube.origin, ...entry.cube.size, ...entry.cube.uv].join(',');
+				if (seen.has(key)) {
+					clashes.push(`${entry.part} ${key}`);
+				}
+				seen.add(key);
+			}
+
+			expect(clashes).toStrictEqual([]);
+			expect((model as ExtractedModel).parts.flatMap(part => bonesOf(part))).not.toContain('left_hind_baby_leg');
+		} finally {
+			await classes.close();
+		}
+	});
+});
+
+describe('a mirrored box', () => {
+	/**
+	 * `CubeListBuilder.mirror()` takes no arguments and returns its own builder, which made it
+	 * indistinguishable from the other no-arg builder calls the interpreter drops on the floor
+	 * (`getRoot`, `create`). Dropping it left the guardian's twelve side plates unmirrored, so each
+	 * sampled the *near* side's rect for its far face — a face of blank sheet, which reads as a
+	 * missing side.
+	 *
+	 * The tell is that it returns the owner's own type, so it is a builder call and not an accessor.
+	 */
+	it('marks the boxes a builder mirrored', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.1');
+		try {
+			const link = await linkEntityModel('guardian', context);
+			const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+			const cubes = [...allCubes(model as ExtractedModel)];
+
+			// The two side plates share a rect and differ only in which way round it is read
+			const plates = cubes.filter(entry => entry.cube.size.join('x') === '2x12x12');
+			expect(plates.map(entry => entry.cube.mirror)).toStrictEqual([false, true]);
+			expect(new Set(plates.map(entry => entry.cube.uv.join(',')))).toStrictEqual(new Set(['0,28']));
+			// The flag is per box, not per model: nothing else on a guardian is mirrored
+			expect(cubes.filter(entry => entry.cube.mirror)).toHaveLength(1);
+		} finally {
+			await classes.close();
+		}
+	});
+});
+
 describe('a lambda', () => {
 	/**
 	 * A `MeshTransformer` is a lambda, and from 1.21.4 the donkey's chest is added inside one:
@@ -498,24 +649,26 @@ describe('a mod entity drawn with a vanilla model', () => {
 });
 
 describe('layeredClasses', () => {
+	/** A class source over strings, since what is being tested is the layering rather than any jar. */
+	const source = (entries: Record<string, string>): ClassSource => {
+		return {
+			list: async () => Object.keys(entries),
+			read: async (name: string) => {
+				const held = entries[name];
+				return held ? new TextEncoder().encode(held) : null;
+			},
+			close: async () => {
+				// Nothing to release: these are strings rather than a jar handle
+			},
+		};
+	};
+
 	/**
 	 * A modded export layers the mods' classes over the client's. Before that the class source was the
 	 * client jar alone, so a mod's own model classes were never read at all and its mobs came out as
 	 * boxes however good the interpreter was.
 	 */
 	it('reads through the layers, first match winning', async () => {
-		const source = (entries: Record<string, string>): ClassSource => {
-			return {
-				list: async () => Object.keys(entries),
-				read: async (name: string) => {
-					const held = entries[name];
-					return held ? new TextEncoder().encode(held) : null;
-				},
-				close: async () => {
-					// Nothing to release: these are strings rather than a jar handle
-				},
-			};
-		};
 		const layered = layeredClasses([
 			source({ shared: 'mod', only: 'mod' }),
 			source({ shared: 'vanilla', other: 'vanilla' }),
@@ -530,6 +683,35 @@ describe('layeredClasses', () => {
 		expect(await text('shared')).toBe('mod');
 		expect(await text('other')).toBe('vanilla');
 		expect(await text('absent')).toBeNull();
+	});
+
+	/**
+	 * A layer that cannot be read at all is skipped rather than fatal.
+	 *
+	 * Because one exists: `tinkers_ingenuity-1.4.5beta.jar` ships a stored entry whose compressed and
+	 * uncompressed sizes disagree, so yauzl refuses the archive. The resource side already rejects such a
+	 * jar and exports the rest of the pack, and until this matched it, that one mod out of fourteen
+	 * hundred took the whole run down with it.
+	 */
+	it('skips a layer that cannot be read', async () => {
+		const broken: ClassSource = {
+			list: async () => {
+				throw new Error('compressed/uncompressed size mismatch for stored file: 2 != 0');
+			},
+			read: async () => {
+				throw new Error('compressed/uncompressed size mismatch for stored file: 2 != 0');
+			},
+			close: async () => {
+				throw new Error('already closed');
+			},
+		};
+		const layered = layeredClasses([broken, source({ kept: 'kept' })]);
+
+		expect(await layered.list()).toStrictEqual(['kept']);
+		expect(await layered.read('kept')).not.toBeNull();
+		expect(await layered.read('absent')).toBeNull();
+		// And closing the good one is not skipped because the bad one threw
+		await expect(layered.close()).resolves.toBeUndefined();
 	});
 });
 
@@ -569,15 +751,15 @@ describe('what it refuses', () => {
  * that keeps the links but empties the shapes, which a count of links alone would not notice.
  */
 const COVERAGE = [
-	{ version: '1.14.4', linked: 82, cubes: 719 },
-	{ version: '1.16.5', linked: 88, cubes: 798 },
-	{ version: '1.18.2', linked: 91, cubes: 814 },
-	{ version: '1.19.4', linked: 98, cubes: 898 },
-	{ version: '1.21.1', linked: 102, cubes: 939 },
-	{ version: '1.21.4', linked: 125, cubes: 1171 },
-	{ version: '1.21.8', linked: 126, cubes: 1148 },
-	{ version: '1.21.11', linked: 132, cubes: 1223 },
-	{ version: '26.2', linked: 133, cubes: 1256 },
+	{ version: '1.14.4', linked: 82, cubes: 745 },
+	{ version: '1.16.5', linked: 88, cubes: 801 },
+	{ version: '1.18.2', linked: 91, cubes: 870 },
+	{ version: '1.19.4', linked: 98, cubes: 954 },
+	{ version: '1.21.1', linked: 102, cubes: 993 },
+	{ version: '1.21.4', linked: 125, cubes: 1300 },
+	{ version: '1.21.8', linked: 126, cubes: 1277 },
+	{ version: '1.21.11', linked: 132, cubes: 1352 },
+	{ version: '26.2', linked: 133, cubes: 1380 },
 ];
 
 describe.each(COVERAGE)('coverage for $version', (testCase) => {

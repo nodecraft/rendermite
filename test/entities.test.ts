@@ -11,9 +11,11 @@ import { deflateSync } from 'node:zlib';
 
 import { describe, expect, it } from 'vitest';
 
+import { vanillaJar } from './fixtures/index.ts';
 import { collectEntities, entityTypesOf } from '../src/blocks/entities.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { TextureLoader } from '../src/textures/loader.ts';
+import { prepareVersionResources } from '../src/versions/prepare.ts';
 
 import type { ResourceManager } from '../src/resources/manager.ts';
 
@@ -202,5 +204,56 @@ describe('marker colours', () => {
 		});
 
 		expect(Object.keys(result.entities)).toStrictEqual(['minecraft:allay', 'minecraft:zombie']);
+	});
+});
+
+describe('which sheet a mob is drawn with', () => {
+	/**
+	 * The sheet is not just a marker colour any more — it is what the geometry is *drawn on* — so picking
+	 * the wrong one now shows. These are the three ways the search went wrong, each against the real
+	 * 1.21.1 jar.
+	 */
+	const pick = async (id: string): Promise<string | undefined> => {
+		const resources = await prepareVersionResources({ version: '1.21.1', jar: vanillaJar('1.21.1') });
+		const collected = await collectEntities({
+			resources,
+			textures: new TextureLoader(resources),
+			namespaces: ['minecraft'],
+		});
+		return collected.entities[id]?.texture;
+	};
+
+	/**
+	 * A trader llama's *own* name is a file: `entity/llama/decor/trader_llama`, which is the carpet it
+	 * wears. Taking it left the llama underneath invisible over most of its body, since a decor sheet is
+	 * a few opaque pixels on transparency.
+	 */
+	it('takes the body sheet over an overlay named after the mob', { timeout: 300000 }, async () => {
+		const texture = await pick('minecraft:trader_llama');
+
+		expect(texture).toContain('entity/llama/');
+		expect(texture).not.toContain('decor');
+	});
+
+	/**
+	 * With the decor sheet out, `entity/wandering_trader` tied on token overlap and won on being one
+	 * character shorter — putting a *human* trader's skin on a llama. A sheet inside the family's own
+	 * folder outranks one that is not.
+	 */
+	it('prefers the family folder to a same-scoring outsider', { timeout: 300000 }, async () => {
+		expect(await pick('minecraft:trader_llama')).not.toContain('wandering_trader');
+		// And the chest boat still beats `entity/chest/`, which is a folder it merely shares a word with
+		// (one type on 1.21.1; the per-wood split came in 1.21.2)
+		expect(await pick('minecraft:chest_boat')).toContain('chest_boat');
+	});
+
+	/** Every sheet in `entity/horse/` is family, so the file naming the mob has to break that tie. */
+	it('prefers the file that names the mob within a family', { timeout: 300000 }, async () => {
+		const horse = await pick('minecraft:horse');
+
+		expect(horse).toContain('entity/horse/horse');
+		// The donkey and the mule are their own mobs and keep their own sheets
+		expect(await pick('minecraft:donkey')).toBe('minecraft:entity/horse/donkey');
+		expect(await pick('minecraft:mule')).toBe('minecraft:entity/horse/mule');
 	});
 });
