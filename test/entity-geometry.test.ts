@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { vanillaJar } from './fixtures/index.ts';
 import { parseClassFile } from '../src/entities/classfile.ts';
 import { extractInheritedModel } from '../src/entities/inherit.ts';
-import { JarClassReader } from '../src/entities/jar-classes.ts';
+import { JarClassReader, layeredClasses } from '../src/entities/jar-classes.ts';
 import { NO_MODEL, classReader, linkEntityModel } from '../src/entities/link.ts';
 import {
 	identityMappings,
@@ -29,6 +29,7 @@ import { loadModelCode } from '../src/entities/model-code.ts';
 import { JarResourceManager } from '../src/resources/jar.ts';
 import { ResourceLocator } from '../src/resources/locator.ts';
 
+import type { ClassSource } from '../src/entities/jar-classes.ts';
 import type { ExtractedModel, Part } from '../src/entities/model.ts';
 
 const mappingCache = path.join(import.meta.dirname, '..', '.work', 'fixtures');
@@ -426,6 +427,109 @@ describe('parts built by another class', () => {
 		} finally {
 			await classes.close();
 		}
+	});
+});
+
+describe('a lambda', () => {
+	/**
+	 * A `MeshTransformer` is a lambda, and from 1.21.4 the donkey's chest is added inside one:
+	 * `LayerDefinition.apply(mesh -> modifyMesh(mesh.getRoot()))`. Consuming the lambda rather than
+	 * following it left the donkey in pieces — four parts with no parent, at the model origin — and it
+	 * was the last vanilla model in that state.
+	 *
+	 * Following it means two hops through the class file: the `invokedynamic` names a row of
+	 * `BootstrapMethods`, and that row's method handle names the body.
+	 */
+	it('follows a mesh transformer to the chest it adds', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('1.21.4');
+		try {
+			const link = await linkEntityModel('donkey', context);
+			const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+
+			// One connected tree, and the chest boxes are in it
+			expect((model as ExtractedModel).parts).toHaveLength(1);
+			expect((model as ExtractedModel).notes).toStrictEqual([]);
+			const bones = (model as ExtractedModel).parts.flatMap(part => bonesOf(part));
+			expect(bones).toEqual(expect.arrayContaining(['left_chest', 'right_chest']));
+			expect(cubesOf(model as ExtractedModel)).toBeGreaterThan(20);
+		} finally {
+			await classes.close();
+		}
+	});
+});
+
+describe('a mod entity drawn with a vanilla model', () => {
+	/**
+	 * Plenty are, and none of them ship geometry because none of them need to: Ars Nouveau's
+	 * `summon_horse` is the game's own horse, its `ally_vex` a vex, and a mod adding a spawner for one
+	 * calls it `iron_golem_spawner`. The decoration comes off a token at a time, longest match first.
+	 */
+	it('finds the vanilla model under a mod id', { timeout: 120000 }, async () => {
+		const { classes, context } = await openVersion('1.21.1');
+		try {
+			const classOf = async (entityId: string): Promise<string | undefined> => {
+				const link = await linkEntityModel(entityId, context);
+				return link?.className;
+			};
+			const horse = await linkEntityModel('ars_nouveau:summon_horse', context);
+			expect(horse?.className).toContain('HorseModel');
+			expect(horse?.route).toBe('vanilla-name');
+
+			expect(await classOf('ars_nouveau:ally_vex')).toContain('VexModel');
+			// Longest first, so this is the iron golem rather than anything merely named `iron`
+			expect(await classOf('somemod:iron_golem_spawner')).toContain('IronGolemModel');
+		} finally {
+			await classes.close();
+		}
+	});
+
+	/** And nothing is borrowed for an id that names no mob, however many tokens come off it. */
+	it('borrows nothing for an id that is not a mob', { timeout: 120000 }, async () => {
+		const { classes, context } = await openVersion('1.21.1');
+		try {
+			expect(await linkEntityModel('ars_nouveau:spell_proj', context)).toBeNull();
+			expect(await linkEntityModel('ars_nouveau:scryer_camera', context)).toBeNull();
+			// A vanilla id is never decorated, so the route never runs for one
+			expect(await linkEntityModel('minecraft:enchanted_falling_block', context)).toBeNull();
+		} finally {
+			await classes.close();
+		}
+	});
+});
+
+describe('layeredClasses', () => {
+	/**
+	 * A modded export layers the mods' classes over the client's. Before that the class source was the
+	 * client jar alone, so a mod's own model classes were never read at all and its mobs came out as
+	 * boxes however good the interpreter was.
+	 */
+	it('reads through the layers, first match winning', async () => {
+		const source = (entries: Record<string, string>): ClassSource => {
+			return {
+				list: async () => Object.keys(entries),
+				read: async (name: string) => {
+					const held = entries[name];
+					return held ? new TextEncoder().encode(held) : null;
+				},
+				close: async () => {
+					// Nothing to release: these are strings rather than a jar handle
+				},
+			};
+		};
+		const layered = layeredClasses([
+			source({ shared: 'mod', only: 'mod' }),
+			source({ shared: 'vanilla', other: 'vanilla' }),
+		]);
+		const text = async (name: string): Promise<string | null> => {
+			const bytes = await layered.read(name);
+			return bytes === null ? null : new TextDecoder().decode(bytes);
+		};
+
+		const names = await layered.list();
+		expect(names.toSorted((left, right) => left.localeCompare(right))).toStrictEqual(['only', 'other', 'shared']);
+		expect(await text('shared')).toBe('mod');
+		expect(await text('other')).toBe('vanilla');
+		expect(await text('absent')).toBeNull();
 	});
 });
 

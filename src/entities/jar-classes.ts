@@ -22,6 +22,49 @@ interface ClassIndex {
 	entries: Map<string, Entry>;
 }
 
+/** What the extractor reads code out of: one jar, or several layered into one view. */
+export interface ClassSource {
+	list: () => Promise<string[]>;
+	read: (internalName: string) => Promise<Uint8Array | null>;
+	close: () => Promise<void>;
+}
+
+/**
+ * Several jars as one class view, first match winning — the same layering the resource managers use.
+ *
+ * A modded export needs this, and needed it before cross-jar linking did: the class source used to be
+ * the client jar alone, so a mod's own model classes were never read and its mobs came out as boxes
+ * however good the interpreter was. Layered, one view holds both, which is also what lets a mod entity
+ * link to a *vanilla* model — `ars_nouveau:summon_horse` is the game's own horse.
+ */
+export function layeredClasses(sources: readonly ClassSource[]): ClassSource {
+	return {
+		list: async () => {
+			const names = new Set<string>();
+			for (const source of sources) {
+				for (const name of await source.list()) {
+					names.add(name);
+				}
+			}
+			return [...names];
+		},
+		read: async (internalName) => {
+			for (const source of sources) {
+				const bytes = await source.read(internalName);
+				if (bytes) {
+					return bytes;
+				}
+			}
+			return null;
+		},
+		close: async () => {
+			for (const source of sources) {
+				await source.close();
+			}
+		},
+	};
+}
+
 /** Reads class files out of one jar, by internal name. */
 export class JarClassReader {
 	private readonly jarPath: string;

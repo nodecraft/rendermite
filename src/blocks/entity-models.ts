@@ -19,14 +19,9 @@ import { MappingsUnavailableError, resolveMappings } from '../entities/mappings.
 import { loadModelCode } from '../entities/model-code.ts';
 
 import type { EntityPackModel, EntityPackPart } from './pack-format.ts';
+import type { ClassSource } from '../entities/jar-classes.ts';
 import type { ExtractedModel, Part } from '../entities/model.ts';
 import type { ResourceManager } from '../resources/manager.ts';
-
-/** What the exporter needs to read code out of; a jar, in practice. */
-export interface ClassSource {
-	list: () => Promise<string[]>;
-	read: (internalName: string) => Promise<Uint8Array | null>;
-}
 
 export interface EntityGeometryResult {
 	/** Model id (the class it came from) → geometry. */
@@ -156,9 +151,15 @@ export async function collectEntityGeometry(
 	for (const entityId of [...entityIds].toSorted((left, right) => left.localeCompare(right))) {
 		options.onProgress?.(++done, entityIds.length);
 		const link = await linkEntityModel(entityId, context);
-		const found = link
+		/*
+		 * A mod's own `.geo.json` beats a *guess* at a vanilla class, and loses to everything else. The
+		 * `vanilla-name` route drops tokens off an id until something matches — right for `summon_horse`,
+		 * but if the mod ships geometry under its own name then that is what the game draws.
+		 */
+		const guessed = link?.route === 'vanilla-name';
+		const found = link && !guessed
 			? { id: link.className, model: await geometryOf(link.obfuscated) }
-			: await geoFor(entityId);
+			: await geoFor(entityId) ?? (link ? { id: link.className, model: await geometryOf(link.obfuscated) } : null);
 		if (!found?.model) {
 			continue;
 		}

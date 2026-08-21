@@ -10,12 +10,13 @@ import { parseArgs } from 'node:util';
 
 import { exportBlockPack } from './export.ts';
 import { builtinPackPath } from '../builtin.ts';
-import { JarClassReader } from '../entities/jar-classes.ts';
+import { JarClassReader, layeredClasses } from '../entities/jar-classes.ts';
 import { prepareModResources } from '../mods/prepare.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../resources/manager.ts';
 import { downloadClientJar } from '../versions/download.ts';
 import { compareVersions, prepareVersionResources } from '../versions/prepare.ts';
 
+import type { ClassSource } from '../entities/jar-classes.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 
 /** The Flattening: below it a block is `35:14` and needs a numeric-id table. */
@@ -119,7 +120,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 	 * Entity geometry comes out of the *code*, so it needs the jar rather than the resource view of it.
 	 * An `--assets` run has none, and exports entity names and colours without shapes.
 	 */
-	let classes: JarClassReader | null = null;
+	let classes: ClassSource | null = null;
 	if (values.version) {
 		console.log(`Fetching client jar for ${values.version}…`);
 		const jar = await downloadClientJar(values.version, cacheDir);
@@ -144,6 +145,15 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 		// Mod packs publish per namespace, so an unqualified modded run exports
 		// the mods' namespaces rather than silently exporting vanilla again.
 		namespaces = values.namespace?.length ? values.namespace : prepared.namespaces;
+		/*
+		 * And the mods' *classes*, layered over the client's. A mod writes its models in Java exactly as
+		 * the game does, so without this every modded mob came out as a box however good the interpreter
+		 * was — and with it, a mod entity can also link to a vanilla model, which many of them are.
+		 */
+		if (!values['no-entity-geometry']) {
+			const modClasses = values.mod.map(jar => new JarClassReader(jar));
+			classes = layeredClasses(classes ? [classes, ...modClasses] : modClasses);
+		}
 	}
 
 	try {
