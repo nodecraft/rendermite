@@ -75,6 +75,7 @@ blocks/1.21.8/
   blockstates.json     # block id -> variants/multipart, keys and predicates pre-parsed
   tints.json           # plains tints, colormaps, ramps, per-block tint semantics
   colormap/*.png       # the version's own grass/foliage/dry_foliage maps
+  items.json           # flat item sprite stacks + their own atlas, for drawing dropped stacks
   failures.json        # anything not fully handled, with reasons, never silent
   meta.json            # version, counts, sha256 of every other file
 ```

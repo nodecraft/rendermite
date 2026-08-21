@@ -141,6 +141,48 @@ export type BlockPackTintsFile = BlockTintPack;
  */
 export type BlockPackBiomesFile = BiomeClimatePack;
 
+/** One flat sprite of an item's layer stack, in the order the client draws them. */
+export interface ItemPackLayer {
+	sprite: string;
+	/**
+	 * Present when the item declares a tint at this layer, which is the client's own
+	 * rule: `ItemModelGenerator` passes each layer its own index as the tint index.
+	 */
+	tintindex?: number;
+	/**
+	 * The colour that tint resolves to in an item's default state, `#rrggbb`.
+	 *
+	 * Absent where it cannot be known from assets — a dyed leather boot or a potion
+	 * takes its colour from the stack's components, which no pack can carry. A
+	 * consumer drawing an absent tint untinted gets the mod's own artwork, which is
+	 * the same thing the icon renderer settles for.
+	 */
+	tint?: string;
+}
+
+/** One flat item: everything there is to say about how the game draws it. */
+export interface ItemPackEntry {
+	layers: ItemPackLayer[];
+}
+
+/**
+ * `items.json`. Self-contained rather than sharing `atlas.json`'s pages, so a
+ * consumer that only draws blocks never fetches the item sheet at all — a world
+ * viewer needs it only once it finds a dropped stack of something that is not a
+ * block.
+ *
+ * Holds *only* items whose model is a flat sprite stack. An item absent from
+ * `items` either draws from `blockstates.json` under the same id, or is in
+ * `failures.json` saying why nothing can draw it.
+ */
+export interface BlockPackItemsFile {
+	/** Edge-extended border per sprite, in pixels. */
+	padding: number;
+	pages: BlockPackAtlasPage[];
+	sprites: Record<string, BlockPackSprite>;
+	items: Record<string, ItemPackEntry>;
+}
+
 /** `meta.json`, written last because it hashes every other file. */
 export interface BlockPackMetaFile {
 	generator: string;
@@ -153,6 +195,8 @@ export interface BlockPackMetaFile {
 		pages: number;
 		/** Biomes in `biomes.json`; `0` means the pack has none and the file is absent. */
 		biomes: number;
+		/** Flat items in `items.json`; `0` means the pack has none and the file is absent. */
+		items: number;
 		failures: number;
 	};
 	/** sha256 per file, enough to verify a cached copy without refetching it. */

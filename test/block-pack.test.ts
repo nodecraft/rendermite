@@ -44,6 +44,18 @@ const packRoot = path.join(import.meta.dirname, '..', '.work', 'block-packs');
 const ASSET_KINDS = new Set(['geometry', 'intentional']);
 
 /**
+ * Failure shapes that are true statements about *any* pack's assets, vanilla
+ * included. Spelled out by reason rather than waved through as a whole kind, for
+ * the same reason `tint` is not in `ASSET_KINDS`.
+ */
+const ASSET_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
+	// An item that is neither a flat sprite stack nor a block: vanilla's shield and
+	// spyglass, drawn by the game from geometry the item sheet cannot carry. Named
+	// so that anything *else* landing in the item sheet's failures is a real gap.
+	{ kind: 'item', reason: /^item model is not a flat sprite stack and the pack describes no block of this id$/ },
+];
+
+/**
  * Mods break their own assets in ways vanilla never does, and the pack's answer
  * to each is a deliberate one. Every shape below is "the mod's files say this",
  * spelled out rather than waved through as a whole kind — a `model` entry for a
@@ -64,6 +76,16 @@ const MODDED_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
 	// A mod registers its block colours in Java, so the tint table can only ever
 	// cover vanilla's. Recorded, and the block draws untinted rather than not at all.
 	{ kind: 'tint', reason: /^tintindex \d+ is not in the tint table/ },
+	/*
+	 * The item sheet's own version of the above: a mod naming a layer texture it
+	 * never shipped, a generated model with nothing in it, and the knock-on entry
+	 * for an item whose sprite therefore has no rect. Each is the mod's files
+	 * saying so, and each leaves the item to be drawn as a box rather than wrong.
+	 */
+	{ kind: 'item', reason: /resolves to no texture; layer dropped$/ },
+	{ kind: 'item', reason: /^generated item model states no layers$/ },
+	{ kind: 'item', reason: /has no atlas rect; item dropped$/ },
+	{ kind: 'item', reason: /^No item definition or item model for / },
 ];
 
 function unexpectedFailures(pack: Pack, modded = false): BlockPackResult['failures'] {
@@ -71,7 +93,11 @@ function unexpectedFailures(pack: Pack, modded = false): BlockPackResult['failur
 		if (ASSET_KINDS.has(failure.kind)) {
 			return false;
 		}
-		return !modded || !MODDED_ALLOWANCES.some(allowed => allowed.kind === failure.kind && allowed.reason.test(failure.reason));
+		const matches = (allowed: { kind: string; reason: RegExp; }): boolean => allowed.kind === failure.kind && allowed.reason.test(failure.reason);
+		if (ASSET_ALLOWANCES.some(matches)) {
+			return false;
+		}
+		return !modded || !MODDED_ALLOWANCES.some(matches);
 	});
 }
 
@@ -115,6 +141,13 @@ interface Pack {
 	tints: { flat: Record<string, string>; blocks: Record<string, Record<string, { kind: string; }>>; };
 	/** `biomes.json`, which a pack with no biomes to describe does not write at all. */
 	biomes: Record<string, { temperature: number; downfall: number; water?: string; modifier?: string; grass?: string; foliage?: string; dryFoliage?: string; }> | null;
+	/** `items.json`, likewise absent from a pack with no flat items. */
+	items: {
+		padding: number;
+		pages: Array<{ file: string; width: number; height: number; }>;
+		sprites: Record<string, { page: number; x: number; y: number; w: number; h: number; }>;
+		items: Record<string, { layers: Array<{ sprite: string; tintindex?: number; tint?: string; }>; }>;
+	} | null;
 }
 
 async function exportPack(name: string, resources: ResourceManager, namespaces?: string[]): Promise<Pack> {
@@ -131,6 +164,7 @@ async function exportPack(name: string, resources: ResourceManager, namespaces?:
 		meta: await read<Pack['meta']>('meta.json'),
 		tints: await read<Pack['tints']>('tints.json'),
 		biomes: existsSync(path.join(directory, 'biomes.json')) ? await read<NonNullable<Pack['biomes']>>('biomes.json') : null,
+		items: existsSync(path.join(directory, 'items.json')) ? await read<NonNullable<Pack['items']>>('items.json') : null,
 	};
 }
 
@@ -177,6 +211,22 @@ function assertSelfContained(pack: Pack): void {
 		expect(Number.isSafeInteger(Math.log2(page.width))).toBe(true);
 		expect(Number.isSafeInteger(Math.log2(page.height))).toBe(true);
 	}
+	if (pack.items) {
+		// The item sheet is its own atlas, so it carries its own version of every
+		// guarantee above: a dangling layer sprite draws a hole where an item was.
+		for (const [id, entry] of Object.entries(pack.items.items)) {
+			expect(entry.layers.length, `${id} has layers`).toBeGreaterThan(0);
+			for (const layer of entry.layers) {
+				expect(pack.items.sprites, `${id} names ${layer.sprite}`).toHaveProperty([layer.sprite]);
+			}
+		}
+		for (const sprite of Object.values(pack.items.sprites)) {
+			const page = pack.items.pages[sprite.page];
+			expect(page).toBeDefined();
+			expect(sprite.x + sprite.w + pack.items.padding).toBeLessThanOrEqual(page.width);
+			expect(sprite.y + sprite.h + pack.items.padding).toBeLessThanOrEqual(page.height);
+		}
+	}
 }
 
 interface VersionCase {
@@ -185,20 +235,22 @@ interface VersionCase {
 	blocks: number;
 	models: number;
 	sprites: number;
+	/** Flat items in `items.json`; a floor for the same reason. */
+	items: number;
 }
 
 const CASES: VersionCase[] = [
 	// The floor. No `atlases/` and no items/ definitions, but fully namespaced.
-	{ version: '1.13.2', blocks: 550, models: 850, sprites: 460 },
+	{ version: '1.13.2', blocks: 550, models: 850, sprites: 460, items: 450 },
 	// Immediately below the atlases/ introduction — the empty resolver is correct.
-	{ version: '1.18.2', blocks: 850, models: 1450, sprites: 720 },
+	{ version: '1.18.2', blocks: 850, models: 1450, sprites: 720, items: 580 },
 	// Immediately above it.
-	{ version: '1.19.4', blocks: 950, models: 1650, sprites: 790 },
+	{ version: '1.19.4', blocks: 950, models: 1650, sprites: 790, items: 620 },
 	// Either side of the models → modern era boundary.
-	{ version: '1.21.1', blocks: 1000, models: 1800, sprites: 900 },
-	{ version: '1.21.4', blocks: 1040, models: 1850, sprites: 930 },
+	{ version: '1.21.1', blocks: 1000, models: 1800, sprites: 900, items: 950 },
+	{ version: '1.21.4', blocks: 1040, models: 1850, sprites: 930, items: 1000 },
 	// Current.
-	{ version: '26.2', blocks: 1140, models: 2200, sprites: 1140 },
+	{ version: '26.2', blocks: 1140, models: 2200, sprites: 1140, items: 1150 },
 ];
 
 describe.each(CASES)('block pack for $version', (testCase) => {
@@ -212,6 +264,7 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		expect(pack.result.blocks).toBeGreaterThanOrEqual(testCase.blocks);
 		expect(pack.result.models).toBeGreaterThanOrEqual(testCase.models);
 		expect(pack.result.sprites).toBeGreaterThanOrEqual(testCase.sprites);
+		expect(pack.result.items).toBeGreaterThanOrEqual(testCase.items);
 		// Vanilla stitches into one page across the whole range; a second one would
 		// mean the packer or the sprite set changed shape.
 		expect(pack.result.pages).toBe(1);
@@ -227,6 +280,31 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		expect(pack.atlas.sprites['minecraft:missingno']).toBeDefined();
 		for (const fluid of ['water_still', 'water_flow', 'water_overlay', 'lava_still', 'lava_flow']) {
 			expect(pack.atlas.sprites, fluid).toHaveProperty([`minecraft:block/${fluid}`]);
+		}
+
+		/*
+		 * The item sheet exists to draw a dropped stack of something that is not a
+		 * block. A lead is the canonical one — flat, single-layer, in every version —
+		 * and a stone is the canonical counter-example: it must be absent, so the
+		 * consumer falls through to `blockstates.json` and draws the cube.
+		 */
+		expect(pack.items).not.toBeNull();
+		expect(pack.items?.items['minecraft:lead']?.layers)
+			.toStrictEqual([{ sprite: 'minecraft:item/lead' }]);
+		expect(pack.items?.items).not.toHaveProperty(['minecraft:stone']);
+		expect(pack.items?.items).not.toHaveProperty(['minecraft:oak_planks']);
+		/*
+		 * Wheat is why the item model has to win over the block model rather than the
+		 * other way round: the item is a flat sheaf and the block of the same id is a
+		 * crop cross, and a consumer preferring the block draws a dropped sheaf as a
+		 * plant.
+		 */
+		expect(pack.items?.items['minecraft:wheat']?.layers)
+			.toStrictEqual([{ sprite: 'minecraft:item/wheat' }]);
+		// Its own pages, never the block atlas's: the point is that a consumer
+		// drawing only blocks never fetches the item sheet at all.
+		for (const page of pack.items?.pages ?? []) {
+			expect(page.file).toMatch(/^item-atlas-\d+\.png$/);
 		}
 
 		// Vendored geometry is a guess about a block the assets do not describe.

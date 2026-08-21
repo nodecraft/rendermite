@@ -39,6 +39,7 @@ Options:
       --max-page-size <px> atlas page ceiling (default 4096)
       --builtin <dir>      override the vendored geometry pack
       --no-builtin         do not substitute geometry for code-drawn blocks
+      --no-items           do not export items.json (flat sprites for non-block items)
       --cache-dir <dir>    jar download cache (default ~/.rendermite)
 `;
 
@@ -85,6 +86,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			'cache-dir': { type: 'string' },
 			'builtin': { type: 'string' },
 			'no-builtin': { type: 'boolean', default: false },
+			'no-items': { type: 'boolean', default: false },
 			'help': { type: 'boolean', short: 'h', default: false },
 		},
 	});
@@ -144,6 +146,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			namespaces,
 			padding: sizes.padding,
 			maxPageSize: sizes.maxPageSize,
+			items: !values['no-items'],
 			onProgress: (stage, done, total) => {
 				if (done === total || done % 250 === 0) {
 					console.log(`${stage}: ${done}/${total}`);
@@ -151,6 +154,9 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			},
 		});
 		console.log(`\n${result.blocks} blocks, ${result.models} models, ${result.sprites} sprites across ${result.pages} atlas page(s); ${result.writtenFiles} files written.`);
+		console.log(result.items > 0
+			? `${result.items} flat items described in items.json.`
+			: 'No flat item sprites exported.');
 		console.log(result.biomes > 0
 			? `${result.biomes} biomes described in biomes.json.`
 			: 'No biomes to describe; biomes.json not written.');
