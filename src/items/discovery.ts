@@ -79,7 +79,7 @@ export async function discoverItems(
  * key per registered item). Null (no gating) when the namespace has no modern
  * lang file or no item/block keys: 1.7.10-era mods use unkeyed .lang files.
  */
-async function langRegistry(resources: ResourceManager, namespace: string): Promise<Set<string> | null> {
+export async function langRegistry(resources: ResourceManager, namespace: string): Promise<Set<string> | null> {
 	const raw = await resources.getResource('lang', new ResourceLocator(namespace, 'en_us'));
 	if (!raw) {
 		return null;

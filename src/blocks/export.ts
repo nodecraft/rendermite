@@ -18,13 +18,15 @@ import path from 'node:path';
 
 import sharp from 'sharp';
 
-import { packAtlas } from './atlas-pack.ts';
 import { buildBiomeClimates } from './biomes.ts';
 import { INVISIBLE_BLOCKS, blockEntityGeometry, synthesizeVariants } from './block-entities.ts';
 import { collectModels, parseBlockState } from './blockstate-eval.ts';
+import { collectItemSprites } from './item-sprites.ts';
 import { buildObjMesh } from './obj-mesh.ts';
+import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
 import { UNREGISTERED_TINTS, buildBlockTints } from './tints.ts';
 import { loadAtlasResolver } from '../atlas/registry.ts';
+import { discoverItems } from '../items/discovery.ts';
 import { ModelLoader, resolveTexture, salvageJson } from '../models/loader.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../resources/manager.ts';
@@ -38,14 +40,14 @@ import type {
 	BlockPackBlockStatesFile,
 	BlockPackElement,
 	BlockPackFace,
+	BlockPackItemsFile,
 	BlockPackMetaFile,
 	BlockPackModel,
 	BlockPackModelsFile,
 	BlockPackRenderLayer,
-	BlockPackSprite,
-	BlockPackSpriteFrame,
 	BlockPackTintsFile,
 	BlockPackVariant,
+	ItemPackEntry,
 } from './pack-format.ts';
 import type { ResolvedModel } from '../models/loader.ts';
 import type {
@@ -55,7 +57,6 @@ import type {
 	Vec4,
 } from '../models/types.ts';
 import type { ResourceManager } from '../resources/manager.ts';
-import type { Texture } from '../textures/loader.ts';
 
 export interface ExportBlockPackOptions {
 	resources: ResourceManager;
@@ -76,6 +77,12 @@ export interface ExportBlockPackOptions {
 	padding?: number;
 	/** Ceiling on an atlas page's dimensions (default 4096). */
 	maxPageSize?: number;
+	/**
+	 * Export `items.json` and its own atlas: the flat sprite stacks for items that
+	 * are not blocks, which is what a world viewer draws a dropped stack of a lead
+	 * or a handful of charcoal from. On by default.
+	 */
+	items?: boolean;
 	onProgress?: (stage: string, done: number, total: number) => void;
 }
 
@@ -85,7 +92,7 @@ export interface BlockPackFailure {
 	 * `intentional` is not a failure: it marks a block that is empty because the
 	 * game draws nothing for it. Filter it out to get the real gaps.
 	 */
-	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'intentional';
+	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'intentional';
 	reason: string;
 }
 
@@ -96,6 +103,8 @@ export interface BlockPackResult {
 	pages: number;
 	/** Biomes described in `biomes.json`; `0` means the file was not written. */
 	biomes: number;
+	/** Flat items described in `items.json`; `0` means the file was not written. */
+	items: number;
 	/** Files actually written — the only trustworthy success signal. */
 	writtenFiles: number;
 	failures: BlockPackFailure[];
@@ -112,27 +121,10 @@ const RENDER_TYPES: Record<string, BlockPackRenderLayer> = {
 	translucent_moving_block: 'translucent',
 };
 
-/**
- * A sprite whose strip is longer than this exports as its first frame only.
- * A broken `.mcmeta` can claim thousands of frames, and packing them would
- * blow the atlas out for one texture.
- */
-const MAX_FRAMES_PER_SPRITE = 256;
-
 const FACE_DIRECTIONS = new Set<string>(['down', 'up', 'north', 'south', 'west', 'east']);
 
 /** Old models spell the vertical faces `bottom`/`top` in `cullface`. */
 const CULLFACE_ALIASES: Record<string, FaceDirectionName> = { bottom: 'down', top: 'up' };
-
-/**
- * Vanilla's own id for the missing-texture sprite. A face whose texture does
- * not resolve is drawn by the game in black and magenta rather than skipped —
- * Blockbench leaves `"texture": "#missing"` on unassigned faces and mods ship
- * models naming textures they forgot to include. Dropping those faces would
- * put holes in geometry the player can see, and would read as our bug rather
- * than the mod's.
- */
-const MISSING_SPRITE = 'minecraft:missingno';
 
 /**
  * Fluids are blocks in `blockstates.json` but the game meshes them in code, so
@@ -150,23 +142,6 @@ const FLUID_SUFFIX = /_(?:still|flow|flowing)$/;
 
 /** Sampled where water meets a non-opaque neighbour; matches no suffix. */
 const EXTRA_FLUID_SPRITES = ['minecraft:block/water_overlay'];
-
-/** `MissingTextureAtlasSprite`: 16x16, black and magenta in 8px quarters. */
-function missingTexture(): Texture {
-	const size = 16;
-	const data = new Uint8ClampedArray(size * size * 4);
-	for (let y = 0; y < size; y++) {
-		for (let x = 0; x < size; x++) {
-			const magenta = (x < 8) !== (y < 8);
-			const offset = (y * size + x) * 4;
-			data[offset] = magenta ? 248 : 0;
-			data[offset + 1] = 0;
-			data[offset + 2] = magenta ? 248 : 0;
-			data[offset + 3] = 255;
-		}
-	}
-	return { width: size, height: size, data };
-}
 
 /**
  * Vanilla's `BlockElement.uvsByFace`: the UV a face gets when the model states
@@ -195,26 +170,6 @@ function defaultFaceUv(direction: FaceDirectionName, from: Vec3, to: Vec3): Vec4
 			return [16 - to[2], 16 - to[1], 16 - from[2], 16 - from[1]];
 		}
 	}
-}
-
-/**
- * Alpha decides the render layer: vanilla assets do not state cutout versus
- * translucent (`render_type` is a loader extension adopted only recently), and
- * inferring it covers mods for free.
- */
-function inferRenderLayer(frames: Texture[]): BlockPackRenderLayer {
-	let sawHole = false;
-	for (const frame of frames) {
-		for (let offset = 3; offset < frame.data.length; offset += 4) {
-			const alpha = frame.data[offset];
-			if (alpha === 0) {
-				sawHole = true;
-			} else if (alpha !== 255) {
-				return 'translucent';
-			}
-		}
-	}
-	return sawHole ? 'cutout' : 'solid';
 }
 
 function sortedByKey<T>(entries: Record<string, T>): Record<string, T> {
@@ -775,92 +730,18 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			spriteIds.add(extra);
 		}
 	}
-	interface LoadedSprite {
-		id: string;
-		/** Physical frame index → pixels. */
-		frames: Map<number, Texture>;
-		sequence: Array<{ frame: number; time: number; }>;
-		interpolate: boolean;
-	}
-	const loaded: LoadedSprite[] = [];
-	const missingSprites = new Set<string>();
-	done = 0;
-	for (const id of [...spriteIds].toSorted((left, right) => left.localeCompare(right))) {
-		report('sprites', ++done, spriteIds.size);
-		if (id === MISSING_SPRITE) {
-			// Synthesized below; no jar ships it.
-			continue;
-		}
-		let animated;
-		try {
-			animated = await textures.loadAnimated(ResourceLocator.parse(id));
-		} catch (err) {
-			failures.push({ id, kind: 'sprite', reason: (err as Error).message });
-			missingSprites.add(id);
-			continue;
-		}
-		if (!animated) {
-			failures.push({ id, kind: 'sprite', reason: 'texture not found' });
-			missingSprites.add(id);
-			continue;
-		}
-		const overlong = animated.frameCount > MAX_FRAMES_PER_SPRITE;
-		if (overlong) {
-			failures.push({
-				id,
-				kind: 'sprite',
-				reason: `${animated.frameCount} frames exceeds the ${MAX_FRAMES_PER_SPRITE} cap; exported static`,
-			});
-		}
-		const starts = overlong ? [0] : animated.frameStartTicks();
-		const total = overlong ? 1 : animated.tickLength;
-		const sequence = starts.map((start, index) => {
-			return {
-				frame: animated.resolveFrame(start).frame,
-				time: (index + 1 < starts.length ? starts[index + 1] : total) - start,
-			};
-		});
-		const frames = new Map<number, Texture>();
-		for (const entry of sequence) {
-			if (!frames.has(entry.frame)) {
-				frames.set(entry.frame, animated.frame(entry.frame));
-			}
-		}
-		loaded.push({ id, frames, sequence, interpolate: animated.interpolated });
-	}
-
-	// Always packed, even where nothing resolved to it: it is what a consumer
-	// draws for a block this pack does not describe at all — a mod that is
-	// loaded on the server but whose pack was never fetched — and a guarantee
-	// is worth more to that consumer than the 256 pixels it costs.
-	spriteIds.add(MISSING_SPRITE);
-	loaded.push({
-		id: MISSING_SPRITE,
-		frames: new Map([[0, missingTexture()]]),
-		sequence: [{ frame: 0, time: 1 }],
-		interpolate: false,
+	const sheet = await buildSpriteSheet(spriteIds, textures, {
+		padding: options.padding,
+		maxPageSize: options.maxPageSize,
+		includeMissing: true,
+		onProgress: (count, total) => report('sprites', count, total),
 	});
-
-	// 4. Pack.
-	const packed = packAtlas(
-		loaded.flatMap(sprite => [...sprite.frames].map(([index, texture]) => {
-			return { key: `${sprite.id}#${index}`, texture };
-		})),
-		{ padding: options.padding, maxPageSize: options.maxPageSize },
-	);
-	// A sprite that does not fit a page gets no rect, so it joins the missing set
-	// rather than leaving models naming an id atlas.json has no entry for.
-	for (const key of packed.oversized) {
-		const id = key.split('#', 1)[0];
-		// Every frame of an animated sprite is the same size, so report once.
-		if (!missingSprites.has(id)) {
-			failures.push({ id, kind: 'sprite', reason: 'sprite is larger than one atlas page; drawn as the missing texture' });
-			missingSprites.add(id);
-		}
+	for (const failure of sheet.failures) {
+		failures.push({ id: failure.id, kind: 'sprite', reason: failure.reason });
 	}
-	if (missingSprites.has(MISSING_SPRITE)) {
-		throw new Error('the missing-texture sprite does not fit an atlas page; maxPageSize is too small');
-	}
+	const emittedSprites = sheet.sprites;
+	const missingSprites = sheet.missing;
+	spriteIds.add(MISSING_SPRITE);
 
 	// A face whose sprite never loaded, or never fit a page, points at the
 	// missing-texture sprite, the same as the game does — dropping it would leave
@@ -903,32 +784,6 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		}
 	}
 
-	const rects = new Map(packed.rects.map(rect => [rect.key, rect]));
-	const emittedSprites: Record<string, BlockPackSprite> = {};
-	for (const sprite of loaded) {
-		const first = rects.get(`${sprite.id}#${sprite.sequence[0].frame}`);
-		if (!first) {
-			continue;
-		}
-		const frames: BlockPackSpriteFrame[] = [];
-		for (const entry of sprite.sequence) {
-			const rect = rects.get(`${sprite.id}#${entry.frame}`);
-			if (rect) {
-				frames.push({ page: rect.page, x: rect.x, y: rect.y, time: entry.time });
-			}
-		}
-		emittedSprites[sprite.id] = {
-			page: first.page,
-			x: first.x,
-			y: first.y,
-			w: first.width,
-			h: first.height,
-			layer: inferRenderLayer(sprite.frames.values().toArray()),
-			...(frames.length === sprite.sequence.length && frames.length > 1 && { frames }),
-			...(sprite.interpolate && { interpolate: true as const }),
-		};
-	}
-
 	// 5. Tints, and every tintindex nothing states a meaning for.
 	const tints = await buildBlockTints(resources, textures);
 	for (const [block, references] of blockModels) {
@@ -958,7 +813,73 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	// 6. Biome climates: vanilla's own table, plus whatever a mod's datapack states.
 	const biomes = await buildBiomeClimates(resources, namespaces);
 
-	// 7. Emit.
+	/*
+	 * 7. Flat item sprites. After the blockstates because it needs the block set to
+	 * tell a designed omission from a gap: an item whose model is a block's is left
+	 * out of `items.json` on purpose, for the consumer to draw from
+	 * `blockstates.json` under the same id.
+	 */
+	let itemPack: BlockPackItemsFile | null = null;
+	let itemPages: Array<{ width: number; height: number; data: Uint8ClampedArray; }> = [];
+	if (options.items ?? true) {
+		const itemIds: string[] = [];
+		for (const namespace of namespaces) {
+			for (const item of await discoverItems(resources, namespace)) {
+				itemIds.push(item.id);
+			}
+		}
+		const collected = await collectItemSprites({
+			resources,
+			models,
+			textures,
+			namespaces,
+			blocks: new Set(Object.keys(blockStates)),
+			itemIds,
+			onProgress: (count, total) => report('items', count, total),
+		});
+		for (const failure of collected.failures) {
+			failures.push({ id: failure.id, kind: 'item', reason: failure.reason });
+		}
+		const itemSheet = await buildSpriteSheet(collected.spriteIds, textures, {
+			padding: options.padding,
+			maxPageSize: options.maxPageSize,
+			onProgress: (count, total) => report('item sprites', count, total),
+		});
+		for (const failure of itemSheet.failures) {
+			failures.push({ id: failure.id, kind: 'sprite', reason: failure.reason });
+		}
+		/*
+		 * An item earns an entry only if every layer of it has a rect. A partial stack
+		 * draws a lead with no rope, which reads as a broken texture rather than as
+		 * the recorded gap it is.
+		 */
+		const items: Record<string, ItemPackEntry> = {};
+		for (const [id, entry] of Object.entries(collected.items)) {
+			const lost = entry.layers.filter(layer => itemSheet.missing.has(layer.sprite));
+			if (lost.length > 0) {
+				failures.push({
+					id,
+					kind: 'item',
+					reason: `layer sprite ${lost.map(layer => layer.sprite).join(', ')} has no atlas rect; item dropped`,
+				});
+				continue;
+			}
+			items[id] = entry;
+		}
+		if (Object.keys(items).length > 0) {
+			itemPages = itemSheet.pages;
+			itemPack = {
+				padding: itemSheet.padding,
+				pages: itemPages.map((page, index) => {
+					return { file: `item-atlas-${index}.png`, width: page.width, height: page.height };
+				}),
+				sprites: sortedByKey(itemSheet.sprites),
+				items: sortedByKey(items),
+			};
+		}
+	}
+
+	// 8. Emit.
 	await mkdir(output, { recursive: true });
 	const hashes: Record<string, string> = {};
 	let writtenFiles = 0;
@@ -972,7 +893,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	};
 
 	const pageFiles: Array<{ file: string; width: number; height: number; }> = [];
-	for (const [index, page] of packed.pages.entries()) {
+	for (const [index, page] of sheet.pages.entries()) {
 		const file = `atlas-${index}.png`;
 		const raw = Buffer.from(page.data.buffer, page.data.byteOffset, page.data.byteLength);
 		await emit(file, await sharp(raw, { raw: { width: page.width, height: page.height, channels: 4 } })
@@ -980,11 +901,20 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			.toBuffer());
 		pageFiles.push({ file, width: page.width, height: page.height });
 	}
+	for (const [index, page] of itemPages.entries()) {
+		const raw = Buffer.from(page.data.buffer, page.data.byteOffset, page.data.byteLength);
+		await emit(`item-atlas-${index}.png`, await sharp(raw, { raw: { width: page.width, height: page.height, channels: 4 } })
+			.png({ compressionLevel: 9 })
+			.toBuffer());
+	}
+	if (itemPack) {
+		await emit('items.json', JSON.stringify(itemPack satisfies BlockPackItemsFile));
+	}
 	for (const file of tints.files) {
 		await emit(file.path, file.data);
 	}
 	await emit('atlas.json', JSON.stringify({
-		padding: packed.padding,
+		padding: sheet.padding,
 		pages: pageFiles,
 		sprites: sortedByKey(emittedSprites),
 	} satisfies BlockPackAtlasFile));
@@ -1006,8 +936,9 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		blocks: Object.keys(blockStates).length,
 		models: Object.keys(emittedModels).length,
 		sprites: Object.keys(emittedSprites).length,
-		pages: packed.pages.length,
+		pages: sheet.pages.length,
 		biomes: Object.keys(biomes.pack).length,
+		items: Object.keys(itemPack?.items ?? {}).length,
 		failures: failures.length,
 	};
 	// meta.json hashes the pack, so it is written last and hashes nothing of itself.

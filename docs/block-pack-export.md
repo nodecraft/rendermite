@@ -100,7 +100,9 @@ Two changes landed outside `src/blocks/` and both benefit the icon path too:
   tints.json           flat plains colours, colormaps, ramps, per-block semantics
   biomes.json          biome id -> climate and the colours it overrides (absent when there are none)
   colormap/*.png       the version's own grass/foliage/dry_foliage maps
-  failures.json        every block, model, sprite and tintindex the run could not fully handle
+  items.json           item id  -> flat layer sprites, with its own atlas (absent when there are none)
+  item-atlas-N.png     the item sheet's own page(s), addressed by items.json
+  failures.json        every block, model, sprite, tintindex and item the run could not fully handle
   meta.json            version, counts, sha256 of every other file
 ```
 
@@ -158,6 +160,22 @@ sample afterwards (`dark_forest` is `((c & 0xFEFEFE) + 0x28340A) >> 1`, `swamp` 
 does — so a pack states its own version's answer; 1.13 to 1.19.2 fall back to the transcribed table
 in `src/blocks/biomes.ts`. A modded pack describes its own biomes and nothing else. The file is absent when a pack has no biomes to describe, and a consumer without one
 falls back to `tints.json`'s flat plains colours.
+
+**`items.json`.** The flat items — the ones the game draws as a stack of sprites rather than as
+geometry, because `ItemModelGenerator` builds the slab in code and no asset states it. `items[id]`
+is `{ layers: [{ sprite, tintindex?, tint? }] }` in the order the client stacks them; `tintindex` is
+present exactly when the item declares a tint at that layer, and `tint` carries the colour where it
+is knowable from assets (leather's default brown, a water potion's blue) and is absent where it lives
+in the stack's components (a dyed boot, a firework star).
+
+An item is in the file only if its own model is flat. A block item is deliberately absent, so a
+consumer falls through to `blockstates.json` under the same id and draws the cube the game draws.
+That test is what the game asks too, and it is why `minecraft:wheat` comes out right: the item is a
+flat sheaf and the block of the same id is a crop cross.
+
+The file is **self-contained** — its own `padding`, `pages` and `sprites`, on its own `item-atlas-N.png`
+pages rather than the block atlas's. A consumer that only draws blocks never fetches it at all; one
+drawing a world's dropped stacks fetches it once it finds a stack of something that is not a block.
 
 **`meta.json`** carries sha256 for every other file, because the consumer caches these immutably per
 version the same way `icons/<version>/` is cached today.
@@ -250,9 +268,11 @@ blocks/modded/<namespace>/   one mod's namespace, fetched on demand
 | `colormap/*.png` | 29 KB | 29 KB | only for real biome tints |
 | `tints.json` | 2 KB | 1 KB | always |
 | `biomes.json` | 4 KB | 1 KB | only for real biome tints |
+| `items.json` | 170 KB | 14 KB | only for drawing dropped items |
+| `item-atlas-0.png` | 86 KB | 86 KB | only for drawing dropped items |
 | `failures.json` | 10 KB | 1 KB | diagnostics only, never at runtime |
 | `meta.json` | 1 KB | 1 KB | always |
-| **total** | **3.2 MB** | **507 KB** | |
+| **total** | **3.5 MB** | **607 KB** | |
 
 An eight-mod pack (Create, IE, Mekanism, AE2, Botania, Supplementaries, Quark, Farmer's Delight) is
 16.7 MB on disk and **1.8 MB transferred**, on one 2048² page.
@@ -263,8 +283,9 @@ per file is enough to verify a cached copy without refetching it. Serve the JSON
 `content-encoding: gzip`; the PNGs are already deflate.
 
 **Load order.** `meta.json` first (counts and hashes, 1 KB), then `atlas-0.png` in parallel with
-`blockstates.json` + `models.json` + `atlas.json`. Nothing needs `failures.json` at runtime and
-nothing needs `colormap/` until biome tints are wired up.
+`blockstates.json` + `models.json` + `atlas.json`. Nothing needs `failures.json` at runtime,
+nothing needs `colormap/` until biome tints are wired up, and nothing needs `items.json` or
+`item-atlas-N.png` until something draws a dropped stack.
 
 **Knowing what you do not have.** The pack answers this itself, without the sidecar:
 
