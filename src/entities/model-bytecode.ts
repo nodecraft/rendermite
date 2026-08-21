@@ -47,6 +47,8 @@ type Value =
 	| { kind: 'string'; value: string; }
 	| { kind: 'object'; handle: Handle; }
 	| { kind: 'array'; items: Value[]; }
+	/** A lambda, as the method that runs when something calls it. */
+	| { kind: 'lambda'; owner: string; name: string; descriptor: string; }
 	| { kind: 'unknown'; };
 
 /** A tracked object: a part under construction, a cube builder, or a pose. */
@@ -367,6 +369,18 @@ class Interpreter {
 				child.orphaned = true;
 			}
 			this.push({ kind: 'object', handle: child });
+			return;
+		}
+
+		/*
+		 * Something being handed a lambda and a mesh is a `MeshTransformer`: `LayerDefinition.apply(t)`
+		 * calls `t` with the mesh it wraps. Following it is how a donkey gets its chest, which is added
+		 * in a `modifyMesh` the model only ever reaches through one of these.
+		 */
+		const lambda = taken.find(value => value.kind === 'lambda');
+		if (lambda?.kind === 'lambda' && receiver?.kind === 'object' && taken.length === 1) {
+			const applied = this.inline(lambda.owner, lambda.name, lambda.descriptor, null, [receiver]);
+			this.push(returns === 'V' ? null : applied ?? receiver);
 			return;
 		}
 
@@ -746,9 +760,9 @@ class Interpreter {
 				}
 				case op === 0xBA: {
 					/*
-					 * invokedynamic: a lambda, which in a model builder is a supplier passed to something
-					 * else rather than geometry of its own. Consume its arguments and hand back an opaque
-					 * value; bailing here used to lose three models that were otherwise complete.
+					 * invokedynamic: a lambda. Its arguments are whatever it captured, and the value it
+					 * leaves is the function itself — named, so that whatever is handed it can be followed
+					 * into. A model reaches its `MeshTransformer` this way and no other.
 					 */
 					const index = (code[at] << 8) | code[at + 1];
 					at += 4;
@@ -757,7 +771,10 @@ class Interpreter {
 					for (let count = 0; count < args.length; count++) {
 						this.pop();
 					}
-					this.push(returns === 'V' ? null : { kind: 'unknown' });
+					const target = constants.lambdaTarget(index);
+					this.push(returns === 'V'
+						? null
+						: (target ? { kind: 'lambda', ...target } : { kind: 'unknown' }));
 					break;
 				}
 				/*

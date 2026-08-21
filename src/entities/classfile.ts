@@ -26,6 +26,10 @@ export interface Constant {
 	nameAndTypeIndex?: number;
 	descriptorIndex?: number;
 	stringIndex?: number;
+	/** A `methodHandle`'s target: an index of a `methodref`, not of a `nameAndType`. */
+	referenceIndex?: number;
+	/** An `invokeDynamic`'s row in the `BootstrapMethods` attribute. */
+	bootstrapIndex?: number;
 }
 
 export interface MethodInfo {
@@ -47,6 +51,14 @@ export interface ClassFile {
 	reference: (index: number) => { owner: string; name: string; descriptor: string; } | null;
 	/** The value an `ldc` of this index pushes: a number for numeric constants, a string for `string`. */
 	literal: (index: number) => string | number | bigint | null;
+	/**
+	 * The method a lambda actually runs, for an `invokedynamic`'s pool index.
+	 *
+	 * A lambda compiles to a call through `LambdaMetafactory` with the real body in a synthetic method,
+	 * so this is two hops: the pool entry names a row of the `BootstrapMethods` attribute, and that
+	 * row's second argument is a method handle pointing at the body.
+	 */
+	lambdaTarget: (index: number) => { owner: string; name: string; descriptor: string; } | null;
 }
 
 class Reader {
@@ -194,8 +206,9 @@ function readConstantPool(reader: Reader): Array<Constant | null> {
 				break;
 			}
 			case 'methodHandle': {
+				// reference_kind, then the methodref or fieldref it points at
 				reader.skip(1);
-				constants.push({ tag, nameAndTypeIndex: reader.u2() });
+				constants.push({ tag, referenceIndex: reader.u2() });
 				break;
 			}
 			case 'methodType': {
@@ -204,8 +217,7 @@ function readConstantPool(reader: Reader): Array<Constant | null> {
 			}
 			case 'dynamic':
 			case 'invokeDynamic': {
-				reader.skip(2);
-				constants.push({ tag, nameAndTypeIndex: reader.u2() });
+				constants.push({ tag, bootstrapIndex: reader.u2(), nameAndTypeIndex: reader.u2() });
 				break;
 			}
 		}
@@ -213,13 +225,39 @@ function readConstantPool(reader: Reader): Array<Constant | null> {
 	return constants;
 }
 
-/** Skips an attribute table, returning the `Code` bytes if one of them is a Code attribute. */
-function readAttributes(reader: Reader, utf8: (index: number) => string): Uint8Array | undefined {
+/** One row of `BootstrapMethods`: the factory, and the arguments it was given. */
+interface BootstrapMethod {
+	handleIndex: number;
+	argumentIndexes: number[];
+}
+
+/**
+ * Skips an attribute table, keeping the two that say what a method does: `Code`, and the class-level
+ * `BootstrapMethods` that a lambda's real body is reachable through.
+ */
+function readAttributes(
+	reader: Reader,
+	utf8: (index: number) => string,
+	bootstraps?: BootstrapMethod[],
+): Uint8Array | undefined {
 	let code: Uint8Array | undefined;
 	const count = reader.u2();
 	for (let index = 0; index < count; index++) {
 		const name = utf8(reader.u2());
 		const length = reader.u4();
+		if (name === 'BootstrapMethods' && bootstraps) {
+			const rows = reader.u2();
+			for (let row = 0; row < rows; row++) {
+				const handleIndex = reader.u2();
+				const argumentCount = reader.u2();
+				const argumentIndexes: number[] = [];
+				for (let argument = 0; argument < argumentCount; argument++) {
+					argumentIndexes.push(reader.u2());
+				}
+				bootstraps.push({ handleIndex, argumentIndexes });
+			}
+			continue;
+		}
 		if (name !== 'Code') {
 			reader.skip(length);
 			continue;
@@ -279,6 +317,9 @@ export function parseClassFile(bytes: Uint8Array): ClassFile {
 		const code = readAttributes(reader, utf8);
 		methods.push({ name, descriptor, accessFlags, code });
 	}
+	// The class's own attributes, for the one that names every lambda body in the file
+	const bootstraps: BootstrapMethod[] = [];
+	readAttributes(reader, utf8, bootstraps);
 
 	const reference = (index: number): { owner: string; name: string; descriptor: string; } | null => {
 		const entry = constants[index];
@@ -307,5 +348,28 @@ export function parseClassFile(bytes: Uint8Array): ClassFile {
 		return entry.value ?? null;
 	};
 
-	return { thisClass, superClass, constants, methods, utf8, reference, literal };
+	const lambdaTarget = (index: number): { owner: string; name: string; descriptor: string; } | null => {
+		const entry = constants[index];
+		const row = entry?.bootstrapIndex === undefined ? undefined : bootstraps[entry.bootstrapIndex];
+		if (!row) {
+			return null;
+		}
+		/*
+		 * `LambdaMetafactory.metafactory` takes the erased signature, the implementation handle, and the
+		 * instantiated signature. The second is the body; a handle anywhere else in the row is a captured
+		 * value rather than code, so this looks for the first argument that is one.
+		 */
+		for (const argument of row.argumentIndexes) {
+			const handle = constants[argument];
+			if (handle?.tag === 'methodHandle' && handle.referenceIndex !== undefined) {
+				const target = reference(handle.referenceIndex);
+				if (target) {
+					return target;
+				}
+			}
+		}
+		return null;
+	};
+
+	return { thisClass, superClass, constants, methods, utf8, reference, literal, lambdaTarget };
 }

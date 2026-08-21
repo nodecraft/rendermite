@@ -39,13 +39,20 @@ export function mergeModels(base: ExtractedModel, extra: ExtractedModel): Extrac
 	if (missing.length === 0) {
 		return base;
 	}
+	const parts = target.container
+		? [{ ...target.container, children: [...target.container.children, ...missing] }]
+		: [...target.slots, ...missing];
+	/*
+	 * A disconnected-roots note describes a model that came out in pieces, so it has no business
+	 * surviving onto one that did not: a merge that leaves a single root has answered it.
+	 */
+	const notes = [...new Set([...base.notes, ...extra.notes])]
+		.filter(note => parts.length > 1 || !note.includes('disconnected roots'));
 	return {
 		// A piece that never states its own sheet size takes the other's
 		textureSize: base.textureSize[0] === 64 && base.textureSize[1] === 32 ? extra.textureSize : base.textureSize,
-		parts: target.container
-			? [{ ...target.container, children: [...target.container.children, ...missing] }]
-			: [...target.slots, ...missing],
-		notes: [...new Set([...base.notes, ...extra.notes])],
+		parts,
+		notes,
 	};
 }
 

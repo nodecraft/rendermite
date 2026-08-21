@@ -35,7 +35,6 @@ import { FolderResourceManager, LayeredResourceManager } from '../resources/mana
 import { TextureLoader } from '../textures/loader.ts';
 
 import type { BlockModelVariant, BlockStateDefinition, BlockStateVariantCase } from './blockstate-eval.ts';
-import type { ClassSource } from './entity-models.ts';
 import type {
 	BlockPackAtlasFile,
 	BlockPackBiomesFile,
@@ -54,6 +53,7 @@ import type {
 	BlockPackVariant,
 	ItemPackEntry,
 } from './pack-format.ts';
+import type { ClassSource } from '../entities/jar-classes.ts';
 import type { ResolvedModel } from '../models/loader.ts';
 import type {
 	FaceDirectionName,

@@ -38,7 +38,9 @@ jobs:
       - run: npm run build
       - run: npm run test
         env:
-          NODE_OPTIONS: --max_old_space_size=6144
+          # One ceiling per worker, and vitest now runs one worker per core, so
+          # this has to leave room for both inside the runner's 7GB.
+          NODE_OPTIONS: --max_old_space_size=3072
 
   # Performance monitoring (reporting, not a gate). Both sides are measured on
   # this runner, in one process, so full history is needed to check out the base

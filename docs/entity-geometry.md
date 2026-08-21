@@ -82,6 +82,11 @@ That one decision is why a single interpreter covers obfuscated vanilla (`fyp.a(
 deobfuscated vanilla, and a mod shipping its own copy of the API
 (`AdvancedModelBox.addBox(FFFFFFFZ)V`) with no per-mod table.
 
+**A modded export reads the mods' classes too.** The class source is layered, mods over the client, the
+same way the resource managers are. It was the client jar alone until this was noticed, which meant a
+mod writing its models in Java — most of them — had every mob drawn as a box however good the
+interpreter was.
+
 **Calls into the model's own code are followed, with their arguments.** A model is almost never built
 in one method, let alone one class. `CowModel` calls `super(12, 0)` and inherits four legs whose height
 *is* that 12; 26.2's `PigModel` starts from `QuadrupedModel.createBodyMesh(6, …)` and replaces only the
@@ -125,9 +130,19 @@ clear (its launcher entrypoint is never obfuscated), so a looser check reads 1.2
    reduce to `lionfish`. Last, and only for mods: a fuzzy match is a guess and must never beat a class
    the game actually points at.
 
+7. **A vanilla model under a mod id**, last of all. Plenty of mod entities are drawn with the game's
+   own models and ship no geometry because they need none: Ars Nouveau's `summon_horse` is a horse,
+   its `ally_vex` a vex, and a mod adding a spawner for one calls it `iron_golem_spawner`. So the
+   decoration comes off a token at a time and the routes above are retried on what is left, longest
+   match first — which is why that last one finds the iron golem rather than stopping at `iron`. Worth
+   67 of the modpack corpus's entities, and the reason the class source has to span the jars.
+
 An entity is credited to the most derived class that carries geometry, which — since the calls are
 followed — is usually its own: a zombie is a `ZombieModel` holding the humanoid shape it inherits,
 rather than a `HumanoidModel` shared with everything else humanoid.
+
+A mod's own `.geo.json` beats that last route and loses to every other: dropping tokens until something
+matches is a guess, and if the mod ships geometry under its own name then that is what the game draws.
 
 `NO_MODEL` lists the types the game draws with no `ModelPart` hierarchy at all — a dropped stack, a
 falling block, a marker, the display entities, the projectiles it draws as item sprites. It exists so
@@ -157,10 +172,17 @@ and it pins the cube counts too. Those counts are around a fifth higher than bef
 followed, and much of the difference is parts that had been missing since 1.14: the four legs of every
 quadruped, at the height its constructor asked for.
 
-Modded, measured across 309 jars of a real modpack: 103 of 327 entity types and 4,513 cubes from the
-code, with two mods (Swashbucklers and L_Ender's Cataclysm) contributing 75 types and 3,807 of those.
-Another 54 types come from the bedrock geometry a GeckoLib mod ships instead, for 157 of 327 together —
-see below.
+Modded, measured across the 309 jars of a real modpack, with the client's classes layered under theirs:
+
+| route | types |
+| --- | --- |
+| the mod's own model class | 103 |
+| a vanilla model under a mod id | 67 |
+| the mod's own bedrock geometry | 50 |
+| named model or alias | 4 |
+| **total** | **224 of 327 (69%)**, 8,778 cubes |
+
+The whole sweep is 16 s for 309 jars.
 
 Extraction is not a meaningful cost, per `bench/entities.bench.ts` against 1.21.8: reading every model
 class in the jar up front is 71 ms, interpreting all 102 of them is 8.9 ms, and one entity is ~1 ms to
@@ -179,11 +201,13 @@ of them. The model carries a note saying which of several shapes it is.
 
 **A part whose parent cannot be identified comes out as a disconnected root.** It keeps its own pose
 and hangs from the model root instead, which is the most that can honestly be said about it, and the
-model carries a `disconnected roots` note because a consumer cannot tell from the geometry alone. One
-vanilla model is in that position: the donkey, from 1.21.4 on, whose chest is added inside a
-`MeshTransformer` lambda — and a lambda is consumed rather than followed.
+model carries a `disconnected roots` note, because a consumer cannot tell from the geometry alone.
 
-Nine models carried that note before calls were followed, and none of them needed to.
+**No vanilla model is in that position any more**, on any version from 1.14.4 up. Nine were before
+calls were followed; the last was the donkey, whose chest is added inside a `MeshTransformer` lambda —
+`LayerDefinition.apply(mesh -> modifyMesh(mesh.getRoot()))`. A lambda is now followed rather than
+consumed, which takes two hops through the class file: the `invokedynamic` names a row of
+`BootstrapMethods`, and that row's method handle names the body. A mod's model can still land here.
 
 **1.13.x gets nothing.** Obfuscated, and from before Mojang published the maps. Reported once against
 the version rather than once per mob.
@@ -260,17 +284,9 @@ The search never leaves a `geo` directory, so the worst case is finding nothing.
 
 ### What it adds
 
-On the OceanBlock corpus, 309 jars and 327 registered entity types:
-
-| source | types | cubes |
-| --- | --- | --- |
-| bytecode | 103 | 4,513 |
-| bedrock | 54 | 1,415 |
-| **together** | **157 (48%)** | **5,928** |
-
-The whole sweep is 3.2 s. What remains is mostly not mobs: spell projectiles, `flying_item`, seats,
-camera entities, lang keys that are category headers rather than types, and mod summons drawn with
-*vanilla* models (`summon_horse`, `ally_vex`) which a single-jar export cannot reach.
+50 of the modpack corpus's 224 covered entities come this way — see the coverage table above for how
+that sits against the code routes. What remains uncovered is mostly not mobs at all: spell projectiles,
+`flying_item`, seats, camera entities, and lang keys that are category headers rather than types.
 
 ## Flags
 

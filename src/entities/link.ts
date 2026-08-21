@@ -269,7 +269,7 @@ export interface EntityModelLink {
 	/** The class to actually read the bytecode of. */
 	obfuscated: string;
 	/** How it was found, so a report can say how much rests on the curated table. */
-	route: 'model-name' | 'renderer' | 'alias' | 'mod-name';
+	route: 'model-name' | 'renderer' | 'alias' | 'mod-name' | 'vanilla-name';
 }
 
 /**
@@ -335,6 +335,8 @@ export async function linkEntityModel(
 	context: LinkContext,
 ): Promise<EntityModelLink | null> {
 	const name = entityId.includes(':') ? entityId.slice(entityId.indexOf(':') + 1) : entityId;
+	// A namespaced id is a mod's, and only a mod's can borrow a vanilla model at the end of this
+	const modded = entityId.includes(':') && !entityId.startsWith('minecraft:');
 	const { mappings } = context;
 
 	const accept = async (className: string, route: EntityModelLink['route']): Promise<EntityModelLink | null> => {
@@ -401,9 +403,9 @@ export async function linkEntityModel(
 	}
 
 	/*
-	 * Last: the mod route. A mod names its classes however it likes, so the only thing left is the name
-	 * itself, reduced to the entity it is about. Deliberately after every exact route — a fuzzy match is
-	 * a guess, and it must never beat a class the game actually points at.
+	 * The mod route. A mod names its classes however it likes, so the only thing left is the name itself,
+	 * reduced to the entity it is about. Deliberately after every exact route — a fuzzy match is a guess,
+	 * and it must never beat a class the game actually points at.
 	 */
 	for (const internal of context.nameIndex?.get(normaliseModelName(name)) ?? []) {
 		const dotted = internal.replaceAll('/', '.');
@@ -411,7 +413,49 @@ export async function linkEntityModel(
 			return { className: dotted, obfuscated: dotted, route: 'mod-name' };
 		}
 	}
+
+	/*
+	 * Last of all: a mod entity drawn with a *vanilla* model, of which there are plenty. Ars Nouveau's
+	 * `summon_horse` and `summon_skeleton` are the game's own horse and skeleton, its `ally_vex` is a
+	 * vex, and a mod adding a spawner for one calls it `iron_golem_spawner`. None of them ship geometry,
+	 * because none of them need to.
+	 *
+	 * So the decoration comes off a token at a time and the routes above are tried on what is left,
+	 * longest first — which is why `iron_golem_spawner` finds the iron golem rather than stopping at
+	 * `iron`. Recursed without a namespace, so what is left takes the vanilla routes and stops there.
+	 */
+	if (modded) {
+		for (const shorter of withTokensDropped(name)) {
+			const found = await linkEntityModel(shorter, context);
+			if (found) {
+				return { ...found, route: 'vanilla-name' };
+			}
+		}
+	}
 	return null;
+}
+
+/**
+ * The name with some of its tokens dropped, longest first: `summon_horse` gives `summon` and `horse`.
+ *
+ * Capped at five tokens, because the subsets double with each one and no id is longer than that for a
+ * reason this would help with.
+ */
+function withTokensDropped(name: string): string[] {
+	const tokens = name.split('_').filter(token => token.length > 0);
+	if (tokens.length < 2 || tokens.length > 5) {
+		return [];
+	}
+	const found: string[] = [];
+	for (let size = tokens.length - 1; size >= 1; size--) {
+		for (let mask = 0; mask < 2 ** tokens.length; mask++) {
+			const kept = tokens.filter((token, index) => (mask & (1 << index)) !== 0);
+			if (kept.length === size) {
+				found.push(kept.join('_'));
+			}
+		}
+	}
+	return [...new Set(found)];
 }
 
 /** Reads and caches classes out of an extracted jar directory or a jar reader. */
