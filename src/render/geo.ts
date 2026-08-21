@@ -28,6 +28,8 @@ interface GeoCube {
 	size?: number[];
 	uv?: number[] | Record<string, { uv: number[]; uv_size?: number[]; }>;
 	inflate?: number;
+	/** Bedrock mirrors a box's texture rather than its geometry, so only a consumer's UVs care. */
+	mirror?: boolean;
 	pivot?: number[];
 	rotation?: number[];
 }
@@ -50,7 +52,7 @@ interface GeoFile {
 	[key: string]: unknown;
 }
 
-interface ParsedGeo {
+export interface ParsedGeo {
 	textureWidth: number;
 	textureHeight: number;
 	bones: GeoBone[];
@@ -314,7 +316,8 @@ export async function findGeoForItem(
 }
 
 /** Name tokens, dropping the numeric suffixes mods use for shape variants. */
-function nameTokens(name: string): string[] {
+/** Tokens of a name, for the matches that need to see through a mod's own spelling of it. */
+export function nameTokens(name: string): string[] {
 	return name.split(/[/_]/).filter(token => token.length > 0 && !/^\d+$/.test(token));
 }
 
