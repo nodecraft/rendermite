@@ -23,6 +23,7 @@ import { INVISIBLE_BLOCKS, blockEntityGeometry, synthesizeVariants } from './blo
 import { collectModels, parseBlockState } from './blockstate-eval.ts';
 import { collectEntities } from './entities.ts';
 import { collectEntityGeometry } from './entity-models.ts';
+import { geoBlockModel } from './geo-blocks.ts';
 import { collectItemSprites } from './item-sprites.ts';
 import { buildObjMesh } from './obj-mesh.ts';
 import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
@@ -545,6 +546,23 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		modelTintIndices.set(reference, tintIndices);
 		for (const sprite of sprites) {
 			spriteIds.add(sprite);
+		}
+	}
+
+	// Some GeckoLib blocks ship a cube only as their breaking-particle placeholder; the client swaps
+	// in a `.geo.json` from its block-entity renderer. Replace those references before deciding whether
+	// a block already draws something, retaining the blockstate's own six-way rotations.
+	for (const [id, references] of blockModels) {
+		const geo = await geoBlockModel(id, resources);
+		if (!geo) {
+			continue;
+		}
+		for (const reference of references) {
+			emittedModels[reference] = geo;
+			modelTintIndices.set(reference, new Set());
+		}
+		for (const group of geo.mesh ?? []) {
+			spriteIds.add(group.sprite);
 		}
 	}
 
