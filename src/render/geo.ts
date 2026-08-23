@@ -26,7 +26,7 @@ import type { TextureLoader } from '../textures/loader.ts';
 interface GeoCube {
 	origin?: number[];
 	size?: number[];
-	uv?: number[] | Record<string, { uv: number[]; uv_size?: number[]; }>;
+	uv?: number[] | Record<string, { uv: number[]; uv_size?: number[]; uv_rotation?: number; }>;
 	inflate?: number;
 	/** Bedrock mirrors a box's texture rather than its geometry, so only a consumer's UVs care. */
 	mirror?: boolean;
@@ -103,26 +103,78 @@ function rotatePoint(point: Vec3, pivot: Vec3, rotation: Vec3): Vec3 {
 interface BoxFaceSpec {
 	direction: FaceGeometry['direction'];
 	corners: [Vec3, Vec3, Vec3, Vec3];
-	uv: [number, number, number, number];
 }
 
-/** Standard Minecraft box unwrap for `uv: [u, v]` cubes. */
-function boxFaces(origin: Vec3, size: Vec3, u: number, v: number): BoxFaceSpec[] {
+/** Bedrock cube vertices in source space; X is mirrored after cube and bone rotations. */
+function boxFaces(origin: Vec3, size: Vec3): BoxFaceSpec[] {
 	const [ox, oy, oz] = origin;
 	const [sx, sy, sz] = size;
 	const x1 = ox + sx;
 	const y1 = oy + sy;
 	const z1 = oz + sz;
 	const corner = (x: number, y: number, z: number): Vec3 => [x, y, z];
-	// Quad corner order mirrors geometry.ts: v0..v3 map to uv rect corners.
 	return [
-		{ direction: 'up', corners: [corner(ox, y1, oz), corner(x1, y1, oz), corner(x1, y1, z1), corner(ox, y1, z1)], uv: [u + sz, v, u + sz + sx, v + sz] },
-		{ direction: 'down', corners: [corner(ox, oy, z1), corner(x1, oy, z1), corner(x1, oy, oz), corner(ox, oy, oz)], uv: [u + sz + sx, v, u + sz + sx + sx, v + sz] },
-		{ direction: 'north', corners: [corner(x1, y1, oz), corner(ox, y1, oz), corner(ox, oy, oz), corner(x1, oy, oz)], uv: [u + sz, v + sz, u + sz + sx, v + sz + sy] },
-		{ direction: 'south', corners: [corner(ox, y1, z1), corner(x1, y1, z1), corner(x1, oy, z1), corner(ox, oy, z1)], uv: [u + sz + sx + sz, v + sz, u + sz + sx + sz + sx, v + sz + sy] },
-		{ direction: 'east', corners: [corner(x1, y1, z1), corner(x1, y1, oz), corner(x1, oy, oz), corner(x1, oy, z1)], uv: [u, v + sz, u + sz, v + sz + sy] },
-		{ direction: 'west', corners: [corner(ox, y1, oz), corner(ox, y1, z1), corner(ox, oy, z1), corner(ox, oy, oz)], uv: [u + sz + sx, v + sz, u + sz + sx + sz, v + sz + sy] },
+		{ direction: 'up', corners: [corner(ox, y1, oz), corner(x1, y1, oz), corner(x1, y1, z1), corner(ox, y1, z1)] },
+		{ direction: 'down', corners: [corner(ox, oy, z1), corner(x1, oy, z1), corner(x1, oy, oz), corner(ox, oy, oz)] },
+		{ direction: 'north', corners: [corner(x1, y1, oz), corner(ox, y1, oz), corner(ox, oy, oz), corner(x1, oy, oz)] },
+		{ direction: 'south', corners: [corner(ox, y1, z1), corner(x1, y1, z1), corner(x1, oy, z1), corner(ox, oy, z1)] },
+		{ direction: 'east', corners: [corner(x1, y1, z1), corner(x1, y1, oz), corner(x1, oy, oz), corner(x1, oy, z1)] },
+		{ direction: 'west', corners: [corner(ox, y1, oz), corner(ox, y1, z1), corner(ox, oy, z1), corner(ox, oy, oz)] },
 	];
+}
+
+function compactUv(direction: FaceGeometry['direction'], size: Vec3, u: number, v: number): [number, number, number, number] {
+	const [sx, sy, sz] = size;
+	if (direction === 'west') {
+		return [u + sz + sx, v + sz, u + sz + sx + sz, v + sz + sy];
+	}
+	if (direction === 'east') {
+		return [u, v + sz, u + sz, v + sz + sy];
+	}
+	if (direction === 'north') {
+		return [u + sz, v + sz, u + sz + sx, v + sz + sy];
+	}
+	if (direction === 'south') {
+		return [u + sz + sx + sz, v + sz, u + sz + sx + sz + sx, v + sz + sy];
+	}
+	if (direction === 'up') {
+		return [u + sz, v, u + sz + sx, v + sz];
+	}
+	return [u + sz + sx, v + sz, u + sz + sx + sx, v];
+}
+
+function mirroredDirection(direction: FaceGeometry['direction']): FaceGeometry['direction'] {
+	if (direction === 'east') {
+		return 'west';
+	}
+	if (direction === 'west') {
+		return 'east';
+	}
+	return direction;
+}
+
+function faceUvSize(direction: FaceGeometry['direction'], size: Vec3): [number, number] {
+	if (direction === 'west' || direction === 'east') {
+		return [size[2], size[1]];
+	}
+	if (direction === 'up' || direction === 'down') {
+		return [size[0], size[2]];
+	}
+	return [size[0], size[1]];
+}
+
+function rotateUvs(
+	uvs: [[number, number], [number, number], [number, number], [number, number]],
+	degrees: number,
+): [[number, number], [number, number], [number, number], [number, number]] {
+	const rotated = [...uvs] as [[number, number], [number, number], [number, number], [number, number]];
+	for (let step = 0; step < Math.floor(((degrees % 360) + 360) % 360 / 90); step++) {
+		const last = rotated.pop();
+		if (last) {
+			rotated.unshift(last);
+		}
+	}
+	return rotated;
 }
 
 /** Convert a parsed geo into face geometry, unit-cube fitted with gui pose. */
@@ -158,21 +210,36 @@ export function geoToFaces(geo: ParsedGeo, options: { fit?: boolean; } = {}): Fa
 				continue;
 			}
 			const inflate = cube.inflate ?? 0;
+			const rawSize: Vec3 = [cube.size[0], cube.size[1], cube.size[2]];
 			const origin: Vec3 = [cube.origin[0] - inflate, cube.origin[1] - inflate, cube.origin[2] - inflate];
 			const size: Vec3 = [cube.size[0] + inflate * 2, cube.size[1] + inflate * 2, cube.size[2] + inflate * 2];
 			const uvBase = Array.isArray(cube.uv) ? cube.uv : null;
 			const perFace = !Array.isArray(cube.uv) && cube.uv ? cube.uv : null;
 
-			for (const spec of boxFaces(origin, size, uvBase?.[0] ?? 0, uvBase?.[1] ?? 0)) {
-				let uvRect = spec.uv;
+			for (const spec of boxFaces(origin, size)) {
+				// Bedrock +X becomes Java -X after rotations, so a source east quad is the
+				// physical west face (and vice versa). Select named and compact UVs by that
+				// final identity rather than by the pre-mirror source quad.
+				const direction = mirroredDirection(spec.direction);
+				let uvRect = compactUv(direction, rawSize, uvBase?.[0] ?? 0, uvBase?.[1] ?? 0);
+				let uvRotation = 0;
 				if (perFace) {
-					const entry = perFace[spec.direction];
+					const entry = perFace[direction];
 					if (!entry) {
 						continue;
 					}
-					const uvSize = entry.uv_size ?? [size[0], size[1]];
+					const uvSize = entry.uv_size ?? faceUvSize(direction, rawSize);
 					uvRect = [entry.uv[0], entry.uv[1], entry.uv[0] + uvSize[0], entry.uv[1] + uvSize[1]];
+					uvRotation = entry.uv_rotation ?? 0;
 				}
+				const [u1, v1, u2, v2] = uvRect;
+				// GeoQuad swaps the horizontal endpoints for an ordinary cube. A mirrored cube
+				// leaves them in source order. Preserve all four corners because negative compact
+				// down-face heights and per-face rotations cannot be losslessly reduced to a rect.
+				let uvs: [[number, number], [number, number], [number, number], [number, number]] = cube.mirror
+					? [[u1, v1], [u2, v1], [u2, v2], [u1, v2]]
+					: [[u2, v1], [u1, v1], [u1, v2], [u2, v2]];
+				uvs = rotateUvs(uvs, uvRotation);
 				// Apply cube rotation, then the bone chain leaf-to-root.
 				let corners = spec.corners.map(point => [...point] as Vec3);
 				if (cube.rotation && cube.pivot) {
@@ -183,15 +250,11 @@ export function geoToFaces(geo: ParsedGeo, options: { fit?: boolean; } = {}): Fa
 						corners = corners.map(point => rotatePoint(point, link.pivot as Vec3, link.rotation as Vec3));
 					}
 				}
-				// Mirror X: Bedrock's +x is Java's -x. Negating one axis reverses the
-				// quad's winding, which flips the normal renderFace culls on — left
-				// alone, every geo model rendered inside-out, showing the far faces
-				// (a cube drew its bottom from a top-down view). Reversing the corner
-				// order restores the winding, and because renderFace pairs UV corners
-				// to vertices by index it mirrors the face's texture to match the
-				// mirrored geometry.
+				// Bedrock +X is Java -X. The reflection reverses winding, so reverse vertices
+				// and their exact UV partners together for renderFace and the triangle mesh.
 				corners = corners.map(point => [-point[0], point[1], point[2]] as Vec3);
 				corners = [corners[0], corners[3], corners[2], corners[1]];
+				uvs = [uvs[0], uvs[3], uvs[2], uvs[1]];
 				for (const point of corners) {
 					for (let axis = 0; axis < 3; axis++) {
 						min[axis] = Math.min(min[axis], point[axis]);
@@ -199,10 +262,11 @@ export function geoToFaces(geo: ParsedGeo, options: { fit?: boolean; } = {}): Fa
 					}
 				}
 				faces.push({
-					direction: spec.direction,
+					direction,
 					vertices: corners as [Vec3, Vec3, Vec3, Vec3],
 					uv1: [uvRect[0] / geo.textureWidth, uvRect[1] / geo.textureHeight],
 					uv2: [uvRect[2] / geo.textureWidth, uvRect[3] / geo.textureHeight],
+					uvs: uvs.map(uv => [uv[0] / geo.textureWidth, uv[1] / geo.textureHeight]) as FaceGeometry['uvs'],
 					textureRef: '#geo',
 					rotation: 0,
 					tintIndex: null,

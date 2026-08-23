@@ -138,10 +138,19 @@ export function renderFace(
 		};
 	});
 
-	const absU1 = geometry.uv1[0] * face.texture.width;
-	const absV1 = geometry.uv1[1] * face.texture.height;
-	const absU2 = geometry.uv2[0] * face.texture.width;
-	const absV2 = geometry.uv2[1] * face.texture.height;
+	const explicitUvs = geometry.uvs;
+	const normalizedBounds = explicitUvs
+		? [
+			Math.min(...explicitUvs.map(uv => uv[0])),
+			Math.min(...explicitUvs.map(uv => uv[1])),
+			Math.max(...explicitUvs.map(uv => uv[0])),
+			Math.max(...explicitUvs.map(uv => uv[1])),
+		]
+		: [geometry.uv1[0], geometry.uv1[1], geometry.uv2[0], geometry.uv2[1]];
+	const absU1 = normalizedBounds[0] * face.texture.width;
+	const absV1 = normalizedBounds[1] * face.texture.height;
+	const absU2 = normalizedBounds[2] * face.texture.width;
+	const absV2 = normalizedBounds[3] * face.texture.height;
 	const tint = geometry.tintIndex !== null ? face.tint : null;
 	// Emissive elements stand in for a mod's fullbright render type, where the
 	// game ignores the light source entirely.
@@ -187,7 +196,7 @@ export function renderFace(
 	}
 
 	// UV corners in v0..v3 order; face rotation cycles the assignment.
-	const uvs: Array<[number, number]> = [
+	const uvs: Array<[number, number]> = explicitUvs?.map(uv => [uv[0], uv[1]]) ?? [
 		[geometry.uv1[0], geometry.uv1[1]],
 		[geometry.uv1[0] + uvWidth, geometry.uv1[1]],
 		[geometry.uv1[0] + uvWidth, geometry.uv1[1] + uvHeight],

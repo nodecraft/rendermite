@@ -577,9 +577,11 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		}
 		if (override.javaFacing && definition.kind === 'variants'
 			&& !definition.cases.some(part => part.when.facing !== undefined)) {
-			// GeoBlockRenderer applies these counter-clockwise rotations in Java. The broad original
-			// case remains the fallback for fixed blocks such as Oritech's solar panel controller.
-			for (const [facing, y] of Object.entries({ north: 0, east: 270, south: 180, west: 90 })) {
+			// GeoBlockRenderer rotates a PoseStack around +Y, while a blockstate's positive `y` uses
+			// the opposite sign. Convert the Java angles rather than copying them directly; otherwise
+			// east- and west-facing multiblocks are turned 180 degrees and expose their rear surfaces.
+			// The broad original case remains the fallback for fixed blocks such as solar controllers.
+			for (const [facing, y] of Object.entries({ north: 0, east: 90, south: 180, west: 270 })) {
 				definition.cases.push({
 					when: { facing },
 					apply: [{ model: reference, x: 0, y, z: 0, uvlock: false, weight: 1 }],
