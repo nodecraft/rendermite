@@ -21,6 +21,7 @@ import sharp from 'sharp';
 import { buildBiomeClimates } from './biomes.ts';
 import { INVISIBLE_BLOCKS, blockEntityGeometry, synthesizeVariants } from './block-entities.ts';
 import { collectModels, parseBlockState } from './blockstate-eval.ts';
+import { enderStorageBlockModel } from './ender-storage.ts';
 import { collectEntities } from './entities.ts';
 import { collectEntityGeometry } from './entity-models.ts';
 import { geoBlockModel } from './geo-blocks.ts';
@@ -192,6 +193,10 @@ const DYNAMIC_BLOCK_ENTITY_SPRITES: Readonly<Record<string, readonly string[]>> 
 		'ae2:part/export_bus_sides',
 		'ae2:part/monitor_back',
 		'ae2:part/monitor_sides_status',
+	],
+	enderstorage: [
+		'enderstorage:buttons',
+		'enderstorage:hedronmap',
 	],
 };
 
@@ -562,6 +567,22 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			modelTintIndices.set(reference, new Set());
 		}
 		for (const group of geo.mesh ?? []) {
+			spriteIds.add(group.sprite);
+		}
+	}
+
+	// Ender Storage's tank is likewise a Java-rendered block, but its real mesh is shipped as a
+	// CodeChicken OBJ rather than GeckoLib JSON. Replace the empty dummy model with that mesh.
+	for (const [id, references] of blockModels) {
+		const enderStorage = await enderStorageBlockModel(id, resources);
+		if (!enderStorage) {
+			continue;
+		}
+		for (const reference of references) {
+			emittedModels[reference] = enderStorage;
+			modelTintIndices.set(reference, new Set());
+		}
+		for (const group of enderStorage.mesh ?? []) {
 			spriteIds.add(group.sprite);
 		}
 	}
