@@ -169,6 +169,32 @@ const FLUID_SUFFIX = /_(?:still|flow|flowing)$/;
 const EXTRA_FLUID_SPRITES = ['minecraft:block/water_overlay'];
 
 /**
+ * Sprites selected by block-entity NBT rather than by a JSON blockstate/model graph.
+ *
+ * AE2's cable bus is assembled in Java from a saved cable plus zero or more face parts. Its JSON
+ * models are therefore unreachable from `collectModels`, even though a consumer has enough NBT to
+ * reconstruct it. Keep the small, stable texture vocabulary in the atlas for that renderer.
+ */
+const DYNAMIC_BLOCK_ENTITY_SPRITES: Readonly<Record<string, readonly string[]>> = {
+	ae2: [
+		'ae2:part/cable/glass/transparent',
+		'ae2:part/cable/covered/transparent',
+		'ae2:part/cable/smart/transparent',
+		'ae2:part/cable/dense_covered/transparent',
+		'ae2:part/cable/dense_smart/transparent',
+		'ae2:part/storage_bus',
+		'ae2:part/storage_bus_back',
+		'ae2:part/storage_bus_sides',
+		'ae2:part/import_bus',
+		'ae2:part/import_bus_sides',
+		'ae2:part/export_bus',
+		'ae2:part/export_bus_sides',
+		'ae2:part/monitor_back',
+		'ae2:part/monitor_sides_status',
+	],
+};
+
+/**
  * Vanilla's `BlockElement.uvsByFace`: the UV a face gets when the model states
  * none. Deliberately not `render/geometry.ts`'s auto-UVs — those are in the
  * rasterizer's own unflipped convention, and the pack has to speak the same
@@ -753,6 +779,13 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	for (const extra of EXTRA_FLUID_SPRITES) {
 		if (await resources.hasResource('texture', ResourceLocator.parse(extra))) {
 			spriteIds.add(extra);
+		}
+	}
+	for (const namespace of namespaces) {
+		for (const extra of DYNAMIC_BLOCK_ENTITY_SPRITES[namespace] ?? []) {
+			if (await resources.hasResource('texture', ResourceLocator.parse(extra))) {
+				spriteIds.add(extra);
+			}
 		}
 	}
 	const sheet = await buildSpriteSheet(spriteIds, textures, {
