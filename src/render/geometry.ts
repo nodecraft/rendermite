@@ -14,6 +14,8 @@ export interface FaceGeometry {
 	/** Normalized UV rect corners (0–1). */
 	uv1: [number, number];
 	uv2: [number, number];
+	/** Explicit v0..v3 UVs for formats whose face mapping is not representable by a rectangle rotation. */
+	uvs?: [[number, number], [number, number], [number, number], [number, number]];
 	textureRef: string;
 	/** Degrees 0/90/180/270 — rotates the UV corner assignment. */
 	rotation: number;
@@ -133,11 +135,11 @@ export function applyElementRotation(rotation: ElementRotationJson | undefined, 
 	}
 	const origin: Vec3 = [rotation.origin[0] / 16, rotation.origin[1] / 16, rotation.origin[2] / 16];
 	const toRadians = Math.PI / 180;
-	const multiAxis = rotation as unknown as { x?: number; y?: number; z?: number; };
 	if (rotation.axis !== undefined && rotation.angle !== undefined) {
 		rotateAll(corners, origin, rotation.axis, rotation.angle * toRadians);
 		return;
 	}
+	const multiAxis = rotation as unknown as { x?: number; y?: number; z?: number; };
 	for (const axis of ['x', 'y', 'z'] as const) {
 		const angle = multiAxis[axis];
 		if (typeof angle === 'number' && angle !== 0) {

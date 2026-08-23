@@ -474,10 +474,17 @@ describe('convention-based Gecko block renderers', () => {
 
 		const controller = pack.blockStates['example:formed_controller'].variants ?? [];
 		expect(controller).toHaveLength(5);
-		expect(controller.find(entry => entry.when.facing === 'west')?.apply[0]).toMatchObject({
-			model: 'rendermite:block/example/formed_controller_geo',
-			y: 90,
-		});
+		expect(controller
+			.filter(entry => entry.when.facing !== undefined)
+			.map(entry => [entry.when.facing, entry.apply[0].y ?? 0]))
+			.toEqual([
+				['north', 0],
+				['east', 90],
+				['south', 180],
+				['west', 270],
+			]);
+		expect(controller.find(entry => entry.when.facing === 'west')?.apply[0].model)
+			.toBe('rendermite:block/example/formed_controller_geo');
 		const positions = pack.models['rendermite:block/example/formed_controller_geo'].mesh?.[0].positions ?? [];
 		const xs = positions.filter((_, index) => index % 3 === 0);
 		expect(Math.min(...xs)).toBe(-16);

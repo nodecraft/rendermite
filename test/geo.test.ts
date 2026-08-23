@@ -10,7 +10,12 @@ import { describe, expect, it } from 'vitest';
 import { ModelLoader } from '../src/models/loader.ts';
 import { toFloatTexture } from '../src/render/blend.ts';
 import { createShadeCache, renderFace } from '../src/render/face.ts';
-import { findGeoForItem, parseGeo, renderGeo } from '../src/render/geo.ts';
+import {
+	findGeoForItem,
+	geoToFaces,
+	parseGeo,
+	renderGeo,
+} from '../src/render/geo.ts';
 import { lightsForProfile } from '../src/render/lighting.ts';
 import { renderModel } from '../src/render/renderer.ts';
 import { displayMatrix } from '../src/render/vector.ts';
@@ -184,6 +189,64 @@ describe('geo face winding', () => {
 		expect(viaGeo).toContain('up');
 		expect(viaGeo).not.toContain('down');
 		expect(viaGeo).toHaveLength(viaElements.length);
+	});
+});
+
+describe('compact cube UVs', () => {
+	it('uses Bedrock\'s down/up and west/north/east/south unwrap order', () => {
+		const geo = parseGeo({
+			'minecraft:geometry': [{
+				description: { texture_width: 64, texture_height: 64 },
+				bones: [{
+					name: 'asymmetric',
+					cubes: [{ origin: [0, 0, 0], size: [4, 8, 2], uv: [10, 20] }],
+				}],
+			}],
+		});
+		const rects = Object.fromEntries(geoToFaces(geo!, { fit: false }).map(face => [
+			face.direction,
+			[
+				face.uv1[0] * 64,
+				face.uv1[1] * 64,
+				face.uv2[0] * 64,
+				face.uv2[1] * 64,
+			],
+		]));
+
+		expect(rects).toStrictEqual({
+			up: [12, 20, 16, 22],
+			down: [16, 22, 20, 20],
+			north: [12, 22, 16, 30],
+			south: [18, 22, 22, 30],
+			east: [10, 22, 12, 30],
+			west: [16, 22, 18, 30],
+		});
+	});
+
+	it('keeps named east and west UVs on their physical sides after the X mirror', () => {
+		const geo = parseGeo({
+			'minecraft:geometry': [{
+				description: { texture_width: 64, texture_height: 64 },
+				bones: [{
+					name: 'asymmetric',
+					cubes: [{
+						origin: [2, 0, 0],
+						size: [4, 8, 2],
+						uv: {
+							east: { uv: [1, 2], uv_size: [2, 8] },
+							west: { uv: [21, 22], uv_size: [2, 8] },
+						},
+					}],
+				}],
+			}],
+		});
+		const faces = Object.fromEntries(geoToFaces(geo!, { fit: false }).map(face => [face.direction, face]));
+
+		// Source x=2 mirrors to physical x=-2 (east); source x=6 mirrors to x=-6 (west).
+		expect(faces.east.vertices.every(vertex => vertex[0] === -2)).toBe(true);
+		expect(faces.west.vertices.every(vertex => vertex[0] === -6)).toBe(true);
+		expect(faces.east.uvs).toStrictEqual([[3 / 64, 2 / 64], [3 / 64, 10 / 64], [1 / 64, 10 / 64], [1 / 64, 2 / 64]]);
+		expect(faces.west.uvs).toStrictEqual([[23 / 64, 22 / 64], [23 / 64, 30 / 64], [21 / 64, 30 / 64], [21 / 64, 22 / 64]]);
 	});
 });
 

@@ -71,7 +71,7 @@ export async function geoBlockModel(blockId: string, resources: ResourceManager)
 	}
 	const group: MeshGroup = { sprite: resource.texture, positions: [], uv: [] };
 	for (const face of geoToFaces(geo, { fit: false })) {
-		const uvs = [
+		const uvs = face.uvs ?? [
 			[face.uv1[0], face.uv1[1]],
 			[face.uv1[0], face.uv2[1]],
 			[face.uv2[0], face.uv2[1]],
