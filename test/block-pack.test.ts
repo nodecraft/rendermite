@@ -829,6 +829,15 @@ describe.skipIf(!online)('modded block pack', () => {
 			const cableBus = pack.blockStates['ae2:cable_bus'].variants ?? [];
 			expect(cableBus).toHaveLength(1);
 			expect(pack.models[cableBus[0].apply[0].model].elements.length).toBeGreaterThan(0);
+			for (const sprite of [
+				'ae2:part/cable/smart/transparent',
+				'ae2:part/cable/dense_smart/transparent',
+				'ae2:part/storage_bus',
+				'ae2:part/import_bus',
+				'ae2:part/export_bus',
+			]) {
+				expect(pack.atlas.sprites[sprite]).toBeDefined();
+			}
 
 			// A block the mod draws in Java, standing on the item model it ships
 			// for the inventory: AE2's drive, its crafting storage `formed` states.
