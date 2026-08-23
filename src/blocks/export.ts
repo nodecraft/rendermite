@@ -557,16 +557,37 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	// Some GeckoLib blocks ship a cube only as their breaking-particle placeholder; the client swaps
 	// in a `.geo.json` from its block-entity renderer. Replace those references before deciding whether
 	// a block already draws something, retaining the blockstate's own six-way rotations.
-	for (const [id, references] of blockModels) {
-		const geo = await geoBlockModel(id, resources);
-		if (!geo) {
+	for (const [id] of blockModels) {
+		const override = await geoBlockModel(id, resources);
+		if (!override) {
 			continue;
 		}
-		for (const reference of references) {
-			emittedModels[reference] = geo;
-			modelTintIndices.set(reference, new Set());
+		const block = ResourceLocator.parse(id);
+		const reference = `rendermite:block/${block.namespace}/${block.path}_geo`;
+		emittedModels[reference] = override.model;
+		modelTintIndices.set(reference, new Set());
+		const definition = definitions.get(id);
+		if (!definition) {
+			continue;
 		}
-		for (const group of geo.mesh ?? []) {
+		for (const part of definition.cases) {
+			for (const variant of part.apply) {
+				variant.model = reference;
+			}
+		}
+		if (override.javaFacing && definition.kind === 'variants'
+			&& !definition.cases.some(part => part.when.facing !== undefined)) {
+			// GeoBlockRenderer applies these counter-clockwise rotations in Java. The broad original
+			// case remains the fallback for fixed blocks such as Oritech's solar panel controller.
+			for (const [facing, y] of Object.entries({ north: 0, east: 270, south: 180, west: 90 })) {
+				definition.cases.push({
+					when: { facing },
+					apply: [{ model: reference, x: 0, y, z: 0, uvlock: false, weight: 1 }],
+				});
+			}
+		}
+		blockModels.set(id, [reference]);
+		for (const group of override.model.mesh ?? []) {
 			spriteIds.add(group.sprite);
 		}
 	}

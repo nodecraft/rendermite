@@ -10,6 +10,13 @@ import type { ResourceManager } from '../resources/manager.ts';
 interface GeoBlockResource {
 	geo: string;
 	texture: string;
+	/** The blockstate has no rotations because GeckoLib reads `facing` in Java. */
+	javaFacing?: boolean;
+}
+
+export interface GeoBlockOverride {
+	model: BlockPackModel;
+	javaFacing: boolean;
 }
 
 /** Blocks whose ordinary cube model exists only for particles/breaking and is replaced in Java. */
@@ -30,9 +37,27 @@ const GEO_BLOCKS: Readonly<Record<string, GeoBlockResource>> = {
 
 const TRIANGLE_CORNERS = [0, 1, 2, 0, 2, 3] as const;
 
-/** Converts the already-flattened Gecko quads into the block pack's 0–16 triangle mesh. */
-export async function geoBlockModel(blockId: string, resources: ResourceManager): Promise<BlockPackModel | null> {
-	const resource = GEO_BLOCKS[blockId];
+/**
+ * Exact convention used by GeckoLib block renderers such as Oritech's: the block, geometry and skin
+ * share a name. Requiring both assets avoids treating an unrelated same-named entity geo as a block.
+ */
+async function conventionalResource(blockId: string, resources: ResourceManager): Promise<GeoBlockResource | null> {
+	const block = ResourceLocator.parse(blockId);
+	const resource = {
+		geo: `${block.namespace}:geo/block/models/${block.path}.geo.json`,
+		texture: `${block.namespace}:block/models/${block.path}`,
+		javaFacing: true,
+	};
+	const [geo, texture] = await Promise.all([
+		resources.hasResource('raw', ResourceLocator.parse(resource.geo)),
+		resources.hasResource('texture', ResourceLocator.parse(resource.texture)),
+	]);
+	return geo && texture ? resource : null;
+}
+
+/** Converts a Java-rendered Gecko block into a world-scale 0–16 triangle mesh. */
+export async function geoBlockModel(blockId: string, resources: ResourceManager): Promise<GeoBlockOverride | null> {
+	const resource = GEO_BLOCKS[blockId] ?? await conventionalResource(blockId, resources);
 	if (!resource) {
 		return null;
 	}
@@ -45,7 +70,7 @@ export async function geoBlockModel(blockId: string, resources: ResourceManager)
 		return null;
 	}
 	const group: MeshGroup = { sprite: resource.texture, positions: [], uv: [] };
-	for (const face of geoToFaces(geo)) {
+	for (const face of geoToFaces(geo, { fit: false })) {
 		const uvs = [
 			[face.uv1[0], face.uv1[1]],
 			[face.uv1[0], face.uv2[1]],
@@ -53,7 +78,9 @@ export async function geoBlockModel(blockId: string, resources: ResourceManager)
 			[face.uv2[0], face.uv1[1]],
 		] as const;
 		for (const corner of TRIANGLE_CORNERS) {
-			group.positions.push(...face.vertices[corner].map(value => value * 16));
+			const vertex = face.vertices[corner];
+			// GeckoLib places the Bedrock origin at the centre of the block's X/Z plane.
+			group.positions.push(vertex[0] + 8, vertex[1], vertex[2] + 8);
 			group.uv.push(uvs[corner][0] * 16, uvs[corner][1] * 16);
 		}
 	}
@@ -61,10 +88,13 @@ export async function geoBlockModel(blockId: string, resources: ResourceManager)
 		return null;
 	}
 	return {
-		ao: false,
-		elements: [],
-		mesh: [group],
-		particle: resource.texture,
-		renderType: 'cutout',
+		model: {
+			ao: false,
+			elements: [],
+			mesh: [group],
+			particle: resource.texture,
+			renderType: 'cutout',
+		},
+		javaFacing: resource.javaFacing ?? false,
 	};
 }

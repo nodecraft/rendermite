@@ -126,7 +126,7 @@ function boxFaces(origin: Vec3, size: Vec3, u: number, v: number): BoxFaceSpec[]
 }
 
 /** Convert a parsed geo into face geometry, unit-cube fitted with gui pose. */
-export function geoToFaces(geo: ParsedGeo): FaceGeometry[] {
+export function geoToFaces(geo: ParsedGeo, options: { fit?: boolean; } = {}): FaceGeometry[] {
 	const bonesByName = new Map<string, GeoBone>();
 	for (const bone of geo.bones) {
 		if (bone.name) {
@@ -214,10 +214,15 @@ export function geoToFaces(geo: ParsedGeo): FaceGeometry[] {
 		}
 	}
 
-	// Fit the whole model into the unit cube, centered, preserving aspect.
+	// Entity and item callers need a unit-cube preview. A block-entity renderer does not: its Bedrock
+	// coordinates are already pixels relative to the block centre, and geometry outside +/-8 is the
+	// formed machine extending into neighbouring blocks. Keep those coordinates intact for that path.
 	const extent = Math.max(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
 	if (!Number.isFinite(extent) || extent <= 0) {
 		return [];
+	}
+	if (options.fit === false) {
+		return faces;
 	}
 	const scale = 1 / extent;
 	const center: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];

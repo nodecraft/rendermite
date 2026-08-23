@@ -450,6 +450,45 @@ describe('code-drawn blocks in a mod namespace', () => {
 	});
 });
 
+describe('convention-based Gecko block renderers', () => {
+	it('keeps a shared placeholder intact and gives the formed controller its own world-scale model', async () => {
+		const pack = await exportFrom('gecko-formed-controller', (resources) => {
+			for (const id of ['formed_controller', 'ordinary_addon']) {
+				resources.set('blockstate', `example:${id}`, JSON.stringify({
+					variants: { '': { model: 'example:block/shared_placeholder' } },
+				}));
+			}
+			resources.set('model', 'example:block/shared_placeholder', JSON.stringify({
+				textures: { all: 'example:block/plain' },
+				elements: [CUBE],
+			}));
+			resources.set('raw', 'example:geo/block/models/formed_controller.geo.json', JSON.stringify({
+				'format_version': '1.12.0',
+				'minecraft:geometry': [{
+					description: { texture_width: 64, texture_height: 64 },
+					bones: [{ name: 'machine', cubes: [{ origin: [-24, 0, -8], size: [48, 16, 16], uv: [0, 0] }] }],
+				}],
+			}));
+			resources.set('texture', 'example:block/models/formed_controller', solidPng);
+		});
+
+		const controller = pack.blockStates['example:formed_controller'].variants ?? [];
+		expect(controller).toHaveLength(5);
+		expect(controller.find(entry => entry.when.facing === 'west')?.apply[0]).toMatchObject({
+			model: 'rendermite:block/example/formed_controller_geo',
+			y: 90,
+		});
+		const positions = pack.models['rendermite:block/example/formed_controller_geo'].mesh?.[0].positions ?? [];
+		const xs = positions.filter((_, index) => index % 3 === 0);
+		expect(Math.min(...xs)).toBe(-16);
+		expect(Math.max(...xs)).toBe(32);
+
+		const addon = pack.blockStates['example:ordinary_addon'].variants?.[0].apply[0].model;
+		expect(addon).toBe('example:block/shared_placeholder');
+		expect(pack.models['example:block/shared_placeholder'].elements).toHaveLength(1);
+	});
+});
+
 describe('a block whose shape only its item model has', () => {
 	/** A code-drawn block: one empty-key variant on a model with no geometry. */
 	function codeDrawn(resources: MapResourceManager, id: string): void {
