@@ -424,8 +424,8 @@ export function weightedVariantIndex(
 		return 0;
 	}
 	const total = weights.reduce((sum, weight) => sum + weight, 0);
-	// Mth.getSeed: the hash the game derives a block position's randomness from.
-	let seed = (BigInt(blockX) * 3_129_871n) ^ (BigInt(blockZ) * 116_129_781n) ^ BigInt(blockY);
+	// Java evaluates x * 3129871 as an int before widening it to long, so this term wraps at 32 bits.
+	let seed = BigInt(Math.imul(blockX, 3_129_871)) ^ (BigInt(blockZ) * 116_129_781n) ^ BigInt(blockY);
 	seed = seed * seed * 42_317_861n + seed * 11n;
 	seed = BigInt.asIntN(64, seed) >> 16n;
 	// java.util.Random.setSeed, then one nextLong() (two 32-bit draws).

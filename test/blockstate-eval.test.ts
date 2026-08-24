@@ -326,6 +326,20 @@ describe('weighted variant selection', () => {
 		expect(weightedVariantIndex([1], 0, 0, 0)).toBe(0);
 	});
 
+	it('matches Java where the x int multiply starts overflowing', () => {
+		const vectors: Array<[x: number, expected: number]> = [
+			[686, 1],
+			[687, 3],
+			[-687, 2],
+			[-688, 3],
+			[30_000_000, 0],
+			[-30_000_000, 1],
+		];
+		for (const [x, expected] of vectors) {
+			expect(weightedVariantIndex([1, 1, 1, 1], x, 0, 0), `${x},0,0`).toBe(expected);
+		}
+	});
+
 	it('is stable for a position and varies across positions', () => {
 		const weights = [1, 1, 1, 1];
 		expect(weightedVariantIndex(weights, 12, 64, -30)).toBe(weightedVariantIndex(weights, 12, 64, -30));
