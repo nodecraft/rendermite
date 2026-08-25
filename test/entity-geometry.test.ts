@@ -414,6 +414,37 @@ describe('parts built by another class', () => {
 	});
 
 	/**
+	 * The 26 line moved the armour meshes onto the models that wear them, so `HumanoidModel` offers
+	 * `createBaseArmorMesh` and `createBabyArmorMesh` beside its own `createMesh`. A baby's armour has
+	 * more boxes than a humanoid does, so the fullest-mesh rule picked it: every player, zombie and
+	 * armour stand in a 26.x pack came out as a set of leggings — a `waist` and an `inner_body` at
+	 * knee height where the mob should have been.
+	 */
+	it('draws a mob rather than the armour it wears', { timeout: 120000 }, async () => {
+		const { classes, context, geometryOf } = await openVersion('26.2');
+		try {
+			for (const type of ['zombie', 'armor_stand']) {
+				const link = await linkEntityModel(type, context);
+				const model = await geometryOf((link as { obfuscated: string; }).obfuscated);
+				const bones = (model as ExtractedModel).parts.flatMap(part => bonesOf(part));
+				expect(bones, type).not.toContain('waist');
+				expect(bones, type).not.toContain('inner_body');
+			}
+			// The zombie is a plain humanoid, so its boxes are vanilla's own to the pixel
+			const zombie = await geometryOf((await linkEntityModel('zombie', context) as { obfuscated: string; }).obfuscated);
+			const boxes = new Map(allCubes(zombie as ExtractedModel).map(entry => [entry.part, entry.cube.size]));
+			expect(boxes.get('head')).toStrictEqual([8, 8, 8]);
+			expect(boxes.get('body')).toStrictEqual([8, 12, 4]);
+			expect(boxes.get('right_leg')).toStrictEqual([4, 12, 4]);
+			// An armour stand is sticks and a base plate, none of which a humanoid has
+			const stand = await geometryOf((await linkEntityModel('armor_stand', context) as { obfuscated: string; }).obfuscated);
+			expect((stand as ExtractedModel).parts.flatMap(part => bonesOf(part))).toContain('base_plate');
+		} finally {
+			await classes.close();
+		}
+	});
+
+	/**
 	 * A renderer constructs the models it draws, so following those calls made renderers look like they
 	 * held geometry — and a pufferfish renderer, which builds all three sizes, came out as one model
 	 * with three sets of spines. Model code may call model code; a renderer may not.
@@ -759,7 +790,10 @@ const COVERAGE = [
 	{ version: '1.21.4', linked: 125, cubes: 1300 },
 	{ version: '1.21.8', linked: 126, cubes: 1277 },
 	{ version: '1.21.11', linked: 132, cubes: 1352 },
-	{ version: '26.2', linked: 133, cubes: 1380 },
+	// 36 fewer cubes than the armour-mesh leak used to inflate this to: from the 26 line
+	// `HumanoidModel` carries the armour worn on it, and a baby's set of leggings was outvoting the
+	// humanoid itself. See `ARMOUR_MESH` in `model-bytecode`.
+	{ version: '26.2', linked: 133, cubes: 1344 },
 ];
 
 describe.each(COVERAGE)('coverage for $version', (testCase) => {

@@ -612,6 +612,9 @@ describe('block pack contents', () => {
 		expect(pack.models['rendermite:block/oak_sign'].elements).toHaveLength(2);
 		expect(pack.blockStates['minecraft:oak_sign'].variants).toHaveLength(16);
 		expect(pack.models['rendermite:block/oak_wall_sign'].elements).toHaveLength(1);
+		// A wall sign hangs on the block it faces AWAY from, so its board is at the far z — the same
+		// way round as the wall skull below. Authored at z 0 it drew a full block clear of its wall.
+		expect(pack.models['rendermite:block/oak_wall_sign'].elements[0].from[2]).toBe(14.5);
 		expect(pack.models['rendermite:block/oak_hanging_sign'].elements.length).toBeGreaterThan(2);
 		expect(pack.blockStates['minecraft:oak_wall_hanging_sign'].variants).toHaveLength(4);
 
@@ -642,6 +645,24 @@ describe('block pack contents', () => {
 		expect(pack.blockStates['minecraft:skeleton_skull'].variants).toHaveLength(16);
 		expect(pack.blockStates['minecraft:skeleton_wall_skull'].variants).toHaveLength(4);
 		expect(pack.models['rendermite:block/skeleton_skull'].elements[0].from[1]).toBe(0);
+		/*
+		 * A player head carries the skin's own hat layer as a second, slightly larger box, bound to the
+		 * same sheet at the hat unwrap. On a default skin that region is transparent and it draws
+		 * nothing; it is there so a consumer that swaps in a fetched skin gets the whole head rather
+		 * than a bald one.
+		 */
+		const playerHead = pack.models['rendermite:block/player_head'].elements;
+		expect(playerHead).toHaveLength(2);
+		expect(playerHead[1].faces.north.uv).toEqual([10, 2, 12, 4]);
+		expect(playerHead[1].faces.north.sprite).toBe(playerHead[0].faces.north.sprite);
+		/*
+		 * And no other head gains one. The hat lives on a player-only variant because the icon
+		 * renderer samples a hair outside a face's rect at a silhouette edge, so the extra box —
+		 * transparent on every default skin — still fringed the shared `mobheads:item/player`.
+		 * A zombie head is the check: same 64x64 base, overlay still bound to the empty sprite.
+		 */
+		const zombieHead = pack.models['rendermite:block/zombie_head'].elements;
+		expect(zombieHead[1].faces.north.sprite).not.toBe(zombieHead[0].faces.north.sprite);
 		expect(pack.models['rendermite:block/skeleton_wall_skull'].elements[0].from[2]).toBe(8);
 
 		// Water and lava are cubes with the right sprite, so a naive consumer

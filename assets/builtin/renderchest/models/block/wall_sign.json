@@ -1,11 +1,11 @@
 {
-	"__comment": "Wall sign: the same board as the standing sign with no post, sitting against the block behind it. Authored facing north, so the blockstate's facing rotates it from there.",
+	"__comment": "Wall sign: the same board as the standing sign with no post, sitting against the block behind it. Authored facing north, so the blockstate's facing rotates it from there. The block it hangs on is the one it faces AWAY from, so the board is at the far z: authored north, it sits against the south neighbour. Putting it at z 0 instead drew every wall sign in a world a full block clear of its wall.",
 	"texture_size": [64, 32],
 	"elements": [
 		{
 			"name": "board",
-			"from": [0, 4.5, 0],
-			"to": [16, 12.5, 1.5],
+			"from": [0, 4.5, 14.5],
+			"to": [16, 12.5, 16],
 			"faces": {
 				"north": { "uv": [0.5, 1, 6.5, 7], "texture": "#texture" },
 				"east": { "uv": [6.5, 1, 7, 7], "texture": "#texture" },

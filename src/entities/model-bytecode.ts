@@ -1045,6 +1045,20 @@ function toPart(handle: Handle): Part {
 }
 
 /**
+ * A method that builds the *armour worn on* a model rather than the model itself.
+ *
+ * The 26 line moved the armour meshes onto the models that wear them, so `HumanoidModel` now offers
+ * `createBaseArmorMesh` and `createBabyArmorMesh` beside its own `createMesh`. A baby's armour has
+ * more boxes than the humanoid does, so the fullest-mesh rule below picked it, and every player,
+ * zombie and armour stand in the pack came out as a set of leggings: a `waist` and an `inner_body`
+ * at knee height where the mob should have been.
+ *
+ * Matched by name, which is exact on a jar Mojang no longer obfuscates and harmless on one they did,
+ * where no method is named anything at all.
+ */
+const ARMOUR_MESH = /armou?r/i;
+
+/**
  * Extracts whatever geometry a class's methods build.
  *
  * Every method is tried, because where the model is built differs by era: 1.17+ vanilla uses a static
@@ -1083,7 +1097,7 @@ export function extractModel(bytes: Uint8Array, following?: Following): Extracte
 		return outward ? following?.resolve(internalName) ?? null : null;
 	};
 	for (const method of classFile.methods) {
-		if (!method.code) {
+		if (!method.code || ARMOUR_MESH.test(method.name)) {
 			continue;
 		}
 		const shared = newShared(own);

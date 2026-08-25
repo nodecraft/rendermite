@@ -364,10 +364,14 @@ async function skullGeometry(blockId: string, context: GeometryContext): Promise
 		};
 	};
 
-	// The vendored pack knows 90-odd mobs. Variant suffixes shed trailing tokens
-	// until one matches — at most two, so a mod's long name cannot collapse onto
-	// an unrelated vanilla head.
-	const parts = mob.split('_');
+	/*
+	 * A player head is the one head whose sheet is not fixed: the block entity names a profile, and a
+	 * consumer that resolves it draws somebody's real skin on this geometry. So it takes the variant
+	 * carrying the skin's own hat layer, which is half of a head that has one and which the plain
+	 * `mobheads:item/player` — shared with the item icon, where the extra box fringes the render —
+	 * does not have.
+	 */
+	const parts = (mob === 'player' ? 'player_skin' : mob).split('_');
 	for (let keep = parts.length; keep >= 1 && keep >= parts.length - 2; keep--) {
 		const model = `mobheads:item/${parts.slice(0, keep).join('_')}`;
 		const resolved = await context.models.load(model).catch(() => null);
