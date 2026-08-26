@@ -254,6 +254,105 @@ const ARMOUR_ITEM_PIECE: Record<EquipmentSlot, string> = {
 	feet: 'boots',
 };
 
+interface ArmourTrimAtlasSource {
+	type?: string;
+	textures?: string[];
+	permutations?: Record<string, string>;
+	separator?: string;
+}
+
+/** The layer and world pattern id named by one of the paths in the armour-trim atlas. */
+function trimSheet(locator: ResourceLocator): { layer: 'inner' | 'outer'; pattern: string; } | null {
+	const name = locator.path.split('/').at(-1)?.replace(/\.png$/, '');
+	if (!name) {
+		return null;
+	}
+	if (locator.path.includes('/humanoid_leggings/')) {
+		return { layer: 'inner', pattern: new ResourceLocator(locator.namespace, name).toString() };
+	}
+	if (locator.path.includes('/humanoid/')) {
+		return { layer: 'outer', pattern: new ResourceLocator(locator.namespace, name).toString() };
+	}
+	// Before 1.21.2 both layers shared this folder and leggings carried the distinction as a suffix.
+	if (locator.path.includes('trims/models/armor/')) {
+		const leggings = name.endsWith('_leggings');
+		const pattern = leggings ? name.slice(0, -'_leggings'.length) : name;
+		return {
+			layer: leggings ? 'inner' : 'outer',
+			pattern: new ResourceLocator(locator.namespace, pattern).toString(),
+		};
+	}
+	return null;
+}
+
+/** The registry id represented by a palette or pattern texture. */
+function trimId(locator: ResourceLocator): string | null {
+	const name = locator.path.split('/').at(-1)?.replace(/\.png$/, '');
+	return name ? new ResourceLocator(locator.namespace, name).toString() : null;
+}
+
+/**
+ * Reads the authored armour-trim atlas and names every generated worn sheet.
+ *
+ * The texture loader already resolves `paletted_permutations`; this only records the generated
+ * sprite ids so the normal entity-atlas stitcher asks it for those pixels. Copies are visited from
+ * lowest to highest precedence, matching atlas source resolution when packs extend the vanilla file.
+ */
+export async function collectArmourTrims(
+	resources: ResourceManager,
+	spriteIds: Set<string>,
+): Promise<EquipmentPack['trims']> {
+	const patterns: EquipmentPack['trims']['patterns'] = {};
+	const darker: EquipmentPack['trims']['darker'] = {};
+	for (const namespace of await resources.listNamespaces()) {
+		const atlas = new ResourceLocator(namespace, 'armor_trims');
+		const copies = await resources.getAllResources('atlas', atlas);
+		for (const raw of copies.toReversed()) {
+			let sources: ArmourTrimAtlasSource[];
+			try {
+				const parsed = JSON.parse(raw.toString('utf8')) as { sources?: ArmourTrimAtlasSource[]; };
+				sources = parsed.sources ?? [];
+			} catch {
+				continue;
+			}
+			for (const source of sources) {
+				if (String(source.type ?? '').replace(/^minecraft:/, '') !== 'paletted_permutations'
+					|| !Array.isArray(source.textures) || !source.permutations) {
+					continue;
+				}
+				const separator = source.separator ?? '_';
+				for (const texture of source.textures) {
+					const base = ResourceLocator.tryParse(texture.replace(/\.png$/, ''));
+					if (!base) {
+						continue;
+					}
+					const sheet = trimSheet(base);
+					if (!sheet) {
+						continue;
+					}
+					const { layer, pattern } = sheet;
+					for (const [permutation, paletteName] of Object.entries(source.permutations)) {
+						const palette = ResourceLocator.tryParse(paletteName.replace(/\.png$/, ''));
+						const material = palette && trimId(palette);
+						if (!material) {
+							continue;
+						}
+						const sprite = new ResourceLocator(base.namespace, `${base.path}${separator}${permutation}`).toString();
+						patterns[pattern] ??= {};
+						patterns[pattern][material] = { ...patterns[pattern][material], [layer]: sprite };
+						spriteIds.add(sprite);
+						if (material.endsWith('_darker')) {
+							const plain = material.slice(0, -'_darker'.length);
+							darker[plain] = material;
+						}
+					}
+				}
+			}
+		}
+	}
+	return { patterns, darker };
+}
+
 /**
  * The class holding the humanoid armour shape, across the three places the game has kept it.
  *
@@ -370,6 +469,7 @@ export async function collectEquipment(
 			}
 		}
 	}
+	const trims = await collectArmourTrims(resources, spriteIds);
 
 	const modelKey = `${found.className}#armor`;
 	models[modelKey] = {
@@ -389,5 +489,6 @@ export async function collectEquipment(
 		materials,
 		items,
 		dyeable,
+		trims,
 	};
 }

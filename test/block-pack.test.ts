@@ -332,6 +332,16 @@ function assertSelfContained(pack: Pack): void {
 			for (const [id, item] of Object.entries(equipment.items)) {
 				expect(equipment.materials, `${id} is made of something the pack has`).toHaveProperty([item.material]);
 			}
+			for (const [pattern, materials] of Object.entries(equipment.trims.patterns)) {
+				for (const [material, layers] of Object.entries(materials)) {
+					for (const sprite of Object.values(layers)) {
+						expect(pack.entityModels.sprites, `${pattern} in ${material}`).toHaveProperty([sprite as string]);
+					}
+				}
+			}
+			for (const [material, darker] of Object.entries(equipment.trims.darker)) {
+				expect(darker, `${material} darker variant`).toBe(`${material}_darker`);
+			}
 		}
 
 		for (const sprite of Object.values(pack.entityModels.sprites)) {

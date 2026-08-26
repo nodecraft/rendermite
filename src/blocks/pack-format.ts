@@ -317,6 +317,13 @@ export interface EquipmentPack {
 	items: Record<string, { material: string; slot: EquipmentSlot; }>;
 	/** Materials whose sheet is greyscale and takes the item's own dye colour. */
 	dyeable: string[];
+	/** Worn armour-trim sheets generated from the version's armour-trim atlas. */
+	trims: {
+		/** Sprite ids per pattern and material, into this file's own `sprites`. */
+		patterns: Record<string, Record<string, Partial<Record<'inner' | 'outer', string>>>>;
+		/** Material a trim falls back to when it matches the armour it is on. */
+		darker: Record<string, string>;
+	};
 }
 
 /** `meta.json`, written last because it hashes every other file. */
