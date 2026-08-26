@@ -280,6 +280,50 @@ export interface BlockPackEntityModelsFile {
 	pages: BlockPackAtlasPage[];
 	sprites: Record<string, BlockPackSprite>;
 	models: Record<string, EntityPackModel>;
+	/** Worn armour, when the version's classes described any. Absent otherwise. */
+	equipment?: EquipmentPack;
+}
+
+/** The armour slots the game dresses a humanoid in, in the order it layers them. */
+export const EQUIPMENT_SLOTS = ['feet', 'legs', 'chest', 'head'] as const;
+export type EquipmentSlot = typeof EQUIPMENT_SLOTS[number];
+
+/**
+ * Worn armour: one humanoid-shaped mesh, the two sizes it is drawn at, and a sheet per material.
+ *
+ * Armour is not geometry of its own — it is the wearer's own humanoid shape grown by a fixed amount,
+ * which is why one mesh dresses a player, a zombie and an armour stand alike. The leggings are the
+ * *inner* layer and everything else the *outer*, drawn a little larger so the two never fight.
+ *
+ * Everything a consumer needs to decide what to draw is stated here rather than derived, in keeping
+ * with the rest of the pack: which parts a slot lights up, which sheet a material uses, and which
+ * material an item is made of.
+ */
+export interface EquipmentPack {
+	/** Key into `models`, holding the humanoid armour shape. */
+	model: string;
+	/** How much each layer grows the wearer's boxes by, in pixels. */
+	inflate: { inner: number; outer: number; };
+	/** Parts each slot shows. A slot lights up some of the one mesh rather than owning geometry. */
+	slots: Record<EquipmentSlot, string[]>;
+	/** Which layer a slot is drawn on, which decides the sheet as well as the size. */
+	layerOf: Record<EquipmentSlot, 'inner' | 'outer'>;
+	/** Sprite ids per material and layer, into this file's own `sprites`. */
+	materials: Record<string, Partial<Record<'inner' | 'outer', string>>>;
+	/**
+	 * The armour items themselves. Keyed by item id because that is what a world writes into an
+	 * entity's `equipment` compound, and nothing in the assets maps one to the other.
+	 */
+	items: Record<string, { material: string; slot: EquipmentSlot; }>;
+	/** Materials whose sheet is greyscale and takes the item's own dye colour. */
+	dyeable: string[];
+	/** Worn armour-trim sheets generated from the version's armour-trim atlas. */
+	trims: {
+		/** Sprite ids per pattern and material, into this file's own `sprites`. */
+		patterns: Record<string, Record<string, Partial<Record<'inner' | 'outer', string>>>>;
+		/** Material a trim falls back to when it matches the armour it is on. */
+		darker: Record<string, string>;
+	};
 }
 
 /** `meta.json`, written last because it hashes every other file. */

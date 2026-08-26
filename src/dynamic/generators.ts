@@ -23,7 +23,7 @@ export const TRIM_MATERIALS = [
 ] as const;
 
 /** Materials with a darker variant used when the trim matches the armor metal. */
-export const TRIM_DARKER_MATERIALS = new Set(['iron', 'gold', 'diamond', 'netherite']);
+export const TRIM_DARKER_MATERIALS = new Set(['copper', 'iron', 'gold', 'diamond', 'netherite']);
 
 export const ARMOR_ITEM_TYPES = ['boots', 'leggings', 'chestplate', 'helmet'] as const;
 

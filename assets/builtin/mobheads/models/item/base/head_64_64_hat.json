@@ -1,0 +1,31 @@
+{
+	"__comment": "A 64x64 head that also draws the skin's own hat layer, for the player head. Same box as head_64_64, but the outer element is bound to the head sheet at the hat unwrap (texOffs 32,0) rather than to an empty sprite. On a default skin that region is fully transparent, so this draws exactly what head_64_64 did; on a real player's skin it is the hat, which is the half of a head that a consumer swapping in a fetched skin would otherwise lose. East/west and up/down are swapped against the game's own box unwrap for the same reason head_64_64 swaps them: the entity renderer draws through a scale(-1, -1, 1) that a block model has no equivalent of.",
+	"parent": "mobheads:item/base/head_display",
+	"texture_size": [64, 64],
+	"elements": [
+		{
+			"from": [4, 4, 4],
+			"to": [12, 12, 12],
+			"faces": {
+				"north": {"uv": [2, 2, 4, 4], "texture": "#texture"},
+				"east": {"uv": [0, 2, 2, 4], "texture": "#texture"},
+				"south": {"uv": [6, 2, 8, 4], "texture": "#texture"},
+				"west": {"uv": [4, 2, 6, 4], "texture": "#texture"},
+				"up": {"uv": [2, 0, 4, 2], "rotation": 180, "texture": "#texture"},
+				"down": {"uv": [4, 0, 6, 2], "texture": "#texture"}
+			}
+		},
+		{
+			"from": [3.5, 3.5, 3.5],
+			"to": [12.5, 12.5, 12.5],
+			"faces": {
+				"north": {"uv": [10, 2, 12, 4], "texture": "#texture"},
+				"east": {"uv": [8, 2, 10, 4], "texture": "#texture"},
+				"south": {"uv": [14, 2, 16, 4], "texture": "#texture"},
+				"west": {"uv": [12, 2, 14, 4], "texture": "#texture"},
+				"up": {"uv": [10, 0, 12, 2], "rotation": 180, "texture": "#texture"},
+				"down": {"uv": [12, 0, 14, 2], "texture": "#texture"}
+			}
+		}
+	]
+}

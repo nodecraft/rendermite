@@ -1,0 +1,7 @@
+{
+  "__comment": "The player head as a block pack wants it: the same head as mobheads:item/player, plus the skin's own hat layer. Kept apart from the item model because the icon renderer samples a hair outside a face's rect at a silhouette edge, and the extra box — transparent on a default skin — still fringes the icon with a few pixels of whatever sits next to the hat unwrap. A block pack is drawn by a GPU from the geometry rather than by that rasterizer, so it takes the hat and the icon does not.",
+  "parent": "mobheads:item/base/head_64_64_hat",
+  "textures": {
+    "texture": "minecraft:entity/player/wide/steve"
+  }
+}

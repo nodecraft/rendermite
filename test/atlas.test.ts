@@ -2,6 +2,7 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import { loadAtlasResolver } from '../src/atlas/registry.ts';
+import { collectArmourTrims } from '../src/blocks/entity-models.ts';
 import { ResourceLocator } from '../src/resources/locator.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { TextureLoader } from '../src/textures/loader.ts';
@@ -60,5 +61,68 @@ describe('trim materials from mods', () => {
 		const textures = new TextureLoader(resources);
 		textures.setAtlasResolver(await loadAtlasResolver(resources, locator => textures.load(locator)));
 		expect(await textures.load(ResourceLocator.parse('minecraft:trims/items/boots_trim_blue_skies-moonstone'))).toBeNull();
+	});
+});
+
+describe('worn armour trims', () => {
+	it('discovers pattern sheets, namespaced materials, and darker fallbacks from the atlas', async () => {
+		const resources = new MapResourceManager().set('atlas', 'minecraft:armor_trims', JSON.stringify({
+			sources: [{
+				type: 'minecraft:paletted_permutations',
+				textures: [
+					'minecraft:trims/entity/humanoid/coast',
+					'minecraft:trims/entity/humanoid_leggings/coast',
+				],
+				palette_key: 'minecraft:trims/color_palettes/trim_palette',
+				permutations: {
+					'copper': 'minecraft:trims/color_palettes/copper',
+					'copper_darker': 'minecraft:trims/color_palettes/copper_darker',
+					'blue_skies-moonstone': 'blue_skies:trims/color_palettes/moonstone',
+				},
+			}],
+		}));
+		const sprites = new Set<string>();
+
+		const trims = await collectArmourTrims(resources, sprites);
+
+		expect(trims.darker).toEqual({ 'minecraft:copper': 'minecraft:copper_darker' });
+		expect(trims.patterns['minecraft:coast']['minecraft:copper']).toEqual({
+			outer: 'minecraft:trims/entity/humanoid/coast_copper',
+			inner: 'minecraft:trims/entity/humanoid_leggings/coast_copper',
+		});
+		expect(trims.patterns['minecraft:coast']['blue_skies:moonstone']).toEqual({
+			outer: 'minecraft:trims/entity/humanoid/coast_blue_skies-moonstone',
+			inner: 'minecraft:trims/entity/humanoid_leggings/coast_blue_skies-moonstone',
+		});
+		expect(sprites).toContain('minecraft:trims/entity/humanoid/coast_copper_darker');
+		expect(sprites).toHaveLength(6);
+	});
+
+	it('returns an empty section for versions from before armour trims', async () => {
+		const sprites = new Set<string>();
+
+		await expect(collectArmourTrims(new MapResourceManager(), sprites)).resolves.toEqual({
+			patterns: {},
+			darker: {},
+		});
+		expect(sprites).toHaveLength(0);
+	});
+
+	it('recognises the shared armour folder and leggings suffix used before 1.21.2', async () => {
+		const resources = new MapResourceManager().set('atlas', 'minecraft:armor_trims', JSON.stringify({
+			sources: [{
+				type: 'paletted_permutations',
+				textures: ['trims/models/armor/coast', 'trims/models/armor/coast_leggings'],
+				palette_key: 'trims/color_palettes/trim_palette',
+				permutations: { gold: 'trims/color_palettes/gold' },
+			}],
+		}));
+
+		const trims = await collectArmourTrims(resources, new Set());
+
+		expect(trims.patterns['minecraft:coast']['minecraft:gold']).toEqual({
+			outer: 'minecraft:trims/models/armor/coast_gold',
+			inner: 'minecraft:trims/models/armor/coast_leggings_gold',
+		});
 	});
 });

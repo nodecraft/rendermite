@@ -1045,6 +1045,20 @@ function toPart(handle: Handle): Part {
 }
 
 /**
+ * A method that builds the *armour worn on* a model rather than the model itself.
+ *
+ * The 26 line moved the armour meshes onto the models that wear them, so `HumanoidModel` now offers
+ * `createBaseArmorMesh` and `createBabyArmorMesh` beside its own `createMesh`. A baby's armour has
+ * more boxes than the humanoid does, so the fullest-mesh rule below picked it, and every player,
+ * zombie and armour stand in the pack came out as a set of leggings: a `waist` and an `inner_body`
+ * at knee height where the mob should have been.
+ *
+ * Matched by name, which is exact on a jar Mojang no longer obfuscates and harmless on one they did,
+ * where no method is named anything at all.
+ */
+const ARMOUR_MESH = /armou?r/i;
+
+/**
  * Extracts whatever geometry a class's methods build.
  *
  * Every method is tried, because where the model is built differs by era: 1.17+ vanilla uses a static
@@ -1068,6 +1082,30 @@ export interface Following {
 	 * Defaults to true, which is right when the caller has no way to tell the two apart.
 	 */
 	isModelCode?: boolean;
+	/**
+	 * Which of the class's methods may build the model. Defaults to everything but the armour meshes,
+	 * which build the armour *worn on* this model rather than the model — see `ARMOUR_MESH`.
+	 *
+	 * `extractArmourMesh` passes the opposite, since that is exactly what it is after.
+	 */
+	methods?: (name: string) => boolean;
+}
+
+/** The baby form of an armour mesh, which is a scaled duplicate of the one worn by an adult. */
+const BABY_MESH = /baby/i;
+
+/**
+ * The armour a humanoid wears, as its own mesh. Empty where the class builds none.
+ *
+ * The baby form is skipped rather than competing: it has more boxes than the adult's — a separate
+ * head and body where the adult reuses the humanoid's — so the fullest-mesh rule would always pick
+ * it, and every suit of armour in the world would come out child-sized.
+ */
+export function extractArmourMesh(bytes: Uint8Array, following: Following): ExtractedModel {
+	return extractModel(bytes, {
+		...following,
+		methods: name => ARMOUR_MESH.test(name) && !BABY_MESH.test(name),
+	});
 }
 
 export function extractModel(bytes: Uint8Array, following?: Following): ExtractedModel {
@@ -1076,6 +1114,7 @@ export function extractModel(bytes: Uint8Array, following?: Following): Extracte
 	const candidates: Array<{ model: ExtractedModel; ownMesh: boolean; cubes: number; }> = [];
 	// Its own methods are always followable; another class's only from model code
 	const outward = following?.isModelCode ?? true;
+	const wanted = following?.methods ?? ((name: string): boolean => !ARMOUR_MESH.test(name));
 	const own = (internalName: string): ClassFile | null => {
 		if (internalName === classFile.thisClass) {
 			return classFile;
@@ -1083,7 +1122,7 @@ export function extractModel(bytes: Uint8Array, following?: Following): Extracte
 		return outward ? following?.resolve(internalName) ?? null : null;
 	};
 	for (const method of classFile.methods) {
-		if (!method.code) {
+		if (!method.code || !wanted(method.name)) {
 			continue;
 		}
 		const shared = newShared(own);

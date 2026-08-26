@@ -29,6 +29,7 @@ import { MapResourceManager } from '../src/resources/synthetic.ts';
 import { prepareVersionResources } from '../src/versions/prepare.ts';
 
 import type { BlockPackResult } from '../src/blocks/export.ts';
+import type { EquipmentPack } from '../src/blocks/pack-format.ts';
 import type { ResourceManager } from '../src/resources/manager.ts';
 
 const packRoot = path.join(import.meta.dirname, '..', '.work', 'block-packs');
@@ -169,9 +170,10 @@ interface Pack {
 		sprites: Record<string, { page: number; x: number; y: number; w: number; h: number; }>;
 		models: Record<string, {
 			textureSize: [number, number];
-			parts: Array<{ name: string; pivot: number[]; rotation: number[]; cubes: Array<{ origin: number[]; size: number[]; uv: number[]; }>; children: unknown[]; }>;
+			parts: EntityPart[];
 			notes?: string[];
 		}>;
+		equipment?: EquipmentPack;
 	} | null;
 	/** `items.json`, likewise absent from a pack with no flat items. */
 	items: {
@@ -294,6 +296,54 @@ function assertSelfContained(pack: Pack): void {
 				expect(pack.entityModels.models[modelId].textureSize.join('x'), modelId).toBe(only);
 			}
 		}
+		/*
+		 * Worn armour: one humanoid mesh, a sheet per material, and the items that wear them. Every
+		 * reference has to land inside this same file, since a consumer fetches it and nothing else.
+		 */
+		/*
+		 * Armour is not optional where the geometry is: every version from the 1.13 floor up ships both
+		 * the humanoid shape and a sheet per material, so a version producing none means the extraction
+		 * or the texture discovery stopped working, which a conditional check would hide.
+		 */
+		const equipment = pack.entityModels.equipment;
+		expect(equipment, 'worn armour').toBeDefined();
+		if (equipment) {
+			expect(Object.keys(equipment.materials)).toContain('minecraft:iron');
+			expect(equipment.materials['minecraft:iron'].outer).toBeDefined();
+			expect(equipment.materials['minecraft:iron'].inner).toBeDefined();
+			// Leather is the dyeable one in every version, and its overlay is what makes it so
+			expect(equipment.dyeable).toContain('minecraft:leather');
+			expect(equipment.items).toHaveProperty(['minecraft:iron_helmet'], { material: 'minecraft:iron', slot: 'head' });
+			// Gold's items are named `golden_`, which nothing in the assets says
+			expect(equipment.items).toHaveProperty(['minecraft:golden_boots'], { material: 'minecraft:gold', slot: 'feet' });
+			expect(pack.entityModels.models, equipment.model).toHaveProperty([equipment.model]);
+			const namesOf = (part: EntityPart): string[] => [part.name, ...part.children.flatMap(child => namesOf(child))];
+			const parts = new Set(pack.entityModels.models[equipment.model].parts.flatMap(part => namesOf(part)));
+			for (const [slot, wanted] of Object.entries(equipment.slots)) {
+				for (const name of wanted) {
+					expect(parts, `${slot} lights up ${name}`).toContain(name);
+				}
+			}
+			for (const [material, layers] of Object.entries(equipment.materials)) {
+				for (const sprite of Object.values(layers)) {
+					expect(pack.entityModels.sprites, `${material} sheet`).toHaveProperty([sprite as string]);
+				}
+			}
+			for (const [id, item] of Object.entries(equipment.items)) {
+				expect(equipment.materials, `${id} is made of something the pack has`).toHaveProperty([item.material]);
+			}
+			for (const [pattern, materials] of Object.entries(equipment.trims.patterns)) {
+				for (const [material, layers] of Object.entries(materials)) {
+					for (const sprite of Object.values(layers)) {
+						expect(pack.entityModels.sprites, `${pattern} in ${material}`).toHaveProperty([sprite as string]);
+					}
+				}
+			}
+			for (const [material, darker] of Object.entries(equipment.trims.darker)) {
+				expect(darker, `${material} darker variant`).toBe(`${material}_darker`);
+			}
+		}
+
 		for (const sprite of Object.values(pack.entityModels.sprites)) {
 			const page = pack.entityModels.pages[sprite.page];
 			expect(page).toBeDefined();
@@ -335,6 +385,15 @@ interface VersionCase {
 	entityColours: number;
 	/** Distinct entity models recovered from the jar's code; shared, so far below the type count. */
 	entityModels: number;
+}
+
+/** Recursive, because a part's children are parts and the armour check walks the whole tree. */
+interface EntityPart {
+	name: string;
+	pivot: number[];
+	rotation: number[];
+	cubes: Array<{ origin: number[]; size: number[]; uv: number[]; }>;
+	children: EntityPart[];
 }
 
 const CASES: VersionCase[] = [
@@ -612,6 +671,9 @@ describe('block pack contents', () => {
 		expect(pack.models['rendermite:block/oak_sign'].elements).toHaveLength(2);
 		expect(pack.blockStates['minecraft:oak_sign'].variants).toHaveLength(16);
 		expect(pack.models['rendermite:block/oak_wall_sign'].elements).toHaveLength(1);
+		// A wall sign hangs on the block it faces AWAY from, so its board is at the far z — the same
+		// way round as the wall skull below. Authored at z 0 it drew a full block clear of its wall.
+		expect(pack.models['rendermite:block/oak_wall_sign'].elements[0].from[2]).toBe(14.5);
 		expect(pack.models['rendermite:block/oak_hanging_sign'].elements.length).toBeGreaterThan(2);
 		expect(pack.blockStates['minecraft:oak_wall_hanging_sign'].variants).toHaveLength(4);
 
@@ -642,6 +704,24 @@ describe('block pack contents', () => {
 		expect(pack.blockStates['minecraft:skeleton_skull'].variants).toHaveLength(16);
 		expect(pack.blockStates['minecraft:skeleton_wall_skull'].variants).toHaveLength(4);
 		expect(pack.models['rendermite:block/skeleton_skull'].elements[0].from[1]).toBe(0);
+		/*
+		 * A player head carries the skin's own hat layer as a second, slightly larger box, bound to the
+		 * same sheet at the hat unwrap. On a default skin that region is transparent and it draws
+		 * nothing; it is there so a consumer that swaps in a fetched skin gets the whole head rather
+		 * than a bald one.
+		 */
+		const playerHead = pack.models['rendermite:block/player_head'].elements;
+		expect(playerHead).toHaveLength(2);
+		expect(playerHead[1].faces.north.uv).toEqual([10, 2, 12, 4]);
+		expect(playerHead[1].faces.north.sprite).toBe(playerHead[0].faces.north.sprite);
+		/*
+		 * And no other head gains one. The hat lives on a player-only variant because the icon
+		 * renderer samples a hair outside a face's rect at a silhouette edge, so the extra box —
+		 * transparent on every default skin — still fringed the shared `mobheads:item/player`.
+		 * A zombie head is the check: same 64x64 base, overlay still bound to the empty sprite.
+		 */
+		const zombieHead = pack.models['rendermite:block/zombie_head'].elements;
+		expect(zombieHead[1].faces.north.sprite).not.toBe(zombieHead[0].faces.north.sprite);
 		expect(pack.models['rendermite:block/skeleton_wall_skull'].elements[0].from[2]).toBe(8);
 
 		// Water and lava are cubes with the right sprite, so a naive consumer
