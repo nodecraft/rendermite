@@ -1084,6 +1084,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 					}),
 					sprites: sortedByKey(sheet.sprites),
 					models: sortedByKey(geometry.models),
+					...(geometry.equipment && { equipment: geometry.equipment }),
 				};
 				// A sheet that never reached the atlas would draw the mob in the missing texture
 				for (const [id, entry] of Object.entries(collected.entities)) {

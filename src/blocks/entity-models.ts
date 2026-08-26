@@ -13,13 +13,24 @@
  */
 
 import { findGeoForEntity } from './entity-geo.ts';
-import { extractInheritedModel } from '../entities/inherit.ts';
+import { EQUIPMENT_SLOTS } from './pack-format.ts';
+import { ancestryOf, extractInheritedModel } from '../entities/inherit.ts';
 import { buildModelNameIndex, classReader, linkEntityModel } from '../entities/link.ts';
 import { MappingsUnavailableError, resolveMappings } from '../entities/mappings.ts';
+import { extractArmourMesh, extractModel } from '../entities/model-bytecode.ts';
 import { loadModelCode } from '../entities/model-code.ts';
+import { ResourceLocator } from '../resources/locator.ts';
 
-import type { EntityPackModel, EntityPackPart } from './pack-format.ts';
+import type {
+	EntityPackModel,
+	EntityPackPart,
+	EquipmentPack,
+	EquipmentSlot,
+} from './pack-format.ts';
+import type { ClassFile } from '../entities/classfile.ts';
 import type { ClassSource } from '../entities/jar-classes.ts';
+import type { Mappings } from '../entities/mappings.ts';
+import type { ModelCode } from '../entities/model-code.ts';
 import type { ExtractedModel, Part } from '../entities/model.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 
@@ -30,6 +41,8 @@ export interface EntityGeometryResult {
 	modelOf: Map<string, string>;
 	/** Entity sheets the models address, to be stitched into the pack's own atlas. */
 	spriteIds: Set<string>;
+	/** Worn armour, where the version's classes described any. */
+	equipment: EquipmentPack | null;
 	failures: Array<{ id: string; reason: string; }>;
 }
 
@@ -104,7 +117,7 @@ export async function collectEntityGeometry(
 				? `no entity geometry: ${err.message}`
 				: `no entity geometry: mappings could not be loaded (${(err as Error).message})`,
 		});
-		return { models, modelOf, spriteIds, failures };
+		return { models, modelOf, spriteIds, equipment: null, failures };
 	}
 
 	/*
@@ -185,5 +198,196 @@ export async function collectEntityGeometry(
 		}
 	}
 
-	return { models, modelOf, spriteIds, failures };
+	const equipment = await collectEquipment(
+		names,
+		mappings,
+		async internal => await classes.read(internal),
+		code,
+		options.resources,
+		models,
+		spriteIds,
+	);
+	return { models, modelOf, spriteIds, equipment, failures };
+}
+
+/**
+ * How much each armour layer grows the wearer's boxes by, in pixels.
+ *
+ * Not recovered from the code: the game passes these into the mesh builder from its renderers, so
+ * following them means interpreting a renderer, which the extractor deliberately refuses to do. They
+ * have been 1.0 and 0.5 since armour got its second layer, and getting them wrong only makes the two
+ * layers fight rather than losing the shape.
+ */
+const ARMOUR_INFLATE = { outer: 1, inner: 0.5 } as const;
+
+/** Which parts a slot lights up, and which layer it is drawn on. */
+const ARMOUR_SLOTS: Record<EquipmentSlot, { parts: string[]; layer: 'inner' | 'outer'; }> = {
+	head: { parts: ['head', 'hat'], layer: 'outer' },
+	chest: { parts: ['body', 'right_arm', 'left_arm'], layer: 'outer' },
+	// Leggings are the inner layer, drawn tighter so the chestplate over them has somewhere to go
+	legs: { parts: ['body', 'right_leg', 'left_leg'], layer: 'inner' },
+	feet: { parts: ['right_leg', 'left_leg'], layer: 'outer' },
+};
+
+/**
+ * Where each layer's sheets live, across the two layouts the game has used.
+ *
+ * 1.21.2 moved armour under `entity/equipment/` and dropped the `_layer_N` suffix for a folder per
+ * layer. Both are matched rather than switched on a version, so a resource pack or a mod following
+ * either convention is found the same way.
+ */
+const ARMOUR_SHEETS: ReadonlyArray<{ layer: 'inner' | 'outer'; prefix: string; suffix: string; }> = [
+	{ layer: 'outer', prefix: 'entity/equipment/humanoid/', suffix: '' },
+	{ layer: 'inner', prefix: 'entity/equipment/humanoid_leggings/', suffix: '' },
+	{ layer: 'outer', prefix: 'models/armor/', suffix: '_layer_1' },
+	{ layer: 'inner', prefix: 'models/armor/', suffix: '_layer_2' },
+];
+
+/** The item name a material takes, where it is not simply the material's own. */
+const ARMOUR_ITEM_PREFIX: Record<string, string> = { gold: 'golden', turtle_scute: 'turtle' };
+
+/** Suffix per slot, as every vanilla armour item is named. */
+const ARMOUR_ITEM_PIECE: Record<EquipmentSlot, string> = {
+	head: 'helmet',
+	chest: 'chestplate',
+	legs: 'leggings',
+	feet: 'boots',
+};
+
+/**
+ * The class holding the humanoid armour shape, across the three places the game has kept it.
+ *
+ * A dedicated `HumanoidArmorModel` is armour throughout, so the whole class is read. From the 26 line
+ * it folded into `HumanoidModel` as a set of `create*ArmorMesh` factories beside the humanoid's own,
+ * which is what `extractArmourMesh` picks out. Failing both, the humanoid itself is the right shape —
+ * armour has never been anything but the wearer, grown.
+ */
+async function armourGeometry(
+	names: readonly string[],
+	mappings: Mappings,
+	read: (internal: string) => Promise<Uint8Array | null>,
+	code: ModelCode,
+): Promise<{ className: string; model: ExtractedModel; } | null> {
+	const find = (simple: string): string | undefined => names
+		.find(name => (mappings.originalOf.get(name) ?? name).endsWith(`/${simple}`)
+			|| (mappings.originalOf.get(name) ?? name).endsWith(`.${simple}`));
+	const routes: Array<{ simple: string; armourOnly: boolean; }> = [
+		{ simple: 'HumanoidArmorModel', armourOnly: false },
+		{ simple: 'HumanoidModel', armourOnly: true },
+		{ simple: 'HumanoidModel', armourOnly: false },
+		{ simple: 'BipedModel', armourOnly: false },
+	];
+	for (const route of routes) {
+		const internal = find(route.simple);
+		const bytes = internal ? await read(internal) : null;
+		if (!internal || !bytes) {
+			continue;
+		}
+		const { ancestors } = await ancestryOf(internal, read);
+		const resolve = (name: string): ClassFile | null => ancestors.get(name) ?? code.resolve(name);
+		const model = route.armourOnly
+			? extractArmourMesh(bytes, { resolve, isModelCode: true })
+			: extractModel(bytes, { resolve, isModelCode: true });
+		if (model.parts.reduce((sum, part) => sum + countCubes(part), 0) > 0) {
+			return { className: mappings.originalOf.get(internal) ?? internal, model };
+		}
+	}
+	return null;
+}
+
+/**
+ * Worn armour for the pack: one humanoid mesh, the sheets each material is drawn with, and which
+ * item is which.
+ *
+ * Materials are discovered from the sheets the version actually ships rather than listed, so a
+ * version that adds one — copper, in the 26 line — needs no edit here. The item ids are the one part
+ * the assets cannot answer, since nothing in them maps `iron_helmet` to `iron`: they follow the
+ * game's own naming, and each is confirmed against a real item model before being claimed.
+ */
+export async function collectEquipment(
+	names: readonly string[],
+	mappings: Mappings,
+	read: (internal: string) => Promise<Uint8Array | null>,
+	code: ModelCode,
+	resources: ResourceManager | undefined,
+	models: Record<string, EntityPackModel>,
+	spriteIds: Set<string>,
+): Promise<EquipmentPack | null> {
+	if (!resources) {
+		return null;
+	}
+	const found = await armourGeometry(names, mappings, read, code);
+	if (!found) {
+		return null;
+	}
+	const materials: EquipmentPack['materials'] = {};
+	const dyeable: string[] = [];
+	const textures = await resources.listResources('texture', 'minecraft');
+	for (const { layer, prefix, suffix } of ARMOUR_SHEETS) {
+		for (const locator of textures) {
+			if (!locator.path.startsWith(prefix)) {
+				continue;
+			}
+			const name = locator.path.slice(prefix.length);
+			/*
+			 * A dye overlay is a second sheet for the same material rather than a material of its own:
+			 * leather's sheet is greyscale and the overlay carries the parts that stay their own colour.
+			 */
+			const overlay = name.endsWith('_overlay');
+			const bare = overlay ? name.slice(0, -'_overlay'.length) : name;
+			if (!bare.endsWith(suffix)) {
+				continue;
+			}
+			const material = bare.slice(0, bare.length - suffix.length);
+			// `models/armor/` also holds the wolf's armour, which no humanoid wears
+			if (material.length === 0 || material.includes('/')) {
+				continue;
+			}
+			const id = `minecraft:${material}`;
+			if (overlay) {
+				if (!dyeable.includes(id)) {
+					dyeable.push(id);
+				}
+				continue;
+			}
+			materials[id] = { ...materials[id], [layer]: locator.toString() };
+			spriteIds.add(locator.toString());
+		}
+	}
+	if (Object.keys(materials).length === 0) {
+		return null;
+	}
+
+	const items: EquipmentPack['items'] = {};
+	for (const material of Object.keys(materials)) {
+		const bare = material.slice('minecraft:'.length);
+		const prefix = ARMOUR_ITEM_PREFIX[bare] ?? bare;
+		for (const slot of EQUIPMENT_SLOTS) {
+			const id = `minecraft:${prefix}_${ARMOUR_ITEM_PIECE[slot]}`;
+			// Turtle scute is a helmet and nothing else, and only the assets know that
+			if (await resources.hasResource('model', new ResourceLocator('minecraft', `item/${prefix}_${ARMOUR_ITEM_PIECE[slot]}`))) {
+				items[id] = { material, slot };
+			}
+		}
+	}
+
+	const modelKey = `${found.className}#armor`;
+	models[modelKey] = {
+		textureSize: [...found.model.textureSize] as [number, number],
+		parts: found.model.parts.map(part => toPackPart(part)),
+		...(found.model.notes.length > 0 && { notes: [...found.model.notes] }),
+	};
+	return {
+		model: modelKey,
+		inflate: { ...ARMOUR_INFLATE },
+		slots: Object.fromEntries(
+			EQUIPMENT_SLOTS.map(slot => [slot, [...ARMOUR_SLOTS[slot].parts]]),
+		) as EquipmentPack['slots'],
+		layerOf: Object.fromEntries(
+			EQUIPMENT_SLOTS.map(slot => [slot, ARMOUR_SLOTS[slot].layer]),
+		) as EquipmentPack['layerOf'],
+		materials,
+		items,
+		dyeable,
+	};
 }
