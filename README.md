@@ -3,7 +3,7 @@
 Minecraft item icon renderer for Node.js. Point it at a game version or a pile of mod jars and it produces inventory-identical 3D item icons as optimized PNG and lossless WebP (plus optional GIF and AVIF), a ready-to-use CSS spritesheet, and a JSON item library.
 
 > [!NOTE]
-> **Heads-up:** this project was primarily AI-authored. The renderer, tests, tooling, and this README were written by Claude (Anthropic) in interactive sessions, with a human operator directing the work, reviewing output, and validating renders against real game assets. Read the code before trusting it in production.
+> **Heads-up:** this project was primarily AI-authored. The renderer, tests, tooling, and this README were written by AI coding agents in interactive sessions, with a human operator directing the work, reviewing output, and validating renders against real game assets. Read the code before trusting it in production.
 
 ## What it does
 
