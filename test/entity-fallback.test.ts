@@ -101,6 +101,44 @@ describe('trident fallback', () => {
 	});
 });
 
+describe('chest sheets that are only half a chest', () => {
+	/** A tier trim: a few opaque pixels on an otherwise transparent sheet. */
+	async function trim(): Promise<Buffer> {
+		const pixels = Buffer.alloc(64 * 64 * 4);
+		for (let index = 0; index < 64 * 4; index++) {
+			pixels.set([230, 200, 60, 255], index * 4);
+		}
+		return sharp(pixels, { raw: { width: 64, height: 64, channels: 4 } }).png().toBuffer();
+	}
+
+	/** Share of the icon that got drawn at all. */
+	function drawn(rendered: unknown): number {
+		const { data } = rendered as { data: Float64Array; };
+		let opaque = 0;
+		for (let offset = 3; offset < data.length; offset += 4) {
+			if (data[offset] > 0.05) {
+				opaque++;
+			}
+		}
+		return opaque / (data.length / 4);
+	}
+
+	it('lays a tier trim over the wood sheet it decorates', async () => {
+		// Sophisticated Storage's gold chest is oak with gold_tier composited over
+		// it; binding the trim alone left floating corners where a chest should be.
+		const resources = new MapResourceManager()
+			.set('texture', 'sophisticatedstorage:entity/chest/gold_tier', await trim())
+			.set('texture', 'sophisticatedstorage:entity/chest/oak', await sheet(64, 64));
+		const composed = await render(resources, 'sophisticatedstorage:gold_chest');
+		const trimOnly = await render(
+			new MapResourceManager().set('texture', 'sophisticatedstorage:entity/chest/gold_tier', await trim()),
+			'sophisticatedstorage:gold_chest',
+		);
+		expect(composed).not.toBeNull();
+		expect(drawn(composed)).toBeGreaterThan(drawn(trimOnly) * 3);
+	});
+});
+
 describe('display name as the kind signal', () => {
 	it('renders a chest whose id never says chest', async () => {
 		// lootr:lootr_inventory is a "Loot Chest"; only the lang file says so.

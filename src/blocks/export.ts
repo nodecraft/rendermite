@@ -658,9 +658,12 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			// there. Substituting a magenta sign would be worse than leaving the
 			// block empty and saying so. Checked per shape because an ender chest
 			// has a single form and no paired one.
-			const textures = { ...geometry.textures, ...shape.textures };
-			const bindable = await Promise.all(Object.values(textures)
-				.map(async texture => resources.hasResource('texture', ResourceLocator.parse(texture))));
+			const bindings = { ...geometry.textures, ...shape.textures };
+			// Asked of the texture loader, not the resource tree: a sheet the run
+			// composed itself (a chest's tier trim over its wood) or one the atlas
+			// resolver synthesizes has no file to find.
+			const bindable = await Promise.all(Object.values(bindings)
+				.map(async texture => textures.has(ResourceLocator.parse(texture))));
 			if (bindable.includes(false)) {
 				continue;
 			}
@@ -673,7 +676,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			}
 			const bound = {
 				...resolved,
-				textures: { ...resolved.textures, ...textures },
+				textures: { ...resolved.textures, ...bindings },
 				elements: translateElements(resolved.elements, shape.translate),
 			};
 			// Named `rendermite:` so nothing mistakes vendored geometry for a
@@ -690,7 +693,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			// The declared bindings were checked above; these are the ones the
 			// vendored model brings with it, which a version can have dropped.
 			const present = await Promise.all([...sprites]
-				.map(async sprite => sprite !== MISSING_SPRITE && await resources.hasResource('texture', ResourceLocator.parse(sprite))));
+				.map(async sprite => sprite !== MISSING_SPRITE && await textures.has(ResourceLocator.parse(sprite))));
 			if (present.includes(false)) {
 				failures.push({ id, kind: 'geometry', reason: `substitute ${shape.model} left textures unresolved, so the block is left empty rather than part magenta` });
 				continue;

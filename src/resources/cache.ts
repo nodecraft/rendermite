@@ -66,6 +66,15 @@ export class LruCache<K, V> {
 		this.evict();
 	}
 
+	delete(key: K): void {
+		if (!this.entries.has(key)) {
+			return;
+		}
+		this.weight -= this.weights.get(key) ?? 0;
+		this.weights.delete(key);
+		this.entries.delete(key);
+	}
+
 	clear(): void {
 		this.entries.clear();
 		this.weights.clear();

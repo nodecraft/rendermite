@@ -22,15 +22,16 @@
 import {
 	DYE_COLORS,
 	HEAD_LAYOUTS,
-	coversSheet,
 	findBedTexture,
-	findChestTexture,
 	findEntityTexture,
 	findFluidSibling,
 	findFluidStill,
 	findMobTexture,
+	layerAccentSheet,
+	resolveChestSheets,
 } from '../resources/entity-textures.ts';
 import { ResourceLocator } from '../resources/locator.ts';
+import { overlaySheets } from '../textures/overlay.ts';
 
 import type { ModelLoader } from '../models/loader.ts';
 import type { ResourceManager } from '../resources/manager.ts';
@@ -238,9 +239,9 @@ async function chestGeometry(blockId: string, context: GeometryContext): Promise
 	// wherever it likes and no table could list them. Never a chestplate.
 	const searchable = /chest|crate/.test(name) && !name.includes('chestplate');
 	const found = variant === undefined && searchable
-		? await findChestTexture(context.resources, namespace, name)
+		? await resolveChestSheets(context.resources, context.textures, namespace, name)
 		: null;
-	const sheet = variant === undefined ? found?.toString() : CHEST_SHEETS[variant];
+	const sheet = variant === undefined ? found?.sheet.toString() : CHEST_SHEETS[variant];
 	if (sheet === undefined) {
 		return null;
 	}
@@ -249,10 +250,13 @@ async function chestGeometry(blockId: string, context: GeometryContext): Promise
 	const single: BlockEntityShape = variant === undefined
 		? { model: 'renderchest:item/chest', textures: { texture: sheet } }
 		: { model: `renderchest:item/chest/${variant}` };
-	const [left, right] = await Promise.all([
-		halfSheet(sheet, 'left', context),
-		halfSheet(sheet, 'right', context),
-	]);
+	// A composed sheet has no `_left` sibling of its own, so each half is composed
+	// from the halves of the two layers it came from.
+	const [left, right] = await Promise.all(
+		(['left', 'right'] as const).map(side => (found?.accent && found.base
+			? halfPair(found.base, found.accent, side, context)
+			: halfSheet(sheet, side, context))),
+	);
 	// A chest with no paired sheets never doubles — an ender chest — or the mod
 	// draws its pair some other way. Either way one unkeyed shape is right: it
 	// matches whatever `type` the consumer holds, so the block still draws.
@@ -272,20 +276,49 @@ async function chestGeometry(blockId: string, context: GeometryContext): Promise
 /**
  * The wider sheet for one half of a double chest. Vanilla suffixes the base
  * name (`normal` → `normal_left`); quark files the halves beside it instead
- * (`acacia/normal` → `acacia/left`). Both are common enough to try.
+ * (`acacia/normal` → `acacia/left`); Sophisticated Storage prefixes the leaf
+ * (`oak` → `left_oak`). All three are common enough to try.
  */
 async function halfSheet(sheet: string, side: 'left' | 'right', context: GeometryContext): Promise<string | null> {
 	const base = ResourceLocator.parse(sheet);
-	const sibling = base.path.includes('/')
-		? `${base.path.slice(0, base.path.lastIndexOf('/'))}/${side}`
-		: side;
-	for (const path of [`${base.path}_${side}`, sibling]) {
+	const cut = base.path.lastIndexOf('/');
+	const directory = cut === -1 ? '' : `${base.path.slice(0, cut)}/`;
+	const sibling = `${directory}${side}`;
+	const prefixed = `${directory}${side}_${base.path.slice(cut + 1)}`;
+	for (const path of [`${base.path}_${side}`, sibling, prefixed]) {
 		const candidate = new ResourceLocator(base.namespace, path);
 		if (await context.resources.hasResource('texture', candidate)) {
 			return candidate.toString();
 		}
 	}
 	return null;
+}
+
+/** The wider half of a chest whose single form was an accent over a base sheet. */
+async function halfPair(
+	base: ResourceLocator,
+	accent: ResourceLocator,
+	side: 'left' | 'right',
+	context: GeometryContext,
+): Promise<string | null> {
+	const [baseHalf, accentHalf] = await Promise.all([
+		halfSheet(base.toString(), side, context),
+		halfSheet(accent.toString(), side, context),
+	]);
+	if (baseHalf === null) {
+		return null;
+	}
+	if (accentHalf === null) {
+		// The wood doubles but the trim does not: a plain wide chest is still the
+		// pair the game draws, only without its tier accent.
+		return baseHalf;
+	}
+	const composed = await overlaySheets(
+		context.textures,
+		ResourceLocator.parse(baseHalf),
+		ResourceLocator.parse(accentHalf),
+	);
+	return composed === null ? baseHalf : composed.toString();
 }
 
 /**
@@ -469,13 +502,12 @@ async function shulkerGeometry(blockId: string, context: GeometryContext): Promi
 	if (colour !== null && SHULKER_COLOURS.has(colour) && namespace === 'minecraft') {
 		return { shapes: [{ model: `renderchest:item/shulker_box/${name}` }], orient: { kind: 'facing6' } };
 	}
-	// A mod sheet is only usable if it is a whole skin: tier overlays are meant
-	// to composite over the vanilla box, and wearing one alone leaves nothing
-	// but floating corners.
+	// A mod sheet is only usable if it is a whole skin, or a tier overlay laid over
+	// the box it decorates: wearing an overlay alone leaves nothing but floating
+	// corners. Vanilla's box stands in when the mod ships no base to lay it over.
 	const candidate = await findEntityTexture(context.resources, namespace, name, 'shulker');
-	const sheet = candidate !== null && await coversSheet(context.textures, candidate)
-		? candidate.toString()
-		: 'minecraft:entity/shulker/shulker';
+	const layered = candidate === null ? null : await layerAccentSheet(context.resources, context.textures, candidate);
+	const sheet = layered?.sheet.toString() ?? 'minecraft:entity/shulker/shulker';
 	return {
 		shapes: [{ model: 'renderchest:item/shulker_box', textures: { texture: sheet } }],
 		orient: { kind: 'facing6' },

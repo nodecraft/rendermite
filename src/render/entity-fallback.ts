@@ -12,11 +12,11 @@ import { renderModel } from './renderer.ts';
 import {
 	DYE_COLORS,
 	HEAD_LAYOUTS,
-	coversSheet,
 	findBedTexture,
-	findChestTexture,
 	findEntityTexture,
 	findMobTexture,
+	layerAccentSheet,
+	resolveChestSheets,
 	tokens,
 } from '../resources/entity-textures.ts';
 import { ResourceLocator } from '../resources/locator.ts';
@@ -289,7 +289,8 @@ export async function renderEntityFallback(
 			[`renderchest:item/chest/${variant === 'normal' ? 'chest' : `${variant}_chest`}`, null],
 			['renderchest:item/chest', `minecraft:entity/chest/${variant}`],
 		];
-		const modTexture = await findChestTexture(resources, locator.namespace, name);
+		const sheets = await resolveChestSheets(resources, textures, locator.namespace, name);
+		const modTexture = sheets?.sheet;
 		for (const [modelPath, defaultTexture] of candidates) {
 			try {
 				const model = await models.load(modelPath);
@@ -326,13 +327,12 @@ export async function renderEntityFallback(
 			return null;
 		}
 		// The bare builtin model leaves `#texture` for a descendant to bind. A mod
-		// sheet is only usable if it is a whole skin: Sophisticated Storage's tier
-		// sheets are trim overlays meant to composite over the vanilla box, and
-		// wearing one alone leaves nothing but floating corners.
+		// sheet is only usable if it is a whole skin, or a tier overlay laid over the
+		// box it decorates: Sophisticated Storage's tier sheets are trim, and wearing
+		// one alone leaves nothing but floating corners.
 		const candidate = await findEntityTexture(resources, locator.namespace, name, 'shulker');
-		const sheet = candidate && await coversSheet(textures, candidate)
-			? candidate
-			: ResourceLocator.parse('minecraft:entity/shulker/shulker');
+		const layered = candidate === null ? null : await layerAccentSheet(resources, textures, candidate);
+		const sheet = layered?.sheet ?? ResourceLocator.parse('minecraft:entity/shulker/shulker');
 		return renderModel(withTexture(model, 'texture', sheet), textures, options).catch(() => null);
 	}
 
