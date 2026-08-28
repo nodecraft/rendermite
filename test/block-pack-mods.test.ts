@@ -379,6 +379,28 @@ describe('code-drawn blocks in a mod namespace', () => {
 		expect(Object.values(model.elements[0].faces)[0].sprite).toBe('example:variant_chests/fancy/normal');
 	});
 
+	it('vendors chest geometry for a blockstate that names only a model loader', async () => {
+		/*
+		 * From 1.21.4 a mod writes a whole variant as `{"type": "mod:chest_model_loader"}` with no
+		 * `model` at all — Sophisticated Storage files every chest and shulker box that way — so every
+		 * case is dropped and the block used to leave the pack entirely. The item model is no help
+		 * either: a chest's is `builtin/entity`, which draws nothing.
+		 */
+		const pack = await exportFrom('loader-only-variant-chest', (resources) => {
+			resources.set('blockstate', 'example:fancy_chest', JSON.stringify({
+				variants: { '': { type: 'example:chest_model_loader' } },
+			}));
+			resources.set('texture', 'example:entity/chest/fancy', solidPng);
+		}, true);
+		const chest = pack.blockStates['example:fancy_chest'].variants ?? [];
+		expect(chest).toHaveLength(4);
+		expect(pack.models[chest[0].apply[0].model].elements.length).toBeGreaterThanOrEqual(3);
+		// The block is reported once, as a substitution, rather than twice over as an unreadable
+		// blockstate and again as a block nothing is vendored for.
+		expect(pack.failures.filter(failure => failure.id === 'example:fancy_chest'
+			&& failure.kind === 'geometry')).toHaveLength(1);
+	});
+
 	it('pairs a mod chest whose halves sit beside the base sheet rather than suffixing it', async () => {
 		const pack = await exportFrom('mod-chest-double', (resources) => {
 			codeDrawn(resources, 'example:fancy_chest');

@@ -494,6 +494,15 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			}
 		} catch (err) {
 			failures.push({ id, kind: 'blockstate', reason: (err as Error).message });
+			/*
+			 * The block is still in the world even though nothing in its file could be read. From
+			 * 1.21.4 a mod writes a whole variant as `{"type": "mod:chest_model_loader"}` with no
+			 * `model` at all, so every case is dropped and the block would vanish — Sophisticated
+			 * Storage files every chest and shulker box that way. Registered with nothing to draw so
+			 * the vendored-geometry pass gets a look before 2c falls back to the item model, which
+			 * for a chest is `builtin/entity` and draws nothing either.
+			 */
+			blockModels.set(id, []);
 		}
 	}
 
@@ -629,8 +638,12 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		const geometry = await blockEntityGeometry(id, { resources, textures, models });
 		if (geometry === null) {
 			// Every empty block is accounted for one way or another, so a
-			// consumer can draw the gaps rather than silently miss them.
-			failures.push({ id, kind: 'geometry', reason: 'the game draws this block in code and no geometry is vendored for it' });
+			// consumer can draw the gaps rather than silently miss them. A block
+			// whose blockstate would not parse has no definition here and is
+			// named by 2c instead, so it is not reported twice.
+			if (definitions.has(id)) {
+				failures.push({ id, kind: 'geometry', reason: 'the game draws this block in code and no geometry is vendored for it' });
+			}
 			continue;
 		}
 		// A shape per model the block can take — one for most, three for a
