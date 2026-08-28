@@ -184,6 +184,7 @@ export class AnimatedTexture {
 export class TextureLoader {
 	private readonly resources: ResourceManager;
 	private readonly cache: LruCache<string, Promise<Texture | null>>;
+	private readonly generated = new Map<string, Texture>();
 	private atlas: AtlasResolverLike | null = null;
 
 	constructor(resources: ResourceManager, maxCacheBytes = MAX_TEXTURE_CACHE_BYTES) {
@@ -197,6 +198,10 @@ export class TextureLoader {
 	}
 
 	private async decode(locator: ResourceLocator): Promise<Texture | null> {
+		const generated = this.generated.get(locator.toString());
+		if (generated) {
+			return generated;
+		}
 		let raw = await this.resources.getResource('texture', locator);
 		if (raw === null && this.atlas) {
 			const sprite = await this.atlas.resolve(locator);
@@ -262,10 +267,36 @@ export class TextureLoader {
 	}
 
 	/**
+	 * Hold a texture this run composed itself, resolvable by locator like any file.
+	 * A sheet a mod only ever draws by layering two files (a chest's wood plus its
+	 * tier trim) exists nowhere on disk, and every consumer downstream — the
+	 * rasterizer, the atlas packer — addresses textures by locator alone.
+	 */
+	register(locator: ResourceLocator | string, texture: Texture): void {
+		const key = locator.toString();
+		this.generated.set(key, texture);
+		// A miss for this locator may already be cached from before it was composed.
+		this.cache.delete(key);
+	}
+
+	/** Whether a locator resolves to pixels, including ones this run composed. */
+	async has(locator: ResourceLocator): Promise<boolean> {
+		if (this.generated.has(locator.toString())) {
+			return true;
+		}
+		return await this.load(locator).catch(() => null) !== null;
+	}
+
+	/**
 	 * Load a texture with its animation metadata for multi-frame rendering.
 	 * Returns null when the texture does not exist.
 	 */
 	async loadAnimated(locator: ResourceLocator): Promise<AnimatedTexture | null> {
+		const generated = this.generated.get(locator.toString());
+		if (generated) {
+			// Composed sheets carry no mcmeta of their own, like atlas-synthesized sprites.
+			return new AnimatedTexture(generated, null);
+		}
 		const raw = await this.resources.getResource('texture', locator);
 		let full: Texture | null = null;
 		if (raw !== null) {

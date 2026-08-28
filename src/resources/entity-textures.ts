@@ -12,6 +12,7 @@
  */
 
 import { ResourceLocator } from './locator.ts';
+import { overlaySheets } from '../textures/overlay.ts';
 
 import type { ResourceManager } from './manager.ts';
 import type { TextureLoader } from '../textures/loader.ts';
@@ -24,6 +25,12 @@ const SKIP_TOKENS = new Set(['left', 'right', 'open', 'opened', 'christmas', 'bo
 
 export function tokens(name: string): string[] {
 	return name.split(/[./_]/).filter(token => token.length > 1);
+}
+
+/** Whether a sheet is the oak one, which stands in where a wood is unknowable. */
+function isOakSheet(locator: ResourceLocator): boolean {
+	const leaf = locator.path.split('/').pop();
+	return leaf === 'oak';
 }
 
 
@@ -161,8 +168,14 @@ export async function findChestTexture(
 			continue;
 		}
 		// Ties go to the least-decorated path: acacia/normal beats
-		// acacia/lootr_normal for plain acacia_chest.
-		if (best === null || score > bestScore || (score === bestScore && candidate.length < bestNoise)) {
+		// acacia/lootr_normal for plain acacia_chest. A mod whose plain chest has
+		// one sheet per wood leaves nothing to score at all — every wood ties, and
+		// oak is the one vanilla means by "chest".
+		const tied = score === bestScore && candidate.length === bestNoise;
+		if (best === null
+			|| score > bestScore
+			|| (score === bestScore && candidate.length < bestNoise)
+			|| (tied && isOakSheet(locator) && !isOakSheet(best))) {
 			best = locator;
 			bestScore = score;
 			bestNoise = candidate.length;
@@ -206,6 +219,94 @@ export async function findBedTexture(
 	return best;
 }
 
+
+/** A sheet to draw with, plus the two layers it was composed from where it was. */
+export interface LayeredSheet {
+	/** What to bind, with any accent already laid over the sheet it decorates. */
+	sheet: ResourceLocator;
+	/** The covering sheet underneath, only when the match was an accent. */
+	base: ResourceLocator | null;
+	/** The accent laid over it, only when the match was one. */
+	accent: ResourceLocator | null;
+}
+
+/**
+ * The sheet to draw with, given the best match for a name. One that covers its
+ * own sheet is the thing itself; one that does not is a trim the game
+ * composites over a base at draw time — Sophisticated Storage's gold chest is
+ * `entity/chest/oak` with `entity/chest/gold_tier` over it — and binding the
+ * trim alone leaves floating corners where the block should be.
+ *
+ * Null when the match is a trim with nothing to lay it over, which leaves the
+ * caller's own fallback (vanilla's sheet, or the match unchanged) to decide.
+ */
+export async function layerAccentSheet(
+	resources: ResourceManager,
+	textures: TextureLoader,
+	found: ResourceLocator,
+): Promise<LayeredSheet | null> {
+	if (await coversSheet(textures, found)) {
+		return { sheet: found, base: null, accent: null };
+	}
+	const base = await findAccentBaseSheet(resources, textures, found);
+	if (base === null) {
+		return null;
+	}
+	const composed = await overlaySheets(textures, base, found);
+	return composed === null
+		? { sheet: base, base: null, accent: null }
+		: { sheet: composed, base, accent: found };
+}
+
+/**
+ * The sheet to draw a mod's chest with. A trim with no covering sibling is
+ * still returned: it is what the search found, and a faint chest beats
+ * reporting the block as having no geometry at all.
+ */
+export async function resolveChestSheets(
+	resources: ResourceManager,
+	textures: TextureLoader,
+	namespace: string,
+	itemName: string,
+): Promise<LayeredSheet | null> {
+	const found = await findChestTexture(resources, namespace, itemName);
+	if (found === null) {
+		return null;
+	}
+	return await layerAccentSheet(resources, textures, found)
+		?? { sheet: found, base: null, accent: null };
+}
+
+/**
+ * The sheet an accent decorates: a covering sibling in the accent's own
+ * directory, which is where a mod keeps the two halves of one chest
+ * (`entity/chest/gold_tier` beside `entity/chest/oak`).
+ *
+ * Oak wins a tie because the wood is block entity data a static export cannot
+ * read — twelve wood sheets are pixel-identical in coverage, so without a
+ * stated preference the choice fell to listing order and a plain chest came
+ * out acacia.
+ */
+export async function findAccentBaseSheet(
+	resources: ResourceManager,
+	textures: TextureLoader,
+	accent: ResourceLocator,
+): Promise<ResourceLocator | null> {
+	const directory = accent.path.includes('/') ? accent.path.slice(0, accent.path.lastIndexOf('/') + 1) : '';
+	const listed = await resources.listResources('texture', accent.namespace);
+	const siblings = listed
+		.filter(locator => locator.path.startsWith(directory)
+			&& locator.path.slice(directory.length).includes('/') === false
+			&& locator.path !== accent.path
+			&& !tokens(locator.path).some(token => SKIP_TOKENS.has(token)))
+		.toSorted((left, right) => Number(isOakSheet(right)) - Number(isOakSheet(left)) || left.path.localeCompare(right.path));
+	for (const sibling of siblings) {
+		if (await coversSheet(textures, sibling)) {
+			return sibling;
+		}
+	}
+	return null;
+}
 
 /**
  * Whether a sheet is a whole skin rather than an overlay. Vanilla's shulker

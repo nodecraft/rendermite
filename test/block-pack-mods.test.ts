@@ -45,6 +45,7 @@ const outRoot = path.join(import.meta.dirname, '..', '.work', 'block-packs', 'mo
 
 let solidPng: Buffer;
 let holedPng: Buffer;
+let trimPng: Buffer;
 
 beforeAll(async () => {
 	solidPng = await sharp({ create: { width: 16, height: 16, channels: 4, background: { r: 90, g: 120, b: 60, alpha: 1 } } })
@@ -57,6 +58,13 @@ beforeAll(async () => {
 		pixels.set([200, 40, 40, index % 2 === 0 ? 0 : 255], index * 4);
 	}
 	holedPng = await sharp(pixels, { raw: { width: 16, height: 16, channels: 4 } }).png().toBuffer();
+	// A tier trim: a few opaque pixels on an otherwise transparent sheet, the
+	// shape Sophisticated Storage layers over a chest's wood.
+	const trim = Buffer.alloc(16 * 16 * 4);
+	for (let index = 0; index < 16; index++) {
+		trim.set([230, 200, 60, 255], index * 4);
+	}
+	trimPng = await sharp(trim, { raw: { width: 16, height: 16, channels: 4 } }).png().toBuffer();
 });
 
 /** With `substitute`, the vendored pack is layered in so code-drawn blocks are swapped. */
@@ -399,6 +407,66 @@ describe('code-drawn blocks in a mod namespace', () => {
 		// blockstate and again as a block nothing is vendored for.
 		expect(pack.failures.filter(failure => failure.id === 'example:fancy_chest'
 			&& failure.kind === 'geometry')).toHaveLength(1);
+	});
+
+	it('lays a tier trim over the wood it decorates rather than binding it alone', async () => {
+		/*
+		 * Sophisticated Storage's gold chest is `entity/chest/oak` with
+		 * `entity/chest/gold_tier` composited on top by its block entity renderer.
+		 * The trim scores the item name's only token, so a search picks it — and it
+		 * covers 5% of its sheet, which drew a chest that was almost entirely
+		 * transparent.
+		 */
+		const pack = await exportFrom('mod-chest-trim', (resources) => {
+			resources.set('blockstate', 'example:gold_chest', JSON.stringify({
+				variants: { '': { type: 'example:chest_model_loader' } },
+			}));
+			resources.set('texture', 'example:entity/chest/gold_tier', trimPng);
+			resources.set('texture', 'example:entity/chest/oak', solidPng);
+		}, true);
+		const chest = pack.blockStates['example:gold_chest'].variants ?? [];
+		const sprite = Object.values(pack.models[chest[0].apply[0].model].elements[0].faces)[0].sprite;
+		expect(sprite).toBe('rendermite:overlay/example/entity_chest_gold_tier_over_entity_chest_oak');
+		// Composed sheets have no file behind them, so the atlas is where they have
+		// to land for the consumer to draw anything at all.
+		expect(pack.sprites[sprite]).toBeDefined();
+	});
+
+	it('lays a shulker tier trim over the mod box instead of falling back to vanilla', async () => {
+		const pack = await exportFrom('mod-shulker-trim', (resources) => {
+			codeDrawn(resources, 'example:gold_shulker_box');
+			resources.set('texture', 'example:entity/shulker_box/gold_tier', trimPng);
+			resources.set('texture', 'example:entity/shulker_box/no_tint', solidPng);
+		}, true);
+		const box = pack.blockStates['example:gold_shulker_box'].variants ?? [];
+		const sprite = Object.values(pack.models[box[0].apply[0].model].elements[0].faces)[0].sprite;
+		expect(sprite).toBe('rendermite:overlay/example/entity_shulker_box_gold_tier_over_entity_shulker_box_no_tint');
+	});
+
+	it('takes the oak sheet where a plain chest ties every wood', async () => {
+		// The wood is block entity data, so a static export cannot know it; twelve
+		// pixel-identical sheets used to leave the choice to listing order.
+		const pack = await exportFrom('mod-chest-woods', (resources) => {
+			codeDrawn(resources, 'example:chest');
+			resources.set('texture', 'example:entity/chest/acacia', solidPng);
+			resources.set('texture', 'example:entity/chest/oak', solidPng);
+		}, true);
+		const chest = pack.blockStates['example:chest'].variants ?? [];
+		const sprite = Object.values(pack.models[chest[0].apply[0].model].elements[0].faces)[0].sprite;
+		expect(sprite).toBe('example:entity/chest/oak');
+	});
+
+	it('pairs a mod chest whose halves prefix the leaf instead of suffixing it', async () => {
+		const pack = await exportFrom('mod-chest-prefixed-halves', (resources) => {
+			codeDrawn(resources, 'example:chest');
+			resources.set('texture', 'example:entity/chest/oak', solidPng);
+			resources.set('texture', 'example:entity/chest/left_oak', solidPng);
+			resources.set('texture', 'example:entity/chest/right_oak', solidPng);
+		}, true);
+		const chest = pack.blockStates['example:chest'].variants ?? [];
+		expect(new Set(chest.map(entry => entry.when.type))).toEqual(new Set(['single', 'left', 'right']));
+		const half = pack.models['rendermite:block/chest_left'];
+		expect(Object.values(half.elements[0].faces)[0].sprite).toBe('example:entity/chest/left_oak');
 	});
 
 	it('pairs a mod chest whose halves sit beside the base sheet rather than suffixing it', async () => {
