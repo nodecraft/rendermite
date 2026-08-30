@@ -35,7 +35,8 @@ const GEO_BLOCKS: Readonly<Record<string, GeoBlockResource>> = {
 	},
 };
 
-const TRIANGLE_CORNERS = [0, 1, 2, 0, 2, 3] as const;
+/* `geoToFaces` is wound for the software rasterizer; pack meshes are WebGL-style CCW from outside. */
+const TRIANGLE_CORNERS = [0, 2, 1, 0, 3, 2] as const;
 
 /**
  * Exact convention used by GeckoLib block renderers such as Oritech's: the block, geometry and skin

@@ -48,6 +48,38 @@ describe('Gecko block models', () => {
 		expect(Math.max(...xs)).toBe(32);
 	});
 
+	it('emits every cube face counter-clockwise when viewed from outside', async () => {
+		const resources = new MapResourceManager()
+			.set('raw', 'machines:geo/block/models/controller.geo.json', JSON.stringify({
+				'format_version': '1.12.0',
+				'minecraft:geometry': [{
+					description: { texture_width: 16, texture_height: 16 },
+					bones: [{ name: 'controller', cubes: [{ origin: [-8, 0, -8], size: [16, 16, 16], uv: [0, 0] }] }],
+				}],
+			}))
+			.set('texture', 'machines:block/models/controller', Buffer.from('texture'));
+		const override = await geoBlockModel('machines:controller', resources);
+		const positions = override?.model.mesh?.[0].positions ?? [];
+		const center = [8, 8, 8];
+		expect(positions).toHaveLength(12 * 3 * 3);
+
+		for (let offset = 0; offset < positions.length; offset += 9) {
+			const first = positions.slice(offset, offset + 3);
+			const second = positions.slice(offset + 3, offset + 6);
+			const third = positions.slice(offset + 6, offset + 9);
+			const edgeA = second.map((value, axis) => value - first[axis]);
+			const edgeB = third.map((value, axis) => value - first[axis]);
+			const normal = [
+				edgeA[1] * edgeB[2] - edgeA[2] * edgeB[1],
+				edgeA[2] * edgeB[0] - edgeA[0] * edgeB[2],
+				edgeA[0] * edgeB[1] - edgeA[1] * edgeB[0],
+			];
+			const centroid = first.map((value, axis) => (value + second[axis] + third[axis]) / 3);
+			const outward = normal.reduce((dot, value, axis) => dot + value * (centroid[axis] - center[axis]), 0);
+			expect(outward).toBeGreaterThan(0);
+		}
+	});
+
 	it('does not guess that an unrelated block uses a same-named geo', async () => {
 		expect(await geoBlockModel('example:imbuement_chamber', new MapResourceManager())).toBeNull();
 	});
