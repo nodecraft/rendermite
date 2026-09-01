@@ -128,19 +128,28 @@ export class PalettedPermutationsSource implements AtlasSource {
 				const sprite = new ResourceLocator(baseLocator.namespace, `${baseLocator.path}${separator}${name}`);
 				this.sprites.set(sprite.toString(), {
 					base: baseLocator,
-					// Newer format resolves palettes under textures/palettes/ via the
-					// palette locator path itself; the locator here is used verbatim.
 					palette: paletteLocator,
 				});
 			}
 		}
 	}
 
+	/**
+	 * 26.3 moved palettes out of the texture tree: atlas palette ids resolve
+	 * under textures/palettes/ (palette_key "minecraft:trim_base" is
+	 * textures/palettes/trim_base.png). Older packs keep full texture paths, so
+	 * the direct lookup is tried first.
+	 */
+	private async loadPalette(locator: ResourceLocator): Promise<Texture | null> {
+		return await this.loadTexture(locator)
+			?? await this.loadTexture(new ResourceLocator(locator.namespace, `palettes/${locator.path}`));
+	}
+
 	private async getKeyPalette(): Promise<Map<number, number>> {
 		if (this.keyPalette) {
 			return this.keyPalette;
 		}
-		const keyTexture = await this.loadTexture(ResourceLocator.parse(this.settings.palette_key));
+		const keyTexture = await this.loadPalette(ResourceLocator.parse(this.settings.palette_key));
 		if (!keyTexture) {
 			throw new AtlasSourceError(`Missing palette key ${this.settings.palette_key}`);
 		}
@@ -172,7 +181,7 @@ export class PalettedPermutationsSource implements AtlasSource {
 		if (!base) {
 			return null;
 		}
-		const permutation = await this.loadTexture(sprite.palette);
+		const permutation = await this.loadPalette(sprite.palette);
 		if (!permutation) {
 			return null;
 		}
