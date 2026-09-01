@@ -27,6 +27,30 @@ describe('inferred flat item trims', () => {
 		expect([...resolved!.data]).toEqual([180, 60, 220, 255]);
 	});
 
+	it('resolves 26.3+ palette ids under the textures/palettes/ root', async () => {
+		// 26.3 moved trim palettes to textures/palettes/ and the atlas references
+		// them by bare id (palette_key "minecraft:trim_base", permutation
+		// "minecraft:trim/quartz") — neither is a direct texture path.
+		const resources = new MapResourceManager()
+			.set('atlas', 'minecraft:items', JSON.stringify({
+				sources: [{
+					type: 'minecraft:paletted_permutations',
+					textures: ['minecraft:trims/items/boots_trim'],
+					palette_key: 'minecraft:trim_base',
+					permutations: { quartz: 'minecraft:trim/quartz' },
+				}],
+			}))
+			.set('texture', 'minecraft:trims/items/boots_trim', await pixel(128, 128, 128))
+			.set('texture', 'minecraft:palettes/trim_base', await pixel(128, 128, 128))
+			.set('texture', 'minecraft:palettes/trim/quartz', await pixel(230, 224, 210));
+		const textures = new TextureLoader(resources);
+		textures.setAtlasResolver(await loadAtlasResolver(resources, locator => textures.load(locator)));
+
+		const resolved = await textures.load(ResourceLocator.parse('minecraft:trims/items/boots_trim_quartz'));
+		expect(resolved).not.toBeNull();
+		expect([...resolved!.data]).toEqual([230, 224, 210, 255]);
+	});
+
 	it('does not invent a sprite when its requested palette is absent', async () => {
 		const resources = new MapResourceManager()
 			.set('texture', 'example:trims/items/gloves_trim', await pixel(128, 128, 128))
