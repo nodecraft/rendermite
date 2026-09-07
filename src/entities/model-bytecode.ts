@@ -23,7 +23,7 @@ import type { ClassFile } from './classfile.ts';
 import type { Cube, ExtractedModel, Part } from './model.ts';
 
 /** Argument slot count and shape of a descriptor's parameter list. */
-function parseDescriptor(descriptor: string): { args: string[]; returns: string; } {
+export function parseDescriptor(descriptor: string): { args: string[]; returns: string; } {
 	const args: string[] = [];
 	let at = 1;
 	while (descriptor[at] !== ')') {

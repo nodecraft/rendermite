@@ -26,6 +26,7 @@ const root = path.join(import.meta.dirname, '..');
 const ALLOWED = new Set([
 	'src/pack.ts',
 	'src/blocks/blockstate-eval.ts',
+	'src/blocks/light-eval.ts',
 	'src/resources/locator.ts',
 ]);
 
@@ -90,6 +91,7 @@ describe('the pack entry', () => {
 	it('exports the evaluation a pack consumer needs, and nothing from the exporter', async () => {
 		const entry = await import('../src/pack.ts');
 		expect(Object.keys(entry).toSorted((left, right) => left.localeCompare(right))).toStrictEqual([
+			'blockLightLevel',
 			'evaluateBlockState',
 			'matchesCondition',
 			'weightedVariantIndex',

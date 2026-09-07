@@ -59,6 +59,19 @@ export interface ClassFile {
 	 * row's second argument is a method handle pointing at the body.
 	 */
 	lambdaTarget: (index: number) => { owner: string; name: string; descriptor: string; } | null;
+	/**
+	 * An `invokedynamic`'s bootstrap row: the factory it calls and the constant arguments it was given.
+	 *
+	 * A lambda is one shape of this; string concatenation is another. `makeConcatWithConstants` takes
+	 * a recipe string with a placeholder per operand, and a name built as `prefix + "_stairs"` is only
+	 * recoverable by reading that recipe back.
+	 */
+	bootstrap: (index: number) => { factory: { owner: string; name: string; descriptor: string; } | null; args: Array<string | number | bigint | null>; } | null;
+	/**
+	 * An `invokedynamic`'s own name and descriptor: what it pops (the values the lambda captured) and
+	 * what it leaves. `reference` cannot answer for one, since the pool entry names no owner class.
+	 */
+	invokeDynamic: (index: number) => { name: string; descriptor: string; } | null;
 }
 
 class Reader {
@@ -371,5 +384,30 @@ export function parseClassFile(bytes: Uint8Array): ClassFile {
 		return null;
 	};
 
-	return { thisClass, superClass, constants, methods, utf8, reference, literal, lambdaTarget };
+	const bootstrap = (index: number): { factory: { owner: string; name: string; descriptor: string; } | null; args: Array<string | number | bigint | null>; } | null => {
+		const entry = constants[index];
+		const row = entry?.bootstrapIndex === undefined ? undefined : bootstraps[entry.bootstrapIndex];
+		if (!row) {
+			return null;
+		}
+		const handle = constants[row.handleIndex];
+		const factory = handle?.tag === 'methodHandle' && handle.referenceIndex !== undefined
+			? reference(handle.referenceIndex)
+			: null;
+		return { factory, args: row.argumentIndexes.map(argument => literal(argument)) };
+	};
+
+	const invokeDynamic = (index: number): { name: string; descriptor: string; } | null => {
+		const entry = constants[index];
+		if (entry?.tag !== 'invokeDynamic' || entry.nameAndTypeIndex === undefined) {
+			return null;
+		}
+		const nameAndType = constants[entry.nameAndTypeIndex];
+		if (!nameAndType?.nameIndex || !nameAndType.descriptorIndex) {
+			return null;
+		}
+		return { name: utf8(nameAndType.nameIndex), descriptor: utf8(nameAndType.descriptorIndex) };
+	};
+
+	return { thisClass, superClass, constants, methods, utf8, reference, literal, lambdaTarget, bootstrap, invokeDynamic };
 }

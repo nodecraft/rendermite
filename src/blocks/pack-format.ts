@@ -135,6 +135,24 @@ export type BlockPackBlockState =
 export type BlockPackTintsFile = BlockTintPack;
 
 /**
+ * How much light a block emits, 0–15.
+ *
+ * A number when every state of the block emits the same. Otherwise the commonest level is `default`
+ * and each other level is a case naming only the properties that decide it: a redstone lamp is
+ * `{ default: 0, cases: [{ when: { lit: 'true' }, level: 15 }] }`. The first case whose every
+ * property matches the state applies; `blockLightLevel` in `light-eval.ts` does that lookup.
+ */
+export type BlockPackLight =
+	| number
+	| { default: number; cases: Array<{ when: Record<string, string>; level: number; }>; };
+
+/**
+ * `light.json`, by block id, holding only the blocks that emit: absent means 0. Present only when the
+ * pack has emitters and the export could read the code for them — an `--assets` run has none.
+ */
+export type BlockPackLightFile = Record<string, BlockPackLight>;
+
+/**
  * `biomes.json`, present only when the pack has biomes to describe: vanilla's
  * whole table, or the ones a mod's datapack declares. Absent is not empty — a
  * consumer with no file falls back to tinting at `tints.json`'s flat climate.
@@ -344,6 +362,8 @@ export interface BlockPackMetaFile {
 		entities: number;
 		/** Distinct entity models in `entity-models.json`; `0` means the file is absent. */
 		entityModels: number;
+		/** Emitting blocks in `light.json`; `0` means the file is absent. */
+		light: number;
 		failures: number;
 	};
 	/** sha256 per file, enough to verify a cached copy without refetching it. */
