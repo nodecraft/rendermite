@@ -953,6 +953,9 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	/*
 	 * 5b. Light emission, read out of the code. No asset states it — a torch's 14 is a lambda in
 	 * `Blocks.<clinit>` — so without the jar there is nothing to read and the file is not written.
+	 *
+	 * For every block the jars *list*, not only those whose blockstate parsed: torchmaster's
+	 * `invisible_light` states neither variants nor multipart, draws nothing, and lights a whole base.
 	 */
 	let lightPack: BlockPackLightFile = {};
 	if (options.classes) {
@@ -960,12 +963,16 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			version,
 			cacheDir: options.cacheDir ?? output,
 			classes: options.classes,
-			blockIds: Object.keys(blockStates),
+			blockIds: [...new Set([...blockLocators.map(locator => locator.toString()), ...Object.keys(blockStates)])],
 			onProgress: (count, total) => report('light', count, total),
 		});
 		lightPack = sortedByKey(collected.light);
 		for (const failure of collected.failures) {
 			failures.push({ id: failure.id, kind: 'light', reason: failure.reason });
+		}
+		// The interpreter's account of the run: which classes it took for registries, what it gave up on
+		if (process.env.RENDERMITE_LIGHT_DEBUG) {
+			console.error(collected.notes.join('\n'));
 		}
 	}
 

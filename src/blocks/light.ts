@@ -453,6 +453,28 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 			light[id] = answer.light;
 		}
 	}
+
+	/*
+	 * A mod's blocks the jar lists no blockstate for — nautec's prismarine crystal is drawn by a block
+	 * entity renderer and has none — are still registered in its code, and still light the world. For a
+	 * one-namespace mod export every registration the mod's own code made is asked as well; only the
+	 * emitters are kept, since a name that is not a block cannot be told apart otherwise.
+	 */
+	const modNamespaces = new Set(blockIds.map(id => id.slice(0, id.indexOf(':'))).filter(namespace => namespace !== 'minecraft'));
+	if (modNamespaces.size === 1) {
+		const [namespace] = modNamespaces;
+		const listed = new Set(blockIds);
+		for (const [name, registration] of extraction.registrations) {
+			if (name.includes(':') || registration.vanilla || listed.has(`${namespace}:${name}`)) {
+				continue;
+			}
+			const answer = extraction.lightOf(`${namespace}:${name}`);
+			if ('light' in answer && answer.light !== 0) {
+				light[`${namespace}:${name}`] = answer.light;
+				notes.push(`${namespace}:${name} emits but ships no blockstate; kept from its registration alone`);
+			}
+		}
+	}
 	return { light, failures, notes };
 }
 

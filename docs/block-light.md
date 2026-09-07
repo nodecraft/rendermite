@@ -111,3 +111,21 @@ reading altogether, and with it light; an `--assets` run has no code to read.
 Only emitters are present; absent means 0. `blockLightLevel` from `@nodecraft/rendermite/pack` does
 the lookup: the first case whose every property matches the state, else `default`. `meta.json`
 carries `counts.light`; the file is absent when it would be empty.
+
+Every block the jars *list* is asked about, not only those whose blockstate parsed into
+`blockstates.json`: torchmaster's `invisible_light` states neither variants nor multipart and draws
+nothing, and it lights a whole base. For a one-namespace mod export the mod's own registrations are
+asked too, so a block with no blockstate file at all — nautec's prismarine crystal, drawn by a block
+entity renderer — still gets its 15. A consumer must therefore read `light.json` by block id without
+expecting a geometry entry to go with it. A block registered with a properties builder the
+interpreter never recognised (a Fabric jar's `FabricBlockSettings`) is a failure, not a zero.
+
+## Checked against a world
+
+`ui`'s `test/nbt/bench/light-check.ts` recomputes block light for real chunks from `light.json` and
+diffs it against the light the game saved, cell by cell, over chunks the game flagged as lit. On a
+vanilla 1.21.5 world it matched on 100.00% of 6.1 million cells. On a heavily modded 1.21.1 save
+(FTB OceanBlock 2, 67 mod namespaces exported from the pack's own jars) it matched 99.98% of 8.8
+million overworld cells and 99.95% of 10.2 million cells in a dimension built from 290,000
+`minecraft:light` blocks; what remains is cells the game itself saved as 0 next to a light source,
+which looks like light the game had not yet recomputed after placing a structure.

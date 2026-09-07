@@ -2022,6 +2022,14 @@ export function extractBlockLight(roots: readonly ClassFile[], source: LightCode
 			}
 		}
 		if (spec === null) {
+			/*
+			 * No properties at all is not the same as properties with no light: a block built on a
+			 * builder the interpreter never recognised — a Fabric jar's `FabricBlockSettings`, an
+			 * intermediary-mapped `Properties` — would otherwise be answered with a confident zero.
+			 */
+			if (registration.props === null) {
+				return { failure: `registered without a recognisable properties builder (at ${registration.site}); light unknown` };
+			}
 			return { light: 0 };
 		}
 		if (spec.kind === 'constant') {
