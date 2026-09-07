@@ -40,6 +40,52 @@ export interface Mappings {
 	obfuscatedOf: Map<string, string>;
 	/** `fvd` → `net.minecraft.client.model.CowModel`. */
 	originalOf: Map<string, string>;
+	/**
+	 * Members, for code that names the game's classes by their *original* names against a jar that
+	 * does not: a mod compiled against Mojang mappings calls `BlockBehaviour$Properties.ofFullCopy` and
+	 * reads `Blocks.TORCH`, and following either into an obfuscated client means renaming both.
+	 *
+	 * Fields by `owner.name`, methods by `owner.name(descriptor)` — original names throughout, the
+	 * descriptor in JVM form with original class names. Empty for an identity mapping, where nothing
+	 * needs renaming.
+	 */
+	fieldOf: Map<string, string>;
+	methodOf: Map<string, string>;
+}
+
+const PRIMITIVE_DESCRIPTORS: Record<string, string> = {
+	void: 'V',
+	boolean: 'Z',
+	byte: 'B',
+	char: 'C',
+	short: 'S',
+	int: 'I',
+	long: 'J',
+	float: 'F',
+	double: 'D',
+};
+
+/** A ProGuard type (`java.util.function.ToIntFunction`, `int[]`) as a JVM descriptor, class names untouched. */
+function typeDescriptor(type: string): string {
+	let dimensions = 0;
+	let base = type;
+	while (base.endsWith('[]')) {
+		base = base.slice(0, -2);
+		dimensions++;
+	}
+	const scalar = PRIMITIVE_DESCRIPTORS[base] ?? `L${base.replaceAll('.', '/')};`;
+	return `${'['.repeat(dimensions)}${scalar}`;
+}
+
+/**
+ * A descriptor with every class in it renamed through the map: `(Lnet/minecraft/…/Block;)V` on an
+ * obfuscated jar is `(Ldfy;)V`. Unmapped classes — `java/lang/String`, a mod's own — stay as they are.
+ */
+export function remapDescriptor(descriptor: string, obfuscatedOf: Map<string, string>): string {
+	return descriptor.replaceAll(/L([^;]+);/g, (whole, name: string) => {
+		const mapped = obfuscatedOf.get(name.replaceAll('/', '.'));
+		return mapped ? `L${mapped.replaceAll('.', '/')};` : whole;
+	});
 }
 
 export class MappingsUnavailableError extends Error {
@@ -91,28 +137,62 @@ export async function downloadClientMappings(version: string, cacheDir: string):
 	return target;
 }
 
-/** Parses the class lines of a ProGuard mapping file. */
+/**
+ * Parses a ProGuard mapping file: the class lines, and the member lines under each.
+ *
+ * Members were skipped for years because the geometry extractor works on descriptor shape rather
+ * than member names. Block light needs them: it follows a mod's `Blocks.TORCH` into the client jar,
+ * and that is a field rename the class map alone cannot make.
+ *
+ * A method line is `[start:end:]returnType name(paramTypes) -> obf`; the line numbers are dropped
+ * and the types become a JVM descriptor in the *original* names, which is how a mod's constant pool
+ * spells the reference and so is the key a lookup arrives with.
+ */
 export function parseMappings(text: string): Mappings {
 	const obfuscatedOf = new Map<string, string>();
 	const originalOf = new Map<string, string>();
+	const fieldOf = new Map<string, string>();
+	const methodOf = new Map<string, string>();
+	let owner = '';
 	for (const line of text.split('\n')) {
-		// Indented is a member, `#` is the header comment, and a class line always has the arrow
-		if (line.length === 0 || line.startsWith(' ') || line.startsWith('\t') || line.startsWith('#')) {
+		if (line.length === 0 || line.startsWith('#')) {
 			continue;
 		}
 		const divider = line.indexOf(' -> ');
 		if (divider === -1) {
 			continue;
 		}
-		const original = line.slice(0, divider).trim();
 		const obfuscated = line.slice(divider + 4).trim().replace(/:$/, '');
-		if (original.length === 0 || obfuscated.length === 0) {
+		if (obfuscated.length === 0) {
 			continue;
 		}
-		obfuscatedOf.set(original, obfuscated);
-		originalOf.set(obfuscated, original);
+		if (!line.startsWith(' ') && !line.startsWith('\t')) {
+			owner = line.slice(0, divider).trim();
+			if (owner.length > 0) {
+				obfuscatedOf.set(owner, obfuscated);
+				originalOf.set(obfuscated, owner);
+			}
+			continue;
+		}
+		// A member of the class above it: `type name` for a field, `type name(params)` for a method
+		const member = line.slice(0, divider).trim().replace(/^\d+:\d+:/, '');
+		const space = member.indexOf(' ');
+		if (space === -1 || owner.length === 0) {
+			continue;
+		}
+		const returnType = member.slice(0, space);
+		const signature = member.slice(space + 1);
+		const open = signature.indexOf('(');
+		if (open === -1) {
+			fieldOf.set(`${owner}.${signature}`, obfuscated);
+			continue;
+		}
+		const name = signature.slice(0, open);
+		const params = signature.slice(open + 1, -1);
+		const descriptor = `(${params.length === 0 ? '' : params.split(',').map(param => typeDescriptor(param.trim())).join('')})${typeDescriptor(returnType)}`;
+		methodOf.set(`${owner}.${name}${descriptor}`, obfuscated);
 	}
-	return { obfuscatedOf, originalOf };
+	return { obfuscatedOf, originalOf, fieldOf, methodOf };
 }
 
 export async function loadMappings(version: string, cacheDir: string): Promise<Mappings> {
@@ -133,7 +213,7 @@ export function identityMappings(internalNames: Iterable<string>): Mappings {
 		obfuscatedOf.set(dotted, dotted);
 		originalOf.set(dotted, dotted);
 	}
-	return { obfuscatedOf, originalOf };
+	return { obfuscatedOf, originalOf, fieldOf: new Map(), methodOf: new Map() };
 }
 
 /**

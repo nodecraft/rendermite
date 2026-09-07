@@ -28,6 +28,7 @@
  */
 
 export { evaluateBlockState, matchesCondition, weightedVariantIndex } from './blocks/blockstate-eval.ts';
+export { blockLightLevel } from './blocks/light-eval.ts';
 export type {
 	BlockModelVariant,
 	BlockProperties,
@@ -44,6 +45,8 @@ export type {
 	BlockPackBlockStatesFile,
 	BlockPackElement,
 	BlockPackFace,
+	BlockPackLight,
+	BlockPackLightFile,
 	BlockPackMetaFile,
 	BlockPackModel,
 	BlockPackModelsFile,

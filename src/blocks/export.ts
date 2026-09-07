@@ -26,6 +26,7 @@ import { collectEntities } from './entities.ts';
 import { collectEntityGeometry } from './entity-models.ts';
 import { geoBlockModel } from './geo-blocks.ts';
 import { collectItemSprites } from './item-sprites.ts';
+import { collectBlockLight } from './light.ts';
 import { buildObjMesh } from './obj-mesh.ts';
 import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
 import { UNREGISTERED_TINTS, buildBlockTints } from './tints.ts';
@@ -47,6 +48,7 @@ import type {
 	BlockPackEntityModelsFile,
 	BlockPackFace,
 	BlockPackItemsFile,
+	BlockPackLightFile,
 	BlockPackMetaFile,
 	BlockPackModel,
 	BlockPackModelsFile,
@@ -115,7 +117,7 @@ export interface BlockPackFailure {
 	 * `intentional` is not a failure: it marks a block that is empty because the
 	 * game draws nothing for it. Filter it out to get the real gaps.
 	 */
-	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'entity' | 'intentional';
+	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'entity' | 'light' | 'intentional';
 	reason: string;
 }
 
@@ -132,6 +134,8 @@ export interface BlockPackResult {
 	entities: number;
 	/** Distinct entity models in `entity-models.json`; `0` means the file was not written. */
 	entityModels: number;
+	/** Emitting blocks in `light.json`; `0` means the file was not written. */
+	light: number;
 	/** Files actually written — the only trustworthy success signal. */
 	writtenFiles: number;
 	failures: BlockPackFailure[];
@@ -946,6 +950,25 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		}
 	}
 
+	/*
+	 * 5b. Light emission, read out of the code. No asset states it — a torch's 14 is a lambda in
+	 * `Blocks.<clinit>` — so without the jar there is nothing to read and the file is not written.
+	 */
+	let lightPack: BlockPackLightFile = {};
+	if (options.classes) {
+		const collected = await collectBlockLight({
+			version,
+			cacheDir: options.cacheDir ?? output,
+			classes: options.classes,
+			blockIds: Object.keys(blockStates),
+			onProgress: (count, total) => report('light', count, total),
+		});
+		lightPack = sortedByKey(collected.light);
+		for (const failure of collected.failures) {
+			failures.push({ id: failure.id, kind: 'light', reason: failure.reason });
+		}
+	}
+
 	// 6. Biome climates: vanilla's own table, plus whatever a mod's datapack states.
 	const biomes = await buildBiomeClimates(resources, namespaces);
 
@@ -1169,6 +1192,9 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	await emit('models.json', JSON.stringify(sortedByKey(emittedModels) satisfies BlockPackModelsFile));
 	await emit('blockstates.json', JSON.stringify(sortedByKey(blockStates) satisfies BlockPackBlockStatesFile));
 	await emit('tints.json', JSON.stringify(tints.pack satisfies BlockPackTintsFile));
+	if (Object.keys(lightPack).length > 0) {
+		await emit('light.json', JSON.stringify(lightPack satisfies BlockPackLightFile));
+	}
 	// Only when there is something to say: a mod that adds no biomes should not
 	// publish an empty file for a consumer to fetch and discard.
 	if (Object.keys(biomes.pack).length > 0) {
@@ -1189,6 +1215,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		items: Object.keys(itemPack?.items ?? {}).length,
 		entities: Object.keys(entityPack ?? {}).length,
 		entityModels: Object.keys(entityModelPack?.models ?? {}).length,
+		light: Object.keys(lightPack).length,
 		failures: failures.length,
 	};
 	// meta.json hashes the pack, so it is written last and hashes nothing of itself.

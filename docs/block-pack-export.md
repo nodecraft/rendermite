@@ -99,6 +99,7 @@ Two changes landed outside `src/blocks/` and both benefit the icon path too:
   blockstates.json     block id  -> { variants | multipart }, keys and predicates pre-parsed
   tints.json           flat plains colours, colormaps, ramps, per-block semantics
   biomes.json          biome id -> climate and the colours it overrides (absent when there are none)
+  light.json           block id -> light emitted, per state where it varies (absent when nothing emits; block-light.md)
   colormap/*.png       the version's own grass/foliage/dry_foliage maps
   items.json           item id  -> flat layer sprites, with its own atlas (absent when there are none)
   item-atlas-N.png     the item sheet's own page(s), addressed by items.json
@@ -299,6 +300,7 @@ blocks/modded/<namespace>/   one mod's namespace, fetched on demand
 | `colormap/*.png` | 29 KB | 29 KB | only for real biome tints |
 | `tints.json` | 2 KB | 1 KB | always |
 | `biomes.json` | 4 KB | 1 KB | only for real biome tints |
+| `light.json` | 10 KB | 2 KB | only for lighting |
 | `items.json` | 170 KB | 14 KB | only for drawing dropped items |
 | `item-atlas-0.png` | 86 KB | 86 KB | only for drawing dropped items |
 | `entities.json` | 12 KB | 2 KB | only for naming and tinting entities |

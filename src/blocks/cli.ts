@@ -187,6 +187,9 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 		console.log(result.entityModels > 0
 			? `${result.entityModels} entity models recovered from the jar's own code.`
 			: 'No entity geometry recovered.');
+		console.log(result.light > 0
+			? `${result.light} light-emitting blocks described in light.json.`
+			: 'No block light read; light.json not written.');
 		console.log(result.biomes > 0
 			? `${result.biomes} biomes described in biomes.json.`
 			: 'No biomes to describe; biomes.json not written.');
