@@ -35,6 +35,8 @@ export interface CollectBlockLightOptions {
 	classes: ClassSource;
 	/** Every block the pack describes, fully qualified; each gets an answer or a failure. */
 	blockIds: readonly string[];
+	/** A block's default state, from the data generator's report, for a colour that is a function of state. */
+	defaultStateOf?: (blockId: string) => Readonly<Record<string, string>> | null;
 	/** Blocks to describe in `notes` — what was registered and with which light — for chasing a failure. */
 	trace?: readonly string[];
 	onProgress?: (done: number, total: number) => void;
@@ -459,6 +461,7 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 		remap,
 		remapClass,
 		nameOf,
+		defaultStateOf: options.defaultStateOf,
 		propsClasses,
 		lightGetters: findLightGetters(roots, propsClasses, resolve, notes),
 		// The game's classes are the mapped ones on an obfuscated jar, and `net.minecraft` on a clear one;

@@ -985,6 +985,8 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	 * For every block the jars *list*, not only those whose blockstate parsed: torchmaster's
 	 * `invisible_light` states neither variants nor multipart, draws nothing, and lights a whole base.
 	 */
+	// Full property sets and default states, from the version's own data generator when there is one
+	const states = options.reports === undefined ? null : await readBlockStates(options.reports);
 	let lightPack: BlockPackLightFile = {};
 	let behaviourPack: BlockPackBehaviourFile = {};
 	if (options.classes) {
@@ -993,6 +995,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 			cacheDir: options.cacheDir ?? output,
 			classes: options.classes,
 			blockIds: [...new Set([...blockLocators.map(locator => locator.toString()), ...Object.keys(blockStates)])],
+			defaultStateOf: id => states?.[id]?.default ?? null,
 			onProgress: (count, total) => report('light', count, total),
 		});
 		lightPack = sortedByKey(collected.light);
@@ -1026,8 +1029,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	// Game rules live in the game's code, so only a vanilla pack with a jar to read has them
 	const gameRules = options.classes && namespaces.includes('minecraft') ? await collectGameRules(options.classes) : {};
 
-	// 6c. Full property sets and default states, from the version's own data generator when there is one
-	const states = options.reports === undefined ? null : await readBlockStates(options.reports);
+	// 6c. Full property sets and default states, read above for the light pass's default-state colours
 	const statesPack = states === null
 		? null
 		: Object.fromEntries(Object.entries(states).filter(([id]) => namespaces.includes(id.split(':', 1)[0])));

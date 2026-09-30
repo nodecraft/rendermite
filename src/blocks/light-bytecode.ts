@@ -57,6 +57,8 @@ export interface LightCodeSource {
 	 * Absent, or answering the name it was given, where the jar already speaks original names.
 	 */
 	nameOf?: (reference: MemberReference, field: boolean) => string;
+	/** A block's default state by full id, from the data generator's report when the export has one. */
+	defaultStateOf?: (blockId: string) => Readonly<Record<string, string>> | null;
 	/** Classes that are a block `Properties` builder, in every spelling the jars use. */
 	propsClasses: ReadonlySet<string>;
 	/**
@@ -634,6 +636,38 @@ class Interpreter {
 	}
 
 	/**
+	 * A function of state run at a registered block's default state, which only the data generator's
+	 * report states: a sign takes its log's colour, and a log is `axis=y` until placed otherwise.
+	 */
+	private atDefaultState(block: Handle, fn: LambdaValue): Value | null {
+		const { source, registrations } = this.shared;
+		let values: Readonly<Record<string, string>> | null = null;
+		for (const [name, registration] of registrations) {
+			if (registration.block !== block || values) {
+				continue;
+			}
+
+			const id = name.includes(':') ? name : (registration.vanilla ? `minecraft:${name}` : null);
+			values = id ? source.defaultStateOf?.(id) ?? null : null;
+		}
+		if (!values) {
+			return null;
+		}
+		const saved = { steps: this.shared.steps, frames: this.shared.frames, probe: this.shared.probe };
+		const probe: StateProbe = { values: new Map(Object.entries(values)), domains: new Map(), reads: new Set(), failure: null };
+		this.shared.probe = probe;
+		this.shared.steps = Math.min(saved.steps, CTOR_BUDGET);
+		try {
+			const result = this.invokeLambda(fn, [{ kind: 'state', probe }]);
+			return probe.failure ? null : result;
+		} finally {
+			this.shared.steps = saved.steps - Math.max(0, Math.min(saved.steps, CTOR_BUDGET) - this.shared.steps);
+			this.shared.frames = saved.frames;
+			this.shared.probe = saved.probe;
+		}
+	}
+
+	/**
 	 * The class a factory lambda constructs, read off its body rather than run: `props -> new
 	 * StairBlock(base, props)` builds a `StairBlock`. What a stair overrides lives on that class.
 	 */
@@ -672,7 +706,8 @@ class Interpreter {
 		if (ids.length === 0) {
 			return null;
 		}
-		const known = ids.map(name => this.shared.registrations.get(name)).find(entry => entry !== undefined);
+		// The last name, which is the path: `minecraft` came in first and was registered as air's, so a copper id carrying it answered with air
+		const known = ids.map(name => this.shared.registrations.get(name)).findLast(entry => entry !== undefined);
 		if (known && ids.every(name => this.shared.registrations.has(name))) {
 			return known.block ?? this.blockFor(known);
 		}
@@ -694,7 +729,11 @@ class Interpreter {
 		if (!props && !block) {
 			// `register("name", () -> new Block(...))`: the block is behind a supplier, so run it
 			for (const arg of args) {
-				if (arg.kind !== 'lambda') {
+				/*
+				 * Only a supplier, which takes nothing. 26.x hands `ColorCollection.zipMap` a lambda of a colour
+				 * and an id, and run with neither it made one colourless block for all sixteen names.
+				 */
+				if (arg.kind !== 'lambda' || parseDescriptor(arg.descriptor).args.length > arg.captured.length) {
 					continue;
 				}
 				const made = this.invokeLambda(arg, []);
@@ -1109,7 +1148,13 @@ class Interpreter {
 		 * the registry — holders, id maps, a `ResourceLocation` validated character by character — for a
 		 * thousand blocks. That was the whole budget, spent on nothing this needs.
 		 */
-		const registered = this.detectRegistration(args, `${remapped.owner}.${remapped.name}${remapped.descriptor}`);
+		/*
+		 * A call that hands back a record is building a collection of blocks, never one block: 26.x's
+		 * `WeatheringCopperCollection.registerBlocks` registers all eight coppers inside and returns them
+		 * grouped, which a later `COPPER_BLOCK.weathering().pick(state)` reads. It is followed instead.
+		 */
+		const returnsRecord = returns.startsWith('L') && source.resolve(returns.slice(1, -1))?.superClass === 'java/lang/Record';
+		const registered = returnsRecord ? null : this.detectRegistration(args, `${remapped.owner}.${remapped.name}${remapped.descriptor}`);
 		if (registered) {
 			this.push(returns === 'V' ? null : (returns.startsWith('L') ? { kind: 'object', handle: registered } : UNKNOWN));
 			return;
@@ -1124,8 +1169,10 @@ class Interpreter {
 			const named = source.nameOf?.(reference, false) ?? remapped.name;
 			if (target.props && args.length === 0 && (named === 'defaultMapColor' || named === 'defaultMaterialColor')) {
 				const colour = statedMapColor(target.props);
-				if (colour && colour.kind !== 'lambda') {
-					this.push(colour);
+				// A colour that is a function of state, a log's, is the game's answer at the block's default state
+				const answer = colour?.kind === 'lambda' ? this.atDefaultState(target, colour) : colour;
+				if (answer) {
+					this.push(answer);
 					return;
 				}
 			}
