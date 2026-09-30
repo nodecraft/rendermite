@@ -14,6 +14,7 @@ import type { BlockBehaviour } from './block-behaviour.ts';
 import type { BlockStateMultipartCase, BlockStateVariantCase } from './blockstate-eval.ts';
 import type { AdvancementPack, TagPack } from './datapack.ts';
 import type { GameRulePack } from './game-rules.ts';
+import type { NamePack } from './names.ts';
 import type { MeshGroup } from './obj-mesh.ts';
 import type { BlockStatesPack } from './states.ts';
 import type { BlockTintPack } from './tints.ts';
@@ -191,6 +192,9 @@ export type BlockPackStatesFile = BlockStatesPack;
  * (camelCase before 26.x, snake_case from it), with its type and default. Vanilla packs only.
  */
 export type BlockPackGameRulesFile = GameRulePack;
+
+/** `names.json`: English display names by id, for blocks and items, from each namespace's `en_us`. */
+export type BlockPackNamesFile = NamePack;
 
 /** One flat sprite of an item's layer stack, in the order the client draws them. */
 export interface ItemPackLayer {
@@ -374,6 +378,8 @@ export interface EquipmentPack {
 	items: Record<string, { material: string; slot: EquipmentSlot; }>;
 	/** Materials whose sheet is greyscale and takes the item's own dye colour. */
 	dyeable: string[];
+	/** The colour a dyeable material takes when nothing dyed it, read from the game's own constant. */
+	undyed?: Record<string, string>;
 	/** Worn armour-trim sheets generated from the version's armour-trim atlas. */
 	trims: {
 		/** Sprite ids per pattern and material, into this file's own `sprites`. */
@@ -413,6 +419,8 @@ export interface BlockPackMetaFile {
 		states: number;
 		/** Rules in `game-rules.json`; `0` means the file is absent. */
 		gameRules: number;
+		/** Block and item names in `names.json`; `0` means the file is absent. */
+		names: number;
 		failures: number;
 	};
 	/** sha256 per file, enough to verify a cached copy without refetching it. */

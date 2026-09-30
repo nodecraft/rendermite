@@ -105,6 +105,7 @@ Two changes landed outside `src/blocks/` and both benefit the icon path too:
   tags.json            registry -> tag id -> values, unexpanded, from the jar's own datapack
   advancements.json    advancement id -> criteria names, recipe unlocks left out
   game-rules.json      rule name -> { type, default }, from the code (vanilla packs only)
+  names.json           block and item id -> English display name, from each namespace's en_us
   colormap/*.png       the version's own grass/foliage/dry_foliage maps
   items.json           item id  -> flat layer sprites, with its own atlas (absent when there are none)
   item-atlas-N.png     the item sheet's own page(s), addressed by items.json
@@ -203,8 +204,28 @@ colour id (0 to 63; absent is 0, `NONE`), or per-state cases in `light.json`'s s
 of state picks it: an oak log is 34 on its bark and 13 on its end grain. Before 1.20 half of this lived
 on the block's `Material`, whose flags are read off the constant the registration named.
 
-Only builder calls are read. A block class that overrides `canBeReplaced` or `getMapColor` answers for
-itself at runtime, and that is not followed. A sign's colour is its log's at the log's default state,
+More come from the block's own class, where it overrides a method rather than stating a builder
+call (`src/blocks/block-overrides.ts`). An override counts only where a class below the base declares
+it, and it is run per state like a light function:
+
+- `lightShape`: `useShapeForLightOcclusion`, so light crossing a face is tested against the block's
+  shape. `true` for stairs, snow layers and farmland; cases for a slab, which is a full block when
+  `type=double`.
+- `lightBlock`: `getLightBlock`, the light lost passing through, where the class answers for itself:
+  15 for tinted glass, 1 for leaves.
+- `fluid`: `'water'` or `'lava'` for a block that holds it in every state, read off its
+  `getFluidState` without running it: kelp, seagrass, bubble columns. A waterlogged block reads a
+  property there, and its state already says so.
+- `air`: also set from an `isAir` override, which is how an air block said so before 1.16.2.
+- `invisible`: `getRenderShape` always answers `INVISIBLE`, so the block model renderer draws nothing:
+  a barrier, a light block, a structure void, and blocks another renderer draws (fluids, end portals).
+- `hidesSharedFaces`: the class decides whether a face against a neighbour draws (`skipRendering`):
+  glass hides the faces it shares with glass although its texture reads as plain cutout.
+- The equipment in `entity-models.json` states `undyed`, the colour an undyed leather piece takes,
+  read from the game's own constant.
+
+The rest of a block class's code is not followed. A class that overrides `canBeReplaced` or
+`getMapColor` answers for itself at runtime. A sign's colour is its log's at the log's default state,
 which the chain does not state, and 26.x registers every dyed block in a `ColorCollection` loop the
 interpreter does not follow. Those blocks carry no `mapColor` and a `behaviour` failure each. 1.13
 publishes no mappings, so its builder calls have no names and it gets no file.
@@ -212,6 +233,9 @@ publishes no mappings, so its builder calls have no names and it gets no file.
 **`game-rules.json`.** Every rule `GameRules` registers, by the name `level.dat` stores it under
 (camelCase before 26.x, snake_case from it), as `{ type: 'boolean' | 'integer', default }`. Read from
 the code, so vanilla packs only.
+
+**`names.json`.** `{ block, item }`, English display names by id from each namespace's own `en_us`:
+`minecraft:tnt` is "TNT", and before 1.20.3 `minecraft:grass` is "Grass".
 
 **`items.json`.** The flat items — the ones the game draws as a stack of sprites rather than as
 geometry, because `ItemModelGenerator` builds the slab in code and no asset states it. `items[id]`

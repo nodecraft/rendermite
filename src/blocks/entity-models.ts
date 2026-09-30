@@ -14,6 +14,7 @@
 
 import { findGeoForEntity } from './entity-geo.ts';
 import { EQUIPMENT_SLOTS } from './pack-format.ts';
+import { parseClassFile } from '../entities/classfile.ts';
 import { ancestryOf, extractInheritedModel } from '../entities/inherit.ts';
 import { buildModelNameIndex, classReader, linkEntityModel } from '../entities/link.ts';
 import { MappingsUnavailableError, resolveMappings } from '../entities/mappings.ts';
@@ -403,6 +404,31 @@ async function armourGeometry(
  * the assets cannot answer, since nothing in them maps `iron_helmet` to `iron`: they follow the
  * game's own naming, and each is confirmed against a real item model before being claimed.
  */
+/**
+ * Where the game keeps the colour an undyed leather piece takes, newest first: 1.20.5 moved it from
+ * the item class to the dyed-colour component. A `static final int`, so it is read off the field
+ * itself, since javac copies the value into every place that uses it.
+ */
+const LEATHER_COLOUR_FIELDS: ReadonlyArray<readonly [string, string]> = [
+	['net.minecraft.world.item.component.DyedItemColor', 'LEATHER_COLOR'],
+	['net.minecraft.world.item.DyeableLeatherItem', 'DEFAULT_LEATHER_COLOR'],
+];
+
+async function undyedLeather(mappings: Mappings, read: (internal: string) => Promise<Uint8Array | null>): Promise<string | null> {
+	for (const [owner, field] of LEATHER_COLOUR_FIELDS) {
+		const bytes = await read((mappings.obfuscatedOf.get(owner) ?? owner).replaceAll('.', '/'));
+		if (!bytes) {
+			continue;
+		}
+		const name = mappings.fieldOf.get(`${owner}.${field}`) ?? field;
+		const value = parseClassFile(bytes).fields.find(candidate => candidate.name === name)?.constant;
+		if (typeof value === 'number') {
+			return `#${(value & 0xFF_FF_FF).toString(16).padStart(6, '0')}`;
+		}
+	}
+	return null;
+}
+
 export async function collectEquipment(
 	names: readonly string[],
 	mappings: Mappings,
@@ -470,6 +496,7 @@ export async function collectEquipment(
 		}
 	}
 	const trims = await collectArmourTrims(resources, spriteIds);
+	const leather = dyeable.includes('minecraft:leather') ? await undyedLeather(mappings, read) : null;
 
 	const modelKey = `${found.className}#armor`;
 	models[modelKey] = {
@@ -489,6 +516,7 @@ export async function collectEquipment(
 		materials,
 		items,
 		dyeable,
+		...(leather && { undyed: { 'minecraft:leather': leather } }),
 		trims,
 	};
 }

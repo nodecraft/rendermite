@@ -29,6 +29,7 @@
  */
 
 import { statedMapColor } from './block-behaviour.ts';
+import { instructions } from './entity-sizes.ts';
 import { parseDescriptor } from '../entities/model-bytecode.ts';
 
 import type { BlockPackLight } from './pack-format.ts';
@@ -218,6 +219,8 @@ interface Shared {
 	statics: Map<string, Value>;
 	initialised: Set<string>;
 	registrations: Map<string, Registration>;
+	/** Blocks some registration already stands for, which a later call names only as its base. */
+	registeredBlocks: Set<Handle>;
 	steps: number;
 	frames: number;
 	notes: string[];
@@ -630,6 +633,28 @@ class Interpreter {
 		return parent === 'java/lang/Enum' || (parent !== null && this.shared.source.resolve(parent)?.superClass === 'java/lang/Enum');
 	}
 
+	/**
+	 * The class a factory lambda constructs, read off its body rather than run: `props -> new
+	 * StairBlock(base, props)` builds a `StairBlock`. What a stair overrides lives on that class.
+	 */
+	private constructedIn(lambda: LambdaValue): string | null {
+		const reference = this.shared.source.remap({ owner: lambda.owner, name: lambda.name, descriptor: lambda.descriptor }, false);
+		const target = findMethod(this.shared.source, reference.owner, reference.name, reference.descriptor);
+		if (!target) {
+			return null;
+		}
+		for (const { op, index } of instructions(target.code)) {
+			if (op !== 0xBB) {
+				continue;
+			}
+			const name = target.classFile.utf8(index);
+			if (!name.startsWith('java/') && !this.isPropsType(name)) {
+				return this.shared.source.remapClass(name);
+			}
+		}
+		return null;
+	}
+
 	private detectRegistration(args: Value[], site: string): Handle | null {
 		const names: string[] = [];
 		for (const arg of args) {
@@ -657,10 +682,13 @@ class Interpreter {
 		for (const arg of args) {
 			if (arg.kind === 'object' && arg.handle.isProps) {
 				props ??= arg.handle;
-			} else if (arg.kind === 'object' && arg.handle.props) {
+			} else if (arg.kind === 'object' && arg.handle.props && !this.shared.registeredBlocks.has(arg.handle)) {
+				// `legacyStair("oak_stairs", OAK_PLANKS)` names the planks as its base, not as the block, so it is followed
 				block ??= arg.handle;
 			} else if (arg.kind === 'lambda' && arg.name === '<init>') {
 				blockType ??= this.shared.source.remapClass(arg.owner);
+			} else if (arg.kind === 'lambda') {
+				blockType ??= this.constructedIn(arg);
 			}
 		}
 		if (!props && !block) {
@@ -691,7 +719,9 @@ class Interpreter {
 				this.shared.registrations.set(name, registration);
 			}
 		}
-		return block ?? this.blockFor(registration);
+		const registered = block ?? this.blockFor(registration);
+		this.shared.registeredBlocks.add(registered);
+		return registered;
 	}
 
 	/**
@@ -1893,6 +1923,34 @@ class Interpreter {
 		}
 	}
 
+	/**
+	 * Runs a block class's own method of a state (`getLightValue(state)`, `useShapeForLightOcclusion(state)`)
+	 * on the block, the state first and anything after it unknown; null where the interpreter lost it.
+	 */
+	evaluateMethod(
+		owner: string,
+		name: string,
+		descriptor: string,
+		receiver: Handle | null,
+		probe: StateProbe,
+		/**
+		 * Hand the arguments after the state over as objects of their declared type, so a default method
+		 * on one can be followed: before 1.21.2 tinted glass answers `level.getMaxLightLevel()`.
+		 */
+		typedArguments = false,
+	): Value | null {
+		const method = findMethod(this.shared.source, owner, name, descriptor);
+		if (!method) {
+			return null;
+		}
+		const self: Value = { kind: 'object', handle: receiver ?? this.handle(owner) };
+		const rest = parseDescriptor(descriptor).args.slice(1).map((shape): Value => (typedArguments && shape.startsWith('L')
+			? { kind: 'object', handle: this.handle(shape.slice(1, -1)) }
+			: UNKNOWN));
+		const inlined = this.inline(method.classFile.thisClass, name, descriptor, self, [{ kind: 'state', probe }, ...rest]);
+		return inlined.ok ? inlined.value : null;
+	}
+
 	/** Evaluates a light spec against one state; null where the interpreter lost the value. */
 	evaluate(spec: LightSpec, probe: StateProbe): number | null {
 		this.shared.probe = probe;
@@ -1904,14 +1962,7 @@ class Interpreter {
 			if (spec.kind === 'function') {
 				result = this.invokeLambda(spec.fn, [state]);
 			} else if (spec.kind === 'method') {
-				const method = findMethod(this.shared.source, spec.owner, spec.getter.name, spec.getter.descriptor);
-				if (!method) {
-					return null;
-				}
-				const receiver: Value = spec.receiver ? { kind: 'object', handle: spec.receiver } : { kind: 'object', handle: this.handle(spec.owner) };
-				const extra = parseDescriptor(spec.getter.descriptor).args.length - 1;
-				const inlined = this.inline(method.classFile.thisClass, spec.getter.name, spec.getter.descriptor, receiver, [state, ...Array.from({ length: extra }, () => UNKNOWN)]);
-				result = inlined.ok ? inlined.value : null;
+				result = this.evaluateMethod(spec.owner, spec.getter.name, spec.getter.descriptor, spec.receiver, probe);
 			} else {
 				return spec.kind === 'constant' ? spec.level : null;
 			}
@@ -1939,6 +1990,12 @@ export interface LightExtraction {
 	 * function returned into a number, or null when it is not one this can use.
 	 */
 	tabulate: (fn: LambdaValue, read: (value: Value) => number | null) => { value: BlockPackLight; } | { failure: string; };
+	/** The same, for a method a block's class declares, run on the block its registration made. */
+	tabulateMethod: (
+		registration: Registration,
+		method: MemberReference,
+		read: (value: Value) => number | null,
+	) => { value: BlockPackLight; } | { failure: string; };
 	/** What was recorded for a block, for a person chasing a failure. */
 	describe: (blockId: string) => string;
 }
@@ -2029,6 +2086,7 @@ export function extractBlockLight(roots: readonly ClassFile[], source: LightCode
 		statics: new Map(),
 		initialised: new Set(),
 		registrations: new Map(),
+		registeredBlocks: new Set(),
 		steps: STEP_BUDGET,
 		frames: FRAME_BUDGET,
 		notes: [],
@@ -2108,6 +2166,21 @@ export function extractBlockLight(roots: readonly ClassFile[], source: LightCode
 		}, 'state function');
 	};
 
+	const tabulateMethod: LightExtraction['tabulateMethod'] = (registration, method, read) => {
+		const evaluator = new Interpreter(shared);
+		return tabulateStates(shared, (probe) => {
+			shared.probe = probe;
+			shared.steps = STEP_BUDGET;
+			shared.frames = FRAME_BUDGET;
+			try {
+				const value = evaluator.evaluateMethod(method.owner, method.name, method.descriptor, registration.block, probe, true);
+				return value === null || probe.failure ? null : read(value);
+			} finally {
+				shared.probe = null;
+			}
+		}, `${method.name} override`);
+	};
+
 	const describe = (blockId: string): string => {
 		const registration = registrationOf(blockId);
 		if (!registration) {
@@ -2117,7 +2190,7 @@ export function extractBlockLight(roots: readonly ClassFile[], source: LightCode
 		return `${blockId}: registered at ${registration.site}; class ${registration.blockType ?? '?'}, properties ${registration.props ? `#${registration.props.id}` : 'none'}, light ${light ? (light.kind === 'function' ? `function ${light.fn.owner}.${light.fn.name}${light.fn.descriptor}` : JSON.stringify(light)) : 'unset'}`;
 	};
 
-	return { registrations: shared.registrations, notes: shared.notes, lightOf, registrationOf, tabulate, describe };
+	return { registrations: shared.registrations, notes: shared.notes, lightOf, registrationOf, tabulate, tabulateMethod, describe };
 }
 
 /**

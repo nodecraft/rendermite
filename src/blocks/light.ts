@@ -15,6 +15,7 @@
  */
 
 import { blockBehaviour } from './block-behaviour.ts';
+import { alwaysInvisible, constantFluidOf, overrideOf } from './block-overrides.ts';
 import { extractBlockLight } from './light-bytecode.ts';
 import { parseClassFile } from '../entities/classfile.ts';
 import { MappingsUnavailableError, remapDescriptor, resolveMappings } from '../entities/mappings.ts';
@@ -320,7 +321,7 @@ function findLightGetters(
 function remapper(
 	mappings: Mappings,
 	superOf: (internalName: string) => string | null = () => null,
-): Pick<LightCodeSource, 'remap' | 'remapClass' | 'nameOf'> {
+): Pick<LightCodeSource, 'remap' | 'remapClass'> & { nameOf: (reference: MemberReference, field: boolean) => string; } {
 	const remapClass = (internalName: string): string => {
 		const mapped = mappings.obfuscatedOf.get(internalName.replaceAll('/', '.'));
 		return mapped ? mapped.replaceAll('.', '/') : internalName;
@@ -515,7 +516,16 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 	if (mappings.originalOf.size > 0 || isClearJar) {
 		for (const id of blockIds) {
 			const registration = NOT_BLOCKS.has(id) ? null : extraction.registrationOf(id);
-			const read = registration ? blockBehaviour(registration, extraction) : null;
+			// A factory lambda names no class, but the block it built has one
+			const blockType = registration?.blockType ?? registration?.block?.type ?? null;
+			const overrides = { resolve, nameOf };
+			const read = registration
+				? blockBehaviour(registration, extraction, {
+					of: names => (blockType ? overrideOf(overrides, blockType, names) : null),
+					fluid: method => constantFluidOf(overrides, method),
+					invisible: method => alwaysInvisible(overrides, method),
+				})
+				: null;
 			if (read) {
 				behaviour[id] = read.behaviour;
 				for (const reason of read.failures) {

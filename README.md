@@ -84,6 +84,7 @@ blocks/1.21.8/
   tags.json            # the version's own tags, every registry, unexpanded
   advancements.json    # each advancement's criteria
   game-rules.json      # every game rule with its type and default
+  names.json           # block and item display names from the lang files
   states.json          # every property and default state (with --reports <data generator reports>)
   failures.json        # anything not fully handled, with reasons, never silent
   meta.json            # version, counts, sha256 of every other file

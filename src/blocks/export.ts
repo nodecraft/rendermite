@@ -30,6 +30,7 @@ import { collectGameRules } from './game-rules.ts';
 import { geoBlockModel } from './geo-blocks.ts';
 import { collectItemSprites } from './item-sprites.ts';
 import { collectBlockLight } from './light.ts';
+import { collectNames } from './names.ts';
 import { buildObjMesh } from './obj-mesh.ts';
 import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
 import { readBlockStates } from './states.ts';
@@ -59,6 +60,7 @@ import type {
 	BlockPackMetaFile,
 	BlockPackModel,
 	BlockPackModelsFile,
+	BlockPackNamesFile,
 	BlockPackRenderLayer,
 	BlockPackStatesFile,
 	BlockPackTagsFile,
@@ -160,6 +162,8 @@ export interface BlockPackResult {
 	states: number;
 	/** Rules in `game-rules.json`; `0` means the file was not written. */
 	gameRules: number;
+	/** Block and item names in `names.json`; `0` means the file was not written. */
+	names: number;
 	/** Files actually written — the only trustworthy success signal. */
 	writtenFiles: number;
 	failures: BlockPackFailure[];
@@ -1015,6 +1019,10 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	}
 	const tagCount = Object.values(datapack.tags).reduce((sum, registry) => sum + Object.keys(registry).length, 0);
 
+	// Display names, from the lang file each namespace ships
+	const names = await collectNames(resources, namespaces);
+	const nameCount = Object.keys(names.block).length + Object.keys(names.item).length;
+
 	// Game rules live in the game's code, so only a vanilla pack with a jar to read has them
 	const gameRules = options.classes && namespaces.includes('minecraft') ? await collectGameRules(options.classes) : {};
 
@@ -1272,6 +1280,9 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		const tags = Object.fromEntries(Object.entries(datapack.tags).map(([registry, entries]) => [registry, sortedByKey(entries)]));
 		await emit('tags.json', JSON.stringify(sortedByKey(tags) satisfies BlockPackTagsFile));
 	}
+	if (nameCount > 0) {
+		await emit('names.json', JSON.stringify({ block: sortedByKey(names.block), item: sortedByKey(names.item) } satisfies BlockPackNamesFile));
+	}
 	if (Object.keys(gameRules).length > 0) {
 		await emit('game-rules.json', JSON.stringify(sortedByKey(gameRules) satisfies BlockPackGameRulesFile));
 	}
@@ -1302,6 +1313,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		advancements: Object.keys(datapack.advancements).length,
 		states: Object.keys(statesPack ?? {}).length,
 		gameRules: Object.keys(gameRules).length,
+		names: nameCount,
 		failures: failures.length,
 	};
 	// meta.json hashes the pack, so it is written last and hashes nothing of itself.

@@ -53,6 +53,7 @@ export type {
 	BlockPackMetaFile,
 	BlockPackModel,
 	BlockPackModelsFile,
+	BlockPackNamesFile,
 	BlockPackRenderLayer,
 	BlockPackSprite,
 	BlockPackSpriteFrame,

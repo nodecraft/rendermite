@@ -567,7 +567,17 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		} else {
 			expect(behaviour?.['minecraft:stone']).toMatchObject({ hardness: 1.5, resistance: 6, mapColor: 11 });
 			expect(pack.entities?.['minecraft:cow']).toMatchObject({ width: 0.9, height: 1.4 });
+			// What a block's own class answers: a stair tests its shape for light, kelp is always under water
+			expect(behaviour?.['minecraft:oak_stairs']).toMatchObject({ lightShape: true });
+			expect(behaviour?.['minecraft:kelp']).toMatchObject({ fluid: 'water' });
+			expect(behaviour?.['minecraft:cave_air']).toMatchObject({ air: true });
+			expect(behaviour?.['minecraft:barrier']).toMatchObject({ invisible: true });
+			expect(behaviour?.['minecraft:glass']).toMatchObject({ hidesSharedFaces: true });
+			expect(pack.entityModels?.equipment?.undyed).toStrictEqual({ 'minecraft:leather': '#a06540' });
 		}
+		// The version's own English, not a title-cased id
+		const names = await optional<{ block: Record<string, string>; }>('names.json');
+		expect(names?.block['minecraft:tnt']).toBe('TNT');
 
 		/*
 		 * The tint table is this version's, not the union of every version: a climate
