@@ -117,6 +117,35 @@ describe('run() end to end', () => {
 		}
 	});
 
+	it('renders a tree with no glint texture, warning instead of failing the run', async () => {
+		const bareOutput = await mkdtemp(path.join(tmpdir(), 'rendermite-noglint-'));
+		const warnings: string[] = [];
+		try {
+			// A mod jar with no vanilla beneath it ships no enchantment glint
+			await run({
+				workers: 1,
+				resources: new JarResourceManager(fixtureModJar('modernmod')),
+				builtin,
+				output: bareOutput,
+				namespaces: ['modernmod'],
+				onProgress: (_done, _total, id, error) => {
+					if (error && id === 'enchantment glint') {
+						warnings.push(error);
+					}
+				},
+			});
+			expect(warnings).toHaveLength(1);
+			const files = await readdir(bareOutput);
+			expect(files.filter(file => file.includes('enchantment'))).toEqual([]);
+			const css = await readFile(path.join(bareOutput, 'rc-modernmod-64.css'), 'utf8');
+			for (const target of cssTargets(css)) {
+				await expect(readFile(path.join(bareOutput, target)), target).resolves.toBeInstanceOf(Buffer);
+			}
+		} finally {
+			await rm(bareOutput, { recursive: true, force: true });
+		}
+	}, 240000);
+
 	it('writes the item list and the failure sidecar', async () => {
 		const list = JSON.parse(await readFile(path.join(output, 'rc-modernmod.json'), 'utf8')) as string[];
 		expect(list).toEqual(result.rendered);

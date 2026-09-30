@@ -14,6 +14,8 @@ export interface StylesheetOptions {
 	format?: 'webp' | 'avif';
 	/** Emit the base rules in png plus a media-query upgrade block. */
 	fallback?: boolean;
+	/** Emit the enchant glint overlay (default true); off when there is no glint image to point it at. */
+	glint?: boolean;
 }
 
 export interface ItemStyle {
@@ -136,10 +138,12 @@ export function generateStylesheet(items: ItemStyle[], options: StylesheetOption
 	}
 
 	// Glint rule last (upstream's global post styles), unioned with always-enchanted items.
-	const glintSelectors = [...enchantedSelectors, `.${prefix}enchanted:after`];
-	const glint = `${glintSelectors.join(',\n')} {\n    position: absolute;\n    width: 200%;\n    height: 200%;\n    top: -50%;\n    left: -50%;\n    image-rendering: pixelated;\n    mix-blend-mode: screen;\n    content: '';\n    opacity: 0.6;\n    background-image: ${url(`${prefix}enchantment.${baseExtension}`, urlPrefix)};\n    background-size: 512px 512px;\n    filter: blur(2px) contrast(200%);\n    transform: rotate(-8deg);\n    animation-name: ${prefix}enchanted;\n    animation-duration: 32s;\n    animation-timing-function: linear;\n    animation-iteration-count: infinite;\n}`;
-	blocks.push(glint);
-	upgrade.push(`${glintSelectors.join(', ')} { background-image: ${url(`${prefix}enchantment.${format}`, urlPrefix)}; }`);
+	if (options.glint ?? true) {
+		const glintSelectors = [...enchantedSelectors, `.${prefix}enchanted:after`];
+		const glint = `${glintSelectors.join(',\n')} {\n    position: absolute;\n    width: 200%;\n    height: 200%;\n    top: -50%;\n    left: -50%;\n    image-rendering: pixelated;\n    mix-blend-mode: screen;\n    content: '';\n    opacity: 0.6;\n    background-image: ${url(`${prefix}enchantment.${baseExtension}`, urlPrefix)};\n    background-size: 512px 512px;\n    filter: blur(2px) contrast(200%);\n    transform: rotate(-8deg);\n    animation-name: ${prefix}enchanted;\n    animation-duration: 32s;\n    animation-timing-function: linear;\n    animation-iteration-count: infinite;\n}`;
+		blocks.push(glint);
+		upgrade.push(`${glintSelectors.join(', ')} { background-image: ${url(`${prefix}enchantment.${format}`, urlPrefix)}; }`);
+	}
 
 	if (fallback) {
 		blocks.push(`@media (min-resolution: 1dpi) {\n${upgrade.map(rule => `    ${rule}`).join('\n')}\n}`);
