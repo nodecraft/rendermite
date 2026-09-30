@@ -226,9 +226,10 @@ it, and it is run per state like a light function:
 
 The rest of a block class's code is not followed. A class that overrides `canBeReplaced` or
 `getMapColor` answers for itself at runtime. A sign's colour is its log's at the log's default state,
-which the chain does not state, and 26.x registers every dyed block in a `ColorCollection` loop the
-interpreter does not follow. Those blocks carry no `mapColor` and a `behaviour` failure each. 1.13
-publishes no mappings, so its builder calls have no names and it gets no file.
+which only the data generator's report states, so without `--reports` signs carry no `mapColor` and
+a `behaviour` failure each. 26.x registers dyed blocks through `ColorCollection` and coppers through
+`WeatheringCopperCollection`, both of which are followed. 1.13 publishes no mappings, so its builder
+calls have no names and it gets no file.
 
 **`game-rules.json`.** Every rule `GameRules` registers, by the name `level.dat` stores it under
 (camelCase before 26.x, snake_case from it), as `{ type: 'boolean' | 'integer', default }`. Read from

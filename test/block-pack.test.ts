@@ -75,9 +75,9 @@ const ASSET_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
 	{ kind: 'entity', reason: /^no entity geometry: .*1\.14\.4/ },
 	{ kind: 'entity', reason: /^no entity sizes: .*1\.14\.4/ },
 	/*
-	 * A map colour the interpreter cannot see: a sign takes its log's colour at the log's default state,
-	 * which the builder chain does not state, and 26.x registers every dyed block in a loop over
-	 * `ColorCollection` it does not follow. Named per block rather than guessed.
+	 * A map colour the interpreter cannot see here: a sign takes its log's colour at the log's default
+	 * state, which only the data generator's report states, and these exports are given none. Named
+	 * per block rather than guessed.
 	 */
 	{ kind: 'behaviour', reason: /^map colour/ },
 ];
@@ -573,6 +573,11 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 			expect(behaviour?.['minecraft:cave_air']).toMatchObject({ air: true });
 			expect(behaviour?.['minecraft:barrier']).toMatchObject({ invisible: true });
 			expect(behaviour?.['minecraft:glass']).toMatchObject({ hidesSharedFaces: true });
+			if (testCase.version === '26.2') {
+				// 26.x registers dyed blocks through `ColorCollection` and coppers through `WeatheringCopperCollection`
+				expect(behaviour?.['minecraft:black_wool']).toMatchObject({ mapColor: 29 });
+				expect(behaviour?.['minecraft:exposed_copper_door']).toMatchObject({ mapColor: 44 });
+			}
 			expect(pack.entityModels?.equipment?.undyed).toStrictEqual({ 'minecraft:leather': '#a06540' });
 		}
 		// The version's own English, not a title-cased id
