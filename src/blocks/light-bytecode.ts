@@ -28,6 +28,7 @@
  * dark block.
  */
 
+import { statedMapColor } from './block-behaviour.ts';
 import { parseDescriptor } from '../entities/model-bytecode.ts';
 
 import type { BlockPackLight } from './pack-format.ts';
@@ -50,6 +51,11 @@ export interface LightCodeSource {
 	 */
 	remap: (reference: MemberReference, field: boolean) => MemberReference;
 	remapClass: (internalName: string) => string;
+	/**
+	 * A member's original name, for reading the game's own obfuscated calls: `eea$d.a(FF)` is `strength`.
+	 * Absent, or answering the name it was given, where the jar already speaks original names.
+	 */
+	nameOf?: (reference: MemberReference, field: boolean) => string;
 	/** Classes that are a block `Properties` builder, in every spelling the jars use. */
 	propsClasses: ReadonlySet<string>;
 	/**
@@ -111,7 +117,13 @@ export type LightSpec =
 	/** A light function the interpreter could not identify — one built from a value it never saw. */
 	| { kind: 'opaque'; reason: string; };
 
-interface Handle {
+export interface PropsCall {
+	name: string;
+	descriptor: string;
+	args: Value[];
+}
+
+export interface Handle {
 	id: number;
 	/** Internal class name, from `new` or the declared return type of the opaque call that made it. */
 	type: string | null;
@@ -123,6 +135,10 @@ interface Handle {
 	fields: Map<string, Value>;
 	isProps: boolean;
 	light: LightSpec | null;
+	/** For a `Properties`: every builder call made on it, by its mapped name, for `block-behaviour.ts` to read. */
+	calls?: PropsCall[];
+	/** For a `Properties` made by copying a block's: the properties it copied, whose calls come first. */
+	copyOf?: Handle | null;
 	/** For a block: the `Properties` it was constructed with. */
 	props: Handle | null;
 	ctorArgs: Value[] | null;
@@ -137,7 +153,7 @@ interface Handle {
 	iterator?: { items: Value[]; at: number; };
 }
 
-interface LambdaValue {
+export interface LambdaValue {
 	kind: 'lambda';
 	owner: string;
 	name: string;
@@ -160,7 +176,7 @@ export interface PropertyDomain {
 	constants?: Map<string, Handle>;
 }
 
-type Value =
+export type Value =
 	LambdaValue | { kind: 'number'; value: number; wide?: boolean; } | { kind: 'string'; value: string; } | { kind: 'object'; handle: Handle; } | { kind: 'array'; items: Value[]; } | { kind: 'class'; name: string; } | { kind: 'null'; } | { kind: 'state'; probe: StateProbe; } | { kind: 'unknown'; };
 
 const UNKNOWN: Value = { kind: 'unknown' };
@@ -461,6 +477,7 @@ class Interpreter {
 				if (sources.length > 0) {
 					const from = (sources[0] as { handle: Handle; }).handle;
 					created.light = from.isProps ? from.light : from.props?.light ?? null;
+					created.copyOf = from.isProps ? from : from.props;
 				} else if (inputs.some(value => value.kind === 'unknown' || value.kind === 'null')) {
 					created.light = { kind: 'opaque', reason: 'properties copied from a block the interpreter could not identify' };
 				}
@@ -1070,6 +1087,18 @@ class Interpreter {
 
 		if (receiver?.kind === 'object') {
 			const target = receiver.handle;
+			/*
+			 * `OAK_PLANKS.defaultMapColor()`: a door takes its planks' colour, which is only on the planks'
+			 * recorded calls, since the field the real method reads was never filled.
+			 */
+			const named = source.nameOf?.(reference, false) ?? remapped.name;
+			if (target.props && args.length === 0 && (named === 'defaultMapColor' || named === 'defaultMaterialColor')) {
+				const colour = statedMapColor(target.props);
+				if (colour && colour.kind !== 'lambda') {
+					this.push(colour);
+					return;
+				}
+			}
 			const getter = source.lightGetters.find(candidate => matchesGetter(candidate, remapped.name, remapped.descriptor));
 			if (getter && target.props && args[0]?.kind === 'state') {
 				/*
@@ -1111,7 +1140,9 @@ class Interpreter {
 					return;
 				}
 				if (returns.startsWith('L') && this.isPropsType(returns.slice(1, -1))) {
-					// Every other builder method: sound, strength, map colour — fluent, and not about light
+					// Every other builder method: sound, strength, map colour — fluent, not about light, and kept for the block's behaviour
+					const name = source.nameOf?.(reference, false) ?? remapped.name;
+					(target.calls ??= []).push({ name: name === reference.name ? remapped.name : name, descriptor: remapped.descriptor, args });
 					this.push(receiver);
 					return;
 				}
@@ -1689,6 +1720,11 @@ class Interpreter {
 					const reference = constants.reference(index);
 					if (target.kind === 'object' && reference) {
 						target.handle.fields.set(reference.name, value);
+						// Also by mapped name, so `block-behaviour.ts` can read a `Material`'s `replaceable` on any version
+						const mapped = this.shared.source.nameOf?.(reference, true) ?? reference.name;
+						if (mapped !== reference.name) {
+							target.handle.fields.set(`mapped:${mapped}`, value);
+						}
 						if (value.kind === 'object' && value.handle.isProps) {
 							target.handle.props = value.handle;
 						}
@@ -1844,6 +1880,19 @@ class Interpreter {
 		}
 	}
 
+	/** Runs a function of a block state against one state; null where the interpreter lost the value. */
+	evaluateLambda(fn: LambdaValue, probe: StateProbe): Value | null {
+		this.shared.probe = probe;
+		this.shared.steps = STEP_BUDGET;
+		this.shared.frames = FRAME_BUDGET;
+		try {
+			const result = this.invokeLambda(fn, [{ kind: 'state', probe }]);
+			return probe.failure ? null : result;
+		} finally {
+			this.shared.probe = null;
+		}
+	}
+
 	/** Evaluates a light spec against one state; null where the interpreter lost the value. */
 	evaluate(spec: LightSpec, probe: StateProbe): number | null {
 		this.shared.probe = probe;
@@ -1882,6 +1931,14 @@ export interface LightExtraction {
 	notes: string[];
 	/** The light a block emits, or why it could not be worked out. */
 	lightOf: (blockId: string) => { light: BlockPackLight; } | { failure: string; };
+	/** The registration the code made for a block, under its full id or its own side's bare path. */
+	registrationOf: (blockId: string) => Registration | null;
+	/**
+	 * Runs a function of a block state once per combination of the properties it reads, folded like
+	 * light: a number when every state agrees, a default and cases otherwise. `read` turns what the
+	 * function returned into a number, or null when it is not one this can use.
+	 */
+	tabulate: (fn: LambdaValue, read: (value: Value) => number | null) => { value: BlockPackLight; } | { failure: string; };
 	/** What was recorded for a block, for a person chasing a failure. */
 	describe: (blockId: string) => string;
 }
@@ -2038,37 +2095,17 @@ export function extractBlockLight(roots: readonly ClassFile[], source: LightCode
 		if (spec.kind === 'opaque') {
 			return { failure: `light could not be read: ${spec.reason}` };
 		}
-		const domains = new Map<string, PropertyDomain>();
-		let properties: string[] = [];
 		const evaluator = new Interpreter(shared);
-		for (let rounds = 0; rounds < 8; rounds++) {
-			const table: Array<{ values: Map<string, string>; level: number; }> = [];
-			const discovered = new Set<string>();
-			const assignments = combinations(properties.map(name => domains.get(name) as PropertyDomain));
-			if (assignments.length > MAX_STATES) {
-				return { failure: `light function depends on ${assignments.length} states; too many to be a real block` };
-			}
-			for (const values of assignments) {
-				const probe: StateProbe = { values, domains, reads: new Set(), failure: null };
-				const before = shared.notes.length;
-				const level = evaluator.evaluate(spec, probe);
-				if (level === null) {
-					const detail = shared.notes.slice(before).join('; ');
-					return { failure: `light function ${probe.failure ?? 'did not return a number'}${detail ? ` (${detail})` : ''}` };
-				}
-				table.push({ values, level });
-				for (const read of probe.reads) {
-					if (!properties.includes(read)) {
-						discovered.add(read);
-					}
-				}
-			}
-			if (discovered.size === 0) {
-				return { light: foldCases(table, properties) };
-			}
-			properties = [...properties, ...discovered];
-		}
-		return { failure: 'light function reads more properties than a blockstate can have' };
+		const folded = tabulateStates(shared, probe => evaluator.evaluate(spec, probe), 'light function');
+		return 'failure' in folded ? folded : { light: folded.value };
+	};
+
+	const tabulate = (fn: LambdaValue, read: (value: Value) => number | null): { value: BlockPackLight; } | { failure: string; } => {
+		const evaluator = new Interpreter(shared);
+		return tabulateStates(shared, (probe) => {
+			const value = evaluator.evaluateLambda(fn, probe);
+			return value === null ? null : read(value);
+		}, 'state function');
 	};
 
 	const describe = (blockId: string): string => {
@@ -2080,5 +2117,46 @@ export function extractBlockLight(roots: readonly ClassFile[], source: LightCode
 		return `${blockId}: registered at ${registration.site}; class ${registration.blockType ?? '?'}, properties ${registration.props ? `#${registration.props.id}` : 'none'}, light ${light ? (light.kind === 'function' ? `function ${light.fn.owner}.${light.fn.name}${light.fn.descriptor}` : JSON.stringify(light)) : 'unset'}`;
 	};
 
-	return { registrations: shared.registrations, notes: shared.notes, lightOf, describe };
+	return { registrations: shared.registrations, notes: shared.notes, lightOf, registrationOf, tabulate, describe };
+}
+
+/**
+ * Runs `evaluate` over every combination of the properties it turns out to read, discovering them as
+ * it goes: the first round runs with none, and each round adds whatever the last one read.
+ */
+function tabulateStates(
+	shared: Shared,
+	evaluate: (probe: StateProbe) => number | null,
+	what: string,
+): { value: BlockPackLight; } | { failure: string; } {
+	const domains = new Map<string, PropertyDomain>();
+	let properties: string[] = [];
+	for (let rounds = 0; rounds < 8; rounds++) {
+		const table: Array<{ values: Map<string, string>; level: number; }> = [];
+		const discovered = new Set<string>();
+		const assignments = combinations(properties.map(name => domains.get(name) as PropertyDomain));
+		if (assignments.length > MAX_STATES) {
+			return { failure: `${what} depends on ${assignments.length} states; too many to be a real block` };
+		}
+		for (const values of assignments) {
+			const probe: StateProbe = { values, domains, reads: new Set(), failure: null };
+			const before = shared.notes.length;
+			const level = evaluate(probe);
+			if (level === null) {
+				const detail = shared.notes.slice(before).join('; ');
+				return { failure: `${what} ${probe.failure ?? 'did not return a number'}${detail ? ` (${detail})` : ''}` };
+			}
+			table.push({ values, level });
+			for (const read of probe.reads) {
+				if (!properties.includes(read)) {
+					discovered.add(read);
+				}
+			}
+		}
+		if (discovered.size === 0) {
+			return { value: foldCases(table, properties) };
+		}
+		properties = [...properties, ...discovered];
+	}
+	return { failure: `${what} reads more properties than a blockstate can have` };
 }

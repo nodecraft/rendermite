@@ -21,14 +21,18 @@ import sharp from 'sharp';
 import { buildBiomeClimates } from './biomes.ts';
 import { INVISIBLE_BLOCKS, blockEntityGeometry, synthesizeVariants } from './block-entities.ts';
 import { collectModels, parseBlockState } from './blockstate-eval.ts';
+import { collectDatapack } from './datapack.ts';
 import { enderStorageBlockModel } from './ender-storage.ts';
 import { collectEntities } from './entities.ts';
 import { collectEntityGeometry } from './entity-models.ts';
+import { collectEntitySizes } from './entity-sizes.ts';
+import { collectGameRules } from './game-rules.ts';
 import { geoBlockModel } from './geo-blocks.ts';
 import { collectItemSprites } from './item-sprites.ts';
 import { collectBlockLight } from './light.ts';
 import { buildObjMesh } from './obj-mesh.ts';
 import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
+import { readBlockStates } from './states.ts';
 import { UNREGISTERED_TINTS, buildBlockTints } from './tints.ts';
 import { loadAtlasResolver } from '../atlas/registry.ts';
 import { discoverItems } from '../items/discovery.ts';
@@ -39,7 +43,9 @@ import { TextureLoader } from '../textures/loader.ts';
 
 import type { BlockModelVariant, BlockStateDefinition, BlockStateVariantCase } from './blockstate-eval.ts';
 import type {
+	BlockPackAdvancementsFile,
 	BlockPackAtlasFile,
+	BlockPackBehaviourFile,
 	BlockPackBiomesFile,
 	BlockPackBlockState,
 	BlockPackBlockStatesFile,
@@ -47,12 +53,15 @@ import type {
 	BlockPackEntitiesFile,
 	BlockPackEntityModelsFile,
 	BlockPackFace,
+	BlockPackGameRulesFile,
 	BlockPackItemsFile,
 	BlockPackLightFile,
 	BlockPackMetaFile,
 	BlockPackModel,
 	BlockPackModelsFile,
 	BlockPackRenderLayer,
+	BlockPackStatesFile,
+	BlockPackTagsFile,
 	BlockPackTintsFile,
 	BlockPackVariant,
 	ItemPackEntry,
@@ -108,6 +117,11 @@ export interface ExportBlockPackOptions {
 	classes?: ClassSource;
 	/** Where mappings cache; the jar cache directory. */
 	cacheDir?: string;
+	/**
+	 * A data generator `reports` directory for this version (`java -jar server.jar --reports`). Its
+	 * `blocks.json` becomes `states.json`; without it the pack has no full property sets or defaults.
+	 */
+	reports?: string;
 	onProgress?: (stage: string, done: number, total: number) => void;
 }
 
@@ -117,7 +131,7 @@ export interface BlockPackFailure {
 	 * `intentional` is not a failure: it marks a block that is empty because the
 	 * game draws nothing for it. Filter it out to get the real gaps.
 	 */
-	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'entity' | 'light' | 'intentional';
+	kind: 'blockstate' | 'model' | 'texture' | 'sprite' | 'geometry' | 'tint' | 'biome' | 'item' | 'entity' | 'light' | 'behaviour' | 'data' | 'intentional';
 	reason: string;
 }
 
@@ -136,6 +150,16 @@ export interface BlockPackResult {
 	entityModels: number;
 	/** Emitting blocks in `light.json`; `0` means the file was not written. */
 	light: number;
+	/** Blocks in `behaviour.json`; `0` means the file was not written. */
+	behaviour: number;
+	/** Tags across every registry in `tags.json`; `0` means the file was not written. */
+	tags: number;
+	/** Advancements in `advancements.json`; `0` means the file was not written. */
+	advancements: number;
+	/** Blocks in `states.json`; `0` means no reports were given and the file was not written. */
+	states: number;
+	/** Rules in `game-rules.json`; `0` means the file was not written. */
+	gameRules: number;
 	/** Files actually written — the only trustworthy success signal. */
 	writtenFiles: number;
 	failures: BlockPackFailure[];
@@ -958,6 +982,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	 * `invisible_light` states neither variants nor multipart, draws nothing, and lights a whole base.
 	 */
 	let lightPack: BlockPackLightFile = {};
+	let behaviourPack: BlockPackBehaviourFile = {};
 	if (options.classes) {
 		const collected = await collectBlockLight({
 			version,
@@ -970,14 +995,34 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		for (const failure of collected.failures) {
 			failures.push({ id: failure.id, kind: 'light', reason: failure.reason });
 		}
+		behaviourPack = sortedByKey(collected.behaviour);
+		for (const failure of collected.behaviourFailures) {
+			failures.push({ id: failure.id, kind: 'behaviour', reason: failure.reason });
+		}
 		// The interpreter's account of the run: which classes it took for registries, what it gave up on
 		if (process.env.RENDERMITE_LIGHT_DEBUG) {
 			console.error(collected.notes.join('\n'));
 		}
 	}
 
-	// 6. Biome climates: vanilla's own table, plus whatever a mod's datapack states.
-	const biomes = await buildBiomeClimates(resources, namespaces);
+	// 6. Biome climates: the version's own biomes, plus whatever a mod's datapack states.
+	const biomes = await buildBiomeClimates(resources, namespaces, version);
+
+	// 6b. Tags and advancements: the version's own datapack, which a consumer would otherwise hardcode from one release
+	const datapack = await collectDatapack(resources, namespaces);
+	for (const file of datapack.unreadable) {
+		failures.push({ id: file, kind: 'data', reason: 'datapack file is unreadable or not in the shape its folder implies; left out' });
+	}
+	const tagCount = Object.values(datapack.tags).reduce((sum, registry) => sum + Object.keys(registry).length, 0);
+
+	// Game rules live in the game's code, so only a vanilla pack with a jar to read has them
+	const gameRules = options.classes && namespaces.includes('minecraft') ? await collectGameRules(options.classes) : {};
+
+	// 6c. Full property sets and default states, from the version's own data generator when there is one
+	const states = options.reports === undefined ? null : await readBlockStates(options.reports);
+	const statesPack = states === null
+		? null
+		: Object.fromEntries(Object.entries(states).filter(([id]) => namespaces.includes(id.split(':', 1)[0])));
 
 	/*
 	 * 7. Flat item sprites. After the blockstates because it needs the block set to
@@ -1069,6 +1114,19 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		 * the same boxes.
 		 */
 		if (options.classes) {
+			const sized = await collectEntitySizes({
+				classes: options.classes,
+				version,
+				cacheDir: options.cacheDir ?? output,
+				entityIds: Object.keys(collected.entities),
+			});
+			for (const [id, [width, height]] of sized.sizes) {
+				collected.entities[id].width = width;
+				collected.entities[id].height = height;
+			}
+			for (const failure of sized.failures) {
+				failures.push({ id: failure.id, kind: 'entity', reason: failure.reason });
+			}
 			const textureOf = new Map<string, string>();
 			for (const [id, entry] of Object.entries(collected.entities)) {
 				if (entry.texture) {
@@ -1202,10 +1260,26 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	if (Object.keys(lightPack).length > 0) {
 		await emit('light.json', JSON.stringify(lightPack satisfies BlockPackLightFile));
 	}
+	if (Object.keys(behaviourPack).length > 0) {
+		await emit('behaviour.json', JSON.stringify(behaviourPack satisfies BlockPackBehaviourFile));
+	}
 	// Only when there is something to say: a mod that adds no biomes should not
 	// publish an empty file for a consumer to fetch and discard.
 	if (Object.keys(biomes.pack).length > 0) {
 		await emit('biomes.json', JSON.stringify(sortedByKey(biomes.pack) satisfies BlockPackBiomesFile));
+	}
+	if (tagCount > 0) {
+		const tags = Object.fromEntries(Object.entries(datapack.tags).map(([registry, entries]) => [registry, sortedByKey(entries)]));
+		await emit('tags.json', JSON.stringify(sortedByKey(tags) satisfies BlockPackTagsFile));
+	}
+	if (Object.keys(gameRules).length > 0) {
+		await emit('game-rules.json', JSON.stringify(sortedByKey(gameRules) satisfies BlockPackGameRulesFile));
+	}
+	if (statesPack !== null && Object.keys(statesPack).length > 0) {
+		await emit('states.json', JSON.stringify(sortedByKey(statesPack) satisfies BlockPackStatesFile));
+	}
+	if (Object.keys(datapack.advancements).length > 0) {
+		await emit('advancements.json', JSON.stringify(sortedByKey(datapack.advancements) satisfies BlockPackAdvancementsFile));
 	}
 	for (const biome of biomes.unreadable) {
 		failures.push({ id: biome, kind: 'biome', reason: 'biome definition is unreadable or states no climate; exported without one' });
@@ -1223,6 +1297,11 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		entities: Object.keys(entityPack ?? {}).length,
 		entityModels: Object.keys(entityModelPack?.models ?? {}).length,
 		light: Object.keys(lightPack).length,
+		behaviour: Object.keys(behaviourPack).length,
+		tags: tagCount,
+		advancements: Object.keys(datapack.advancements).length,
+		states: Object.keys(statesPack ?? {}).length,
+		gameRules: Object.keys(gameRules).length,
 		failures: failures.length,
 	};
 	// meta.json hashes the pack, so it is written last and hashes nothing of itself.

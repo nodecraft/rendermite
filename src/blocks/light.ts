@@ -14,11 +14,13 @@
  * shipped dark.
  */
 
+import { blockBehaviour } from './block-behaviour.ts';
 import { extractBlockLight } from './light-bytecode.ts';
 import { parseClassFile } from '../entities/classfile.ts';
 import { MappingsUnavailableError, remapDescriptor, resolveMappings } from '../entities/mappings.ts';
 import { compareVersions } from '../versions/prepare.ts';
 
+import type { BlockBehaviour } from './block-behaviour.ts';
 import type { LightCodeSource, LightGetter, MemberReference } from './light-bytecode.ts';
 import type { BlockPackLight } from './pack-format.ts';
 import type { ClassFile } from '../entities/classfile.ts';
@@ -40,7 +42,14 @@ export interface CollectBlockLightOptions {
 export interface BlockLightResult {
 	/** Only the blocks that emit; absent is 0. */
 	light: Record<string, BlockPackLight>;
+	/**
+	 * What each block does, from the same run: hardness, collision, map colour. Empty on a version with
+	 * no mappings (1.13), whose builder calls have no names to read.
+	 */
+	behaviour: Record<string, BlockBehaviour>;
 	failures: Array<{ id: string; reason: string; }>;
+	/** Blocks whose behaviour was partly unreadable, kept apart from light's so each file owns its gaps. */
+	behaviourFailures: Array<{ id: string; reason: string; }>;
 	/** What the interpreter gave up on along the way, for a person reading a failure. */
 	notes: string[];
 }
@@ -308,7 +317,10 @@ function findLightGetters(
 }
 
 /** Reference renaming through the mappings: a mod's original names onto an obfuscated client's. */
-function remapper(mappings: Mappings): Pick<LightCodeSource, 'remap' | 'remapClass'> {
+function remapper(
+	mappings: Mappings,
+	superOf: (internalName: string) => string | null = () => null,
+): Pick<LightCodeSource, 'remap' | 'remapClass' | 'nameOf'> {
 	const remapClass = (internalName: string): string => {
 		const mapped = mappings.obfuscatedOf.get(internalName.replaceAll('/', '.'));
 		return mapped ? mapped.replaceAll('.', '/') : internalName;
@@ -328,7 +340,24 @@ function remapper(mappings: Mappings): Pick<LightCodeSource, 'remap' | 'remapCla
 			descriptor: remapDescriptor(reference.descriptor, mappings.obfuscatedOf),
 		};
 	};
-	return { remap, remapClass };
+	/*
+	 * Keyed by the class that declares the member, where a call names the class it was made through:
+	 * `OAK_PLANKS.defaultMapColor()` is spelled on `Block` and declared on `BlockBehaviour`, so the
+	 * lookup climbs. Fields are keyed without a descriptor, methods with the one the jar spells.
+	 */
+	const nameOf = (reference: MemberReference, field: boolean): string => {
+		let owner: string | null = reference.owner;
+		for (let hops = 0; owner && hops < 8; hops++) {
+			const dotted = owner.replaceAll('/', '.');
+			const found = mappings.nameOf?.get(field ? `${dotted}.${reference.name}` : `${dotted}.${reference.name}${reference.descriptor}`);
+			if (found) {
+				return found;
+			}
+			owner = superOf(owner);
+		}
+		return reference.name;
+	};
+	return { remap, remapClass, nameOf };
 }
 
 export async function collectBlockLight(options: CollectBlockLightOptions): Promise<BlockLightResult> {
@@ -353,6 +382,8 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 		notes.push(err.message);
 	}
 	const { remap, remapClass } = remapper(mappings);
+	// 26.x ships unobfuscated, so its calls carry their names with no mappings at all
+	const isClearJar = names.some(name => name.replaceAll('.', '/') === 'net/minecraft/world/level/block/Blocks');
 
 	/*
 	 * Every class, read once and parsed on demand. Interpretation is synchronous and a call's target is
@@ -381,6 +412,8 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 		}
 		return parsed.get(internal) ?? null;
 	};
+
+	const { nameOf } = remapper(mappings, name => resolve(name)?.superClass ?? null);
 
 	// The registry classes: those whose constants name the blocks
 	const wanted = new Set<string>();
@@ -416,7 +449,7 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 		for (const namespace of new Set(blockIds.map(id => (id.includes(':') ? id.slice(0, id.indexOf(':')) : 'minecraft')))) {
 			failures.push({ id: namespace, reason: 'no class in the jars names its blocks; light unknown for all of them' });
 		}
-		return { light: {}, failures, notes };
+		return { light: {}, behaviour: {}, failures, behaviourFailures: [], notes };
 	}
 
 	const propsClasses = findPropsClasses(roots, remapClass, resolve);
@@ -424,6 +457,7 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 		resolve,
 		remap,
 		remapClass,
+		nameOf,
 		propsClasses,
 		lightGetters: findLightGetters(roots, propsClasses, resolve, notes),
 		// The game's classes are the mapped ones on an obfuscated jar, and `net.minecraft` on a clear one;
@@ -475,7 +509,22 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 			}
 		}
 	}
-	return { light, failures, notes };
+
+	const behaviour: Record<string, BlockBehaviour> = {};
+	const behaviourFailures: Array<{ id: string; reason: string; }> = [];
+	if (mappings.originalOf.size > 0 || isClearJar) {
+		for (const id of blockIds) {
+			const registration = NOT_BLOCKS.has(id) ? null : extraction.registrationOf(id);
+			const read = registration ? blockBehaviour(registration, extraction) : null;
+			if (read) {
+				behaviour[id] = read.behaviour;
+				for (const reason of read.failures) {
+					behaviourFailures.push({ id, reason });
+				}
+			}
+		}
+	}
+	return { light, behaviour, failures, behaviourFailures, notes };
 }
 
 /** `lit ? level : 0`, the shape a furnace, a redstone lamp or a campfire has. */
