@@ -45,6 +45,8 @@ export interface ClassFile {
 	superClass: string | null;
 	constants: Array<Constant | null>;
 	methods: MethodInfo[];
+	/** Each field, with its value where it is a compile-time constant (`static final int`). */
+	fields: Array<{ name: string; descriptor: string; constant: string | number | bigint | null; }>;
 	/** A pool entry as text, for a `utf8` or anything that resolves to one. */
 	utf8: (index: number) => string;
 	/** `owner.name:descriptor` for a field or method reference. */
@@ -252,6 +254,8 @@ function readAttributes(
 	reader: Reader,
 	utf8: (index: number) => string,
 	bootstraps?: BootstrapMethod[],
+	/** Collects a field's `ConstantValue` pool index, where the field is a compile-time constant. */
+	constants?: number[],
 ): Uint8Array | undefined {
 	let code: Uint8Array | undefined;
 	const count = reader.u2();
@@ -269,6 +273,10 @@ function readAttributes(
 				}
 				bootstraps.push({ handleIndex, argumentIndexes });
 			}
+			continue;
+		}
+		if (name === 'ConstantValue' && constants) {
+			constants.push(reader.u2());
 			continue;
 		}
 		if (name !== 'Code') {
@@ -315,11 +323,16 @@ export function parseClassFile(bytes: Uint8Array): ClassFile {
 	const superClass = superIndex === 0 ? null : utf8(superIndex);
 	reader.skip(reader.u2() * 2);
 
-	// fields: skipped, but their attributes have to be walked to reach the methods
+	// Fields for their compile-time constants, which javac inlines into every use and so cannot be read there
+	const fieldEntries: Array<{ name: string; descriptor: string; constant: number | undefined; }> = [];
 	const fieldCount = reader.u2();
 	for (let index = 0; index < fieldCount; index++) {
-		reader.skip(6);
-		readAttributes(reader, utf8);
+		reader.skip(2);
+		const name = utf8(reader.u2());
+		const descriptor = utf8(reader.u2());
+		const constant: number[] = [];
+		readAttributes(reader, utf8, undefined, constant);
+		fieldEntries.push({ name, descriptor, constant: constant[0] });
 	}
 	const methods: MethodInfo[] = [];
 	const methodCount = reader.u2();
@@ -409,5 +422,8 @@ export function parseClassFile(bytes: Uint8Array): ClassFile {
 		return { name: utf8(nameAndType.nameIndex), descriptor: utf8(nameAndType.descriptorIndex) };
 	};
 
-	return { thisClass, superClass, constants, methods, utf8, reference, literal, lambdaTarget, bootstrap, invokeDynamic };
+	const fields = fieldEntries.map((field) => {
+		return { name: field.name, descriptor: field.descriptor, constant: field.constant === undefined ? null : literal(field.constant) };
+	});
+	return { thisClass, superClass, constants, methods, fields, utf8, reference, literal, lambdaTarget, bootstrap, invokeDynamic };
 }

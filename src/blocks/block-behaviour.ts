@@ -15,6 +15,7 @@
 import type {
 	Handle,
 	LightExtraction,
+	MemberReference,
 	Registration,
 	Value,
 } from './light-bytecode.ts';
@@ -50,6 +51,28 @@ export interface BlockBehaviour {
 	friction?: number;
 	speedFactor?: number;
 	jumpFactor?: number;
+	/**
+	 * The block's shape decides how light crosses its faces (`useShapeForLightOcclusion`): stairs,
+	 * slabs, snow layers. `true` in every state, or cases of 1 where a state does (a double slab does not).
+	 */
+	lightShape?: true | Exclude<BlockPackLight, number>;
+	/**
+	 * Light lost passing through the block, where its class answers for itself (`getLightBlock`): 15
+	 * for tinted glass, whose faces are see-through. Absent means the game's default rule.
+	 */
+	lightBlock?: BlockPackLight;
+	/** The fluid the block holds in every state, as kelp and seagrass are always under water. */
+	fluid?: 'water' | 'lava';
+	/**
+	 * The block model renderer draws nothing for it (`RenderShape.INVISIBLE`): a barrier, a light block, a
+	 * structure void, and the blocks something else draws, a fluid or an end portal.
+	 */
+	invisible?: true;
+	/**
+	 * Its class decides whether a face against a neighbour draws (`skipRendering`): glass hides the faces
+	 * it shares with glass, although its texture reads as plain cutout.
+	 */
+	hidesSharedFaces?: true;
 }
 
 const PUSH_REACTIONS = new Set<string>(['destroy', 'block', 'ignore', 'push_only']);
@@ -141,9 +164,19 @@ function float32(value: number): number {
 	return value;
 }
 
+function flag(value: Value): number | null {
+	return value.kind === 'number' ? (value.value === 0 ? 0 : 1) : null;
+}
+
 export function blockBehaviour(
 	registration: Registration,
-	extraction: Pick<LightExtraction, 'tabulate'>,
+	extraction: Pick<LightExtraction, 'tabulate' | 'tabulateMethod'>,
+	/** The block's class's overrides, if it can be read: see `block-overrides.ts`. */
+	overrides: {
+		of: (names: readonly string[]) => MemberReference | null;
+		fluid: (method: MemberReference) => 'water' | 'lava' | null;
+		invisible: (method: MemberReference) => boolean;
+	} | null = null,
 ): { behaviour: BlockBehaviour; failures: string[]; } | null {
 	const props = registration.props;
 	if (!props) {
@@ -266,6 +299,45 @@ export function blockBehaviour(
 		} else {
 			behaviour.mapColor = id;
 		}
+	}
+	// What the block's own class answers, run per state where it depends on one
+	const answer = (names: readonly string[], read: (value: Value) => number | null): BlockPackLight | null => {
+		const method = overrides?.of(names) ?? null;
+		if (!method) {
+			return null;
+		}
+		const folded = extraction.tabulateMethod(registration, method, read);
+		if ('failure' in folded) {
+			failures.push(`${names[0]}: ${folded.failure}`);
+			return null;
+		}
+		return folded.value;
+	};
+	const shape = answer(['useShapeForLightOcclusion'], flag);
+	if (shape === 1) {
+		behaviour.lightShape = true;
+	} else if (shape !== null && typeof shape === 'object') {
+		behaviour.lightShape = shape;
+	}
+	const lightBlock = answer(['getLightBlock', 'getLightDampening'], value => (value.kind === 'number' ? value.value : null));
+	if (lightBlock !== null) {
+		behaviour.lightBlock = lightBlock;
+	}
+	const fluidMethod = overrides?.of(['getFluidState']);
+	const fluid = fluidMethod && overrides ? overrides.fluid(fluidMethod) : null;
+	if (fluid) {
+		behaviour.fluid = fluid;
+	}
+	const renderShape = overrides?.of(['getRenderShape']);
+	if (renderShape && overrides?.invisible(renderShape)) {
+		behaviour.invisible = true;
+	}
+	if (overrides?.of(['skipRendering'])) {
+		behaviour.hidesSharedFaces = true;
+	}
+	// Before 1.16.2 an air block was a class that said so, not a builder call
+	if (answer(['isAir'], flag) === 1) {
+		behaviour.air = true;
 	}
 	return { behaviour, failures };
 }
