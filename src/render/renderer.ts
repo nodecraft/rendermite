@@ -407,11 +407,17 @@ async function renderGeneratedItemWith(
 		if (tint) {
 			tintTexture(float, tint.r, tint.g, tint.b);
 		}
-		const resized = pointResize(float, renderSize, renderSize);
-		for (let offset = 0; offset < out.length; offset += 4) {
-			const alpha = resized.data[offset + 3];
-			if (alpha > 0) {
-				blendPixel(out, offset, resized.data[offset], resized.data[offset + 1], resized.data[offset + 2], alpha);
+		// Sampled straight from the layer rather than through pointResize, which
+		// would allocate a render-sized copy per layer only to be read once.
+		const srcXs = pointColumns(float.width, renderSize);
+		for (let y = 0; y < renderSize; y++) {
+			const srcRow = pointRow(float.height, renderSize, y) * float.width;
+			for (let x = 0; x < renderSize; x++) {
+				const src = (srcRow + srcXs[x]) * 4;
+				const alpha = float.data[src + 3];
+				if (alpha > 0) {
+					blendPixel(out, (y * renderSize + x) * 4, float.data[src], float.data[src + 1], float.data[src + 2], alpha);
+				}
 			}
 		}
 	}
@@ -571,21 +577,31 @@ async function renderElementModelWith(
 	return combineFaceBuffers(renderSize, renderSize, buffers);
 }
 
+/**
+ * Source column for every destination column of a point resize. The mapping is
+ * identical for every row, so computing it once avoids width * height redundant
+ * Math.floor + division calls.
+ */
+function pointColumns(sourceWidth: number, width: number): Int32Array {
+	const srcXs = new Int32Array(width);
+	for (let x = 0; x < width; x++) {
+		const srcX = Math.floor((x + 0.5) * sourceWidth / width);
+		srcXs[x] = srcX >= sourceWidth ? sourceWidth - 1 : srcX;
+	}
+	return srcXs;
+}
+
+function pointRow(sourceHeight: number, height: number, y: number): number {
+	const srcY = Math.floor((y + 0.5) * sourceHeight / height);
+	return srcY >= sourceHeight ? sourceHeight - 1 : srcY;
+}
+
 /** Nearest-neighbour resize matching Imagick FILTER_POINT (destination-center sampling). */
 export function pointResize(texture: FloatTexture, width: number, height: number): FloatTexture {
 	const data = new Float64Array(width * height * 4);
-	// Precompute source X for every destination column: the mapping is identical
-	// for every row, so computing it once avoids width * height redundant
-	// Math.floor + division calls.
-	const srcXs = new Int32Array(width);
-	for (let x = 0; x < width; x++) {
-		const srcX = Math.floor((x + 0.5) * texture.width / width);
-		srcXs[x] = srcX >= texture.width ? texture.width - 1 : srcX;
-	}
+	const srcXs = pointColumns(texture.width, width);
 	for (let y = 0; y < height; y++) {
-		let srcY = Math.floor((y + 0.5) * texture.height / height);
-		srcY = srcY >= texture.height ? texture.height - 1 : srcY;
-		const srcRow = srcY * texture.width;
+		const srcRow = pointRow(texture.height, height, y) * texture.width;
 		const dstRow = y * width;
 		for (let x = 0; x < width; x++) {
 			const src = (srcRow + srcXs[x]) * 4;
@@ -606,35 +622,63 @@ export function pointResize(texture: FloatTexture, width: number, height: number
  * Q16 quantum with round-half-up. Verified against Imagick FILTER_BOX output.
  */
 export function boxDownscale(texture: FloatTexture, factor: number): FloatTexture {
-	const horizontal = boxPass(texture, factor, true);
-	return boxPass(horizontal, factor, false);
-}
+	const { width: sourceWidth, height: sourceHeight, data: src } = texture;
+	const width = Math.round(sourceWidth / factor);
+	const height = Math.round(sourceHeight / factor);
 
-function boxPass(texture: FloatTexture, factor: number, isHorizontal: boolean): FloatTexture {
-	const width = isHorizontal ? Math.round(texture.width / factor) : texture.width;
-	const height = isHorizontal ? texture.height : Math.round(texture.height / factor);
+	// The horizontal pass stays in Q16 quanta: normalizing it only for the
+	// vertical pass to scale back up and round returns the same integers.
+	const quanta = new Float64Array(width * sourceHeight * 4);
+	for (let y = 0; y < sourceHeight; y++) {
+		for (let x = 0; x < width; x++) {
+			const start = (y * sourceWidth + x * factor) * 4;
+			let alphaSum = 0;
+			for (let i = 0, srcOffset = start; i < factor; i++, srcOffset += 4) {
+				alphaSum += Math.round(src[srcOffset + 3] * 65535);
+			}
+			const dst = (y * width + x) * 4;
+			// Colour is only kept where some alpha is, so most of an icon, which is
+			// transparent, never needs it summed.
+			if (alphaSum > 0) {
+				// Accumulate in integer quantum space: normalized floats drift by an
+				// ulp across /65535 round trips, flipping .5 cases the wrong way.
+				let r = 0;
+				let g = 0;
+				let b = 0;
+				for (let i = 0, srcOffset = start; i < factor; i++, srcOffset += 4) {
+					const alpha = Math.round(src[srcOffset + 3] * 65535);
+					r += Math.round(src[srcOffset] * 65535) * alpha;
+					g += Math.round(src[srcOffset + 1] * 65535) * alpha;
+					b += Math.round(src[srcOffset + 2] * 65535) * alpha;
+				}
+				quanta[dst] = clampQuantum(r / alphaSum);
+				quanta[dst + 1] = clampQuantum(g / alphaSum);
+				quanta[dst + 2] = clampQuantum(b / alphaSum);
+			}
+			quanta[dst + 3] = clampQuantum(alphaSum / factor);
+		}
+	}
+
 	const data = new Float64Array(width * height * 4);
-	const { data: src } = texture;
+	const rowStride = width * 4;
 	for (let y = 0; y < height; y++) {
 		for (let x = 0; x < width; x++) {
-			// Accumulate in integer quantum space: normalized floats drift by an
-			// ulp across /65535 round trips, flipping .5 cases the wrong way.
-			let r = 0;
-			let g = 0;
-			let b = 0;
+			const start = (y * factor * width + x) * 4;
 			let alphaSum = 0;
-			for (let i = 0; i < factor; i++) {
-				const srcX = isHorizontal ? x * factor + i : x;
-				const srcY = isHorizontal ? y : y * factor + i;
-				const srcOffset = (srcY * texture.width + srcX) * 4;
-				const alpha = Math.round(src[srcOffset + 3] * 65535);
-				r += Math.round(src[srcOffset] * 65535) * alpha;
-				g += Math.round(src[srcOffset + 1] * 65535) * alpha;
-				b += Math.round(src[srcOffset + 2] * 65535) * alpha;
-				alphaSum += alpha;
+			for (let i = 0, srcOffset = start; i < factor; i++, srcOffset += rowStride) {
+				alphaSum += quanta[srcOffset + 3];
 			}
 			const dst = (y * width + x) * 4;
 			if (alphaSum > 0) {
+				let r = 0;
+				let g = 0;
+				let b = 0;
+				for (let i = 0, srcOffset = start; i < factor; i++, srcOffset += rowStride) {
+					const alpha = quanta[srcOffset + 3];
+					r += quanta[srcOffset] * alpha;
+					g += quanta[srcOffset + 1] * alpha;
+					b += quanta[srcOffset + 2] * alpha;
+				}
 				data[dst] = clampQuantum(r / alphaSum) / 65535;
 				data[dst + 1] = clampQuantum(g / alphaSum) / 65535;
 				data[dst + 2] = clampQuantum(b / alphaSum) / 65535;

@@ -8,8 +8,10 @@ import {
 	it,
 } from 'vitest';
 
+import { CachedListingResourceManager } from '../src/resources/cached.ts';
 import { ResourceLocator } from '../src/resources/locator.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../src/resources/manager.ts';
+import { MapResourceManager } from '../src/resources/synthetic.ts';
 
 const fixtureRoot = path.join(import.meta.dirname, '.fixtures', 'pack-a');
 const overlayRoot = path.join(import.meta.dirname, '.fixtures', 'pack-b');
@@ -69,5 +71,34 @@ describe('LayeredResourceManager', () => {
 		const models = await layered.listResources('model', 'minecraft');
 		expect(models.map(String).toSorted((left, right) => left.localeCompare(right))).toEqual(['minecraft:block/stone', 'minecraft:item/stone']);
 		expect(await layered.listNamespaces()).toEqual(['examplemod', 'minecraft']);
+	});
+});
+
+describe('CachedListingResourceManager', () => {
+	it('hands every caller its own copy of a listing', async () => {
+		const inner = new MapResourceManager().set('texture', 'minecraft:block/stone', Buffer.from('png'));
+		const cached = new CachedListingResourceManager(inner);
+		const first = await cached.listResources('texture', 'minecraft');
+		first.push(ResourceLocator.parse('minecraft:block/imaginary'));
+		const second = await cached.listResources('texture', 'minecraft');
+		expect(second.map(String)).toEqual(['minecraft:block/stone']);
+	});
+
+	it('retries a listing that failed rather than remembering the failure', async () => {
+		class FlakyResourceManager extends MapResourceManager {
+			private calls = 0;
+
+			override async listResources(): Promise<ResourceLocator[]> {
+				this.calls++;
+				if (this.calls === 1) {
+					throw new Error('transient');
+				}
+				return [ResourceLocator.parse('minecraft:block/stone')];
+			}
+		}
+		const cached = new CachedListingResourceManager(new FlakyResourceManager());
+		await expect(cached.listResources('texture', 'minecraft')).rejects.toThrow('transient');
+		const retried = await cached.listResources('texture', 'minecraft');
+		expect(retried.map(String)).toEqual(['minecraft:block/stone']);
 	});
 });

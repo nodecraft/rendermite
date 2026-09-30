@@ -12,6 +12,7 @@
  */
 
 import { parseClassFile } from './classfile.ts';
+import { readAhead } from '../resources/read-ahead.ts';
 
 import type { ClassFile } from './classfile.ts';
 
@@ -37,11 +38,9 @@ export async function loadModelCode(
 	originalOf?: (internalName: string) => string,
 ): Promise<ModelCode> {
 	const code = new Map<string, Uint8Array>();
-	for (const name of names) {
-		if (!isModelCode(originalOf?.(name) ?? name)) {
-			continue;
-		}
-		const bytes = await read(name);
+	const modelNames = Iterator.from(names).filter(name => isModelCode(originalOf?.(name) ?? name));
+	for (const [name, pending] of readAhead(modelNames, read)) {
+		const bytes = await pending;
 		if (bytes) {
 			code.set(name.replaceAll('.', '/'), bytes);
 		}

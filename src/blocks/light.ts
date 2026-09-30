@@ -19,6 +19,7 @@ import { alwaysInvisible, constantFluidOf, overrideOf } from './block-overrides.
 import { extractBlockLight } from './light-bytecode.ts';
 import { parseClassFile } from '../entities/classfile.ts';
 import { MappingsUnavailableError, remapDescriptor, resolveMappings } from '../entities/mappings.ts';
+import { readAhead } from '../resources/read-ahead.ts';
 import { compareVersions } from '../versions/prepare.ts';
 
 import type { BlockBehaviour } from './block-behaviour.ts';
@@ -324,9 +325,16 @@ function remapper(
 	mappings: Mappings,
 	superOf: (internalName: string) => string | null = () => null,
 ): Pick<LightCodeSource, 'remap' | 'remapClass'> & { nameOf: (reference: MemberReference, field: boolean) => string; } {
+	// Memoized, like nameOf: the interpreter asks about the same few hundred classes and members over and over
+	const remappedClasses = new Map<string, string>();
 	const remapClass = (internalName: string): string => {
-		const mapped = mappings.obfuscatedOf.get(internalName.replaceAll('/', '.'));
-		return mapped ? mapped.replaceAll('.', '/') : internalName;
+		let remapped = remappedClasses.get(internalName);
+		if (remapped === undefined) {
+			const mapped = mappings.obfuscatedOf.get(internalName.replaceAll('/', '.'));
+			remapped = mapped ? mapped.replaceAll('.', '/') : internalName;
+			remappedClasses.set(internalName, remapped);
+		}
+		return remapped;
 	};
 	const remap = (reference: MemberReference, field: boolean): MemberReference => {
 		const dotted = reference.owner.replaceAll('/', '.');
@@ -348,17 +356,26 @@ function remapper(
 	 * `OAK_PLANKS.defaultMapColor()` is spelled on `Block` and declared on `BlockBehaviour`, so the
 	 * lookup climbs. Fields are keyed without a descriptor, methods with the one the jar spells.
 	 */
+	const memberNames = new Map<string, string>();
 	const nameOf = (reference: MemberReference, field: boolean): string => {
+		const key = field ? `field ${reference.owner}.${reference.name}` : `method ${reference.owner}.${reference.name}${reference.descriptor}`;
+		let name = memberNames.get(key);
+		if (name !== undefined) {
+			return name;
+		}
+		name = reference.name;
 		let owner: string | null = reference.owner;
 		for (let hops = 0; owner && hops < 8; hops++) {
 			const dotted = owner.replaceAll('/', '.');
 			const found = mappings.nameOf?.get(field ? `${dotted}.${reference.name}` : `${dotted}.${reference.name}${reference.descriptor}`);
 			if (found) {
-				return found;
+				name = found;
+				break;
 			}
 			owner = superOf(owner);
 		}
-		return reference.name;
+		memberNames.set(key, name);
+		return name;
 	};
 	return { remap, remapClass, nameOf };
 }
@@ -394,8 +411,8 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 	 * client, for the duration of one export.
 	 */
 	const bytes = new Map<string, Uint8Array>();
-	for (const name of names) {
-		const read = await classes.read(name);
+	for (const [name, pending] of readAhead(names, internal => classes.read(internal))) {
+		const read = await pending;
 		if (read) {
 			bytes.set(name.replaceAll('.', '/'), read);
 		}

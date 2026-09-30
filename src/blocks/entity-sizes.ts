@@ -14,6 +14,7 @@
 
 import { parseClassFile } from '../entities/classfile.ts';
 import { MappingsUnavailableError, resolveMappings } from '../entities/mappings.ts';
+import { readAhead } from '../resources/read-ahead.ts';
 
 import type { ClassFile } from '../entities/classfile.ts';
 import type { ClassSource } from '../entities/jar-classes.ts';
@@ -147,8 +148,8 @@ export async function collectEntitySizes(options: {
 	const originalName = (owner: string, name: string, descriptor: string): string => mappings.nameOf?.get(`${owner.replaceAll('/', '.')}.${name}${descriptor}`) ?? name;
 
 	const parsed: ClassFile[] = [];
-	for (const name of names) {
-		const bytes = await options.classes.read(name);
+	for (const [, pending] of readAhead(names, internal => options.classes.read(internal))) {
+		const bytes = await pending;
 		if (!bytes) {
 			continue;
 		}

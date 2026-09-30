@@ -75,16 +75,28 @@ export function compactFaceBuffer(buffer: FaceBuffer): FaceBuffer | null {
 	let minY = buffer.height;
 	let maxX = -1;
 	let maxY = -1;
+	const source = buffer.colors;
+	const startX = Math.max(buffer.dirty.minX, 0);
+	const endX = Math.min(buffer.dirty.maxX, buffer.width - 1);
 	for (let y = Math.max(buffer.dirty.minY, 0); y <= Math.min(buffer.dirty.maxY, buffer.height - 1); y++) {
-		for (let x = Math.max(buffer.dirty.minX, 0); x <= Math.min(buffer.dirty.maxX, buffer.width - 1); x++) {
-			if (buffer.colors[(y * buffer.width + x) * 4 + 3] <= 0) {
-				continue;
-			}
-			minX = Math.min(minX, x);
-			minY = Math.min(minY, y);
-			maxX = Math.max(maxX, x);
-			maxY = Math.max(maxY, y);
+		const row = y * buffer.width;
+		// Only a row's outermost visible pixels can move the bounds, so scan in
+		// from each end. Skipping only `alpha <= 0` keeps a NaN alpha visible.
+		let first = startX;
+		while (first <= endX && source[(row + first) * 4 + 3] <= 0) {
+			first++;
 		}
+		if (first > endX) {
+			continue;
+		}
+		let last = endX;
+		while (last > first && source[(row + last) * 4 + 3] <= 0) {
+			last--;
+		}
+		minX = Math.min(minX, first);
+		maxX = Math.max(maxX, last);
+		minY = Math.min(minY, y);
+		maxY = y;
 	}
 	if (maxX < minX || maxY < minY) {
 		return null;

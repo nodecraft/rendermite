@@ -212,8 +212,25 @@ export function parseMappings(text: string): Mappings {
 	return { obfuscatedOf, originalOf, fieldOf, methodOf, nameOf };
 }
 
+/**
+ * The last file parsed. An export reads one version's mappings from light, entity sizes and entity
+ * geometry in turn, and each parse is most of a second; one slot keeps a seed across versions bounded.
+ */
+let lastParsed: { file: string; mappings: Promise<Mappings>; } | null = null;
+
 export async function loadMappings(version: string, cacheDir: string): Promise<Mappings> {
-	return parseMappings(await readFile(await downloadClientMappings(version, cacheDir), 'utf8'));
+	const file = await downloadClientMappings(version, cacheDir);
+	if (lastParsed?.file === file) {
+		return lastParsed.mappings;
+	}
+	const entry = { file, mappings: readFile(file, 'utf8').then(text => parseMappings(text)) };
+	lastParsed = entry;
+	entry.mappings.catch(() => {
+		if (lastParsed === entry) {
+			lastParsed = null;
+		}
+	});
+	return entry.mappings;
 }
 
 /**

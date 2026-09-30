@@ -152,12 +152,13 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		throw err;
 	});
 	const { resources } = pipeline;
+	// A tree without vanilla textures has no glint; its items still render, they just cannot shimmer
 	const glint = await resolveEnchantmentGlint(resources);
 	if (!glint) {
-		throw new Error('Missing enchantment glint texture (minecraft:misc/enchanted_glint_item or enchanted_item_glint)');
+		options.onProgress?.(0, 0, 'enchantment glint', 'Missing enchantment glint texture (minecraft:misc/enchanted_glint_item or enchanted_item_glint); the stylesheet has no glint overlay');
 	}
 	const glintFormats = fallback ? ['png', format] as const : [format] as const;
-	const encodedGlint = await encodeRasterAsset(glint, glintFormats);
+	const encodedGlint = glint ? await encodeRasterAsset(glint, glintFormats) : new Map<string, Buffer>();
 
 	const ids: string[] = [];
 	const seen = new Set<string>();
@@ -317,6 +318,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		prefix,
 		format,
 		fallback,
+		glint: glint !== null,
 	});
 	const finalStylesheet = options.minify === false
 		? stylesheet

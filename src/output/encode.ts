@@ -9,6 +9,7 @@ import sharp from 'sharp';
 import { toByteTexture } from '../render/blend.ts';
 
 import type { FloatTexture } from '../render/blend.ts';
+import type { Sharp } from 'sharp';
 
 export interface EncodedIcon {
 	png: Buffer;
@@ -147,9 +148,10 @@ function countColors(data: Uint8ClampedArray, cap: number): number {
 
 export async function encodeIcon(texture: FloatTexture, options: EncodeOptions = {}): Promise<EncodedIcon> {
 	const bytes = toByteTexture(texture);
-	const raw = sharp(Buffer.from(bytes.data.buffer, bytes.data.byteOffset, bytes.data.length), {
-		raw: { width: bytes.width, height: bytes.height, channels: 4 },
-	});
+	const pixels = Buffer.from(bytes.data.buffer, bytes.data.byteOffset, bytes.data.length);
+	// A fresh pipeline per format rather than clone(), which structured-clones its options and the
+	// pixel buffer with them; nothing is applied before the encoders diverge, so the two are the same.
+	const raw = (): Sharp => sharp(pixels, { raw: { width: bytes.width, height: bytes.height, channels: 4 } });
 
 	// Palette PNGs are smaller but sharp's quantizer silently degrades icons
 	// with more than 256 colors (this is exactly how the old pipeline shipped
@@ -159,12 +161,12 @@ export async function encodeIcon(texture: FloatTexture, options: EncodeOptions =
 	// Encode PNG and WebP in parallel: they are independent native operations
 	// that run on libvips' threadpool, so overlapping them roughly halves the
 	// wall time for the common single-frame icon.
-	const pngPromise = raw.clone().png({ compressionLevel: 9, effort: 10, palette: paletteSafe }).toBuffer();
+	const pngPromise = raw().png({ compressionLevel: 9, effort: 10, palette: paletteSafe }).toBuffer();
 	const webpPromise = options.webp !== false
-		? raw.clone().webp({ lossless: true, effort: STATIC_WEBP_EFFORT }).toBuffer()
+		? raw().webp({ lossless: true, effort: STATIC_WEBP_EFFORT }).toBuffer()
 		: Promise.resolve(undefined);
 	const avifPromise = options.avif
-		? raw.clone().avif({ lossless: true, effort: 6 }).toBuffer()
+		? raw().avif({ lossless: true, effort: 6 }).toBuffer()
 		: Promise.resolve(undefined);
 	const [png, webp, avif] = await Promise.all([pngPromise, webpPromise, avifPromise]);
 	const result: EncodedIcon = { png };

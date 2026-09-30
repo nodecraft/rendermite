@@ -217,15 +217,15 @@ Fully self-contained: no fixture references a developer machine.
 
 | | wall-clock | items written | silent drops | items/min |
 | --- | --- | --- | --- | --- |
-| renderchest v5.1.0 (docker, 8 PHP workers) | 210s | 1,573 (claimed 1,606) | 33 | ~449 |
-| rendermite (one Node process, pool 8) | 22.9s | 2,065 | 0 | ~5,410 |
+| renderchest v5.1.0 (docker, 8 cores) | 186s | 1,573 (claimed 1,606) | 33 | ~506 |
+| rendermite (one Node process, 8 worker threads) | 12.1s | 2,035 | 0 | ~10,070 |
 
-9.2× faster with 29% more items rendered; the PHP run demonstrated the silent-drop failure
-mode live (33 items logged as rendered, never written).
+15× faster with 29% more items rendered; the PHP run still demonstrates the silent-drop failure
+mode live (33 items logged as rendered, never written, exit 0).
 
-That table is a fixed point-in-time comparison against the PHP tool and is not re-measured;
-rendermite has since roughly halved its own side of it. Current numbers come from the
-benchmark suite below, not from this table.
+Re-measured September 2026 from `dist/` with `--assets` on the extracted tree, median of warm
+runs (the first cold read of the loose files took 29s). The first measurement was 210s against
+22.9s. Current numbers come from the benchmark suite below, not from this table.
 
 ## Continuous benchmarks (`bench/`)
 

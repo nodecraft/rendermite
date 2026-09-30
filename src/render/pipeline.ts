@@ -33,6 +33,7 @@ import { defaultProperties } from '../items/definition.ts';
 import { resolveItem } from '../items/discovery.ts';
 import { ModelLoader } from '../models/loader.ts';
 import { encodeAnimatedIcon } from '../output/encode.ts';
+import { CachedListingResourceManager } from '../resources/cached.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../resources/manager.ts';
 import { TextureLoader } from '../textures/loader.ts';
@@ -73,9 +74,9 @@ export class ItemPipeline {
 		// Dynamic resources (pot variants, leather trim layers, charged crossbows)
 		// depend on builtin models, so they ride along with the builtin pack.
 		const dynamic = settings.builtin ? builtinDynamicResources() : null;
-		const resources = settings.builtin && dynamic
+		const resources = new CachedListingResourceManager(settings.builtin && dynamic
 			? new LayeredResourceManager([new FolderResourceManager(settings.builtin), dynamic.layer, base])
-			: base;
+			: base);
 		const pipeline = new ItemPipeline(resources, dynamic?.items.map(item => item.id) ?? null, settings);
 		// Atlas sources synthesize sprites with no file behind them (armor trims via
 		// paletted_permutations, unstitch regions) — the class renderchest v2.5.2
