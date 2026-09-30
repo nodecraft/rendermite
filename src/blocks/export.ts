@@ -38,6 +38,7 @@ import { UNREGISTERED_TINTS, buildBlockTints } from './tints.ts';
 import { loadAtlasResolver } from '../atlas/registry.ts';
 import { discoverItems } from '../items/discovery.ts';
 import { ModelLoader, resolveTexture, salvageJson } from '../models/loader.ts';
+import { CachedListingResourceManager } from '../resources/cached.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../resources/manager.ts';
 import { TextureLoader } from '../textures/loader.ts';
@@ -469,9 +470,9 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	// Under the input, not over it: the builtin pack is only here for the
 	// namespaces nothing else provides, and layering it above would let its item
 	// overrides shadow a real block model.
-	const resources = options.builtin
+	const resources = new CachedListingResourceManager(options.builtin
 		? new LayeredResourceManager([options.resources, new FolderResourceManager(options.builtin)])
-		: options.resources;
+		: options.resources);
 	const namespaces = options.namespaces ?? ['minecraft'];
 	const failures: BlockPackFailure[] = [];
 	const report = (stage: string, done: number, total: number): void => options.onProgress?.(stage, done, total);

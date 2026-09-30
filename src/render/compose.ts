@@ -95,7 +95,9 @@ export function combineFaceBuffers(width: number, height: number, faces: FaceBuf
 					deep[slotIndex] = index;
 					deepDepth[slotIndex] = depth;
 					deepRank[slotIndex] = rank[index];
-				} else {
+				} else if (face.colors[localPixel * 4 + 3] > 0) {
+					// A transparent sample with no depth neither blends nor moves in
+					// the order, so it never needs a place in it.
 					let slotIndex = flatCount++;
 					while (slotIndex > 0 && flatRank[slotIndex - 1] > rank[index]) {
 						flat[slotIndex] = flat[slotIndex - 1];

@@ -16,6 +16,7 @@
 
 import { packAtlas } from './atlas-pack.ts';
 import { ResourceLocator } from '../resources/locator.ts';
+import { readAhead } from '../resources/read-ahead.ts';
 
 import type { PackedPage } from './atlas-pack.ts';
 import type { BlockPackRenderLayer, BlockPackSprite, BlockPackSpriteFrame } from './pack-format.ts';
@@ -135,11 +136,12 @@ export async function buildSpriteSheet(
 	const missing = new Set<string>();
 	const loaded: LoadedSprite[] = [];
 	let done = 0;
-	for (const id of [...wanted].toSorted((left, right) => left.localeCompare(right))) {
+	const sorted = [...wanted].toSorted((left, right) => left.localeCompare(right));
+	for (const [id, pending] of readAhead(sorted, async name => textures.loadAnimated(ResourceLocator.parse(name)))) {
 		options.onProgress?.(++done, wanted.size);
 		let animated;
 		try {
-			animated = await textures.loadAnimated(ResourceLocator.parse(id));
+			animated = await pending;
 		} catch (err) {
 			failures.push({ id, reason: (err as Error).message });
 			missing.add(id);

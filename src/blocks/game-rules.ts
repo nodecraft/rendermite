@@ -14,6 +14,7 @@
 
 import { instructions } from './entity-sizes.ts';
 import { parseClassFile } from '../entities/classfile.ts';
+import { readAhead } from '../resources/read-ahead.ts';
 
 import type { ClassFile } from '../entities/classfile.ts';
 import type { ClassSource } from '../entities/jar-classes.ts';
@@ -49,8 +50,8 @@ function valueKind(descriptor: string): GameRule['type'] | null {
  */
 export async function collectGameRules(classes: ClassSource): Promise<GameRulePack> {
 	let best: GameRulePack = {};
-	for (const name of await classes.list()) {
-		const bytes = await classes.read(name);
+	for (const [, pending] of readAhead(await classes.list(), internal => classes.read(internal))) {
+		const bytes = await pending;
 		if (!bytes || ![...MARKERS].some(marker => Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes(marker))) {
 			continue;
 		}

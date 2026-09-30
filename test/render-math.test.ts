@@ -4,6 +4,7 @@ import { combineFaceBuffers } from '../src/render/compose.ts';
 import { buildElementFaces } from '../src/render/geometry.ts';
 import { guiSideLight, legacyFrontLight, legacySideLight } from '../src/render/lighting.ts';
 import { compactFaceBuffer, createFaceBuffer, phpRound } from '../src/render/rasterizer.ts';
+import { boxDownscale } from '../src/render/renderer.ts';
 import { parseTintValue, resolveTint } from '../src/render/tints.ts';
 import {
 	displayMatrix,
@@ -58,6 +59,26 @@ describe('compactFaceBuffer', () => {
 			.filter(buffer => buffer !== null);
 		const actual = combineFaceBuffers(4, 3, compact);
 		expect([...actual.data]).toEqual([...expected.data]);
+	});
+});
+
+describe('boxDownscale', () => {
+	it('averages colour over the samples that have alpha, and alpha over all of them', () => {
+		// Opaque red beside transparent blue, above a transparent row: the blue must not tint the red
+		const texture = {
+			width: 2,
+			height: 2,
+			data: new Float64Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0]),
+		};
+		const { width, height, data } = boxDownscale(texture, 2);
+		expect({ width, height }).toEqual({ width: 1, height: 1 });
+		// Each pass stores a Q16 quantum rounding half up: 65535 / 2 is 32768, then 32768 / 2 is 16384
+		expect([...data]).toEqual([1, 0, 0, 16384 / 65535]);
+	});
+
+	it('leaves a fully transparent pixel black', () => {
+		const texture = { width: 2, height: 2, data: new Float64Array([0.5, 0.5, 0.5, 0, 0.5, 0.5, 0.5, 0, 0.5, 0.5, 0.5, 0, 0.5, 0.5, 0.5, 0]) };
+		expect([...boxDownscale(texture, 2).data]).toEqual([0, 0, 0, 0]);
 	});
 });
 
