@@ -20,7 +20,7 @@ import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 
 import { ensureModrinthJar, fixturesDir, vanillaJar } from './fixtures/index.ts';
-import { VANILLA_BIOME_CLIMATES } from '../src/blocks/biomes.ts';
+import { vanillaBiomesFor } from '../src/blocks/biomes.ts';
 import { exportBlockPack } from '../src/blocks/export.ts';
 import { builtinPackPath } from '../src/builtin.ts';
 import { JarClassReader } from '../src/entities/jar-classes.ts';
@@ -73,6 +73,13 @@ const ASSET_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
 	 * Recorded once against the version rather than once per mob, and it is the only era affected.
 	 */
 	{ kind: 'entity', reason: /^no entity geometry: .*1\.14\.4/ },
+	{ kind: 'entity', reason: /^no entity sizes: .*1\.14\.4/ },
+	/*
+	 * A map colour the interpreter cannot see: a sign takes its log's colour at the log's default state,
+	 * which the builder chain does not state, and 26.x registers every dyed block in a loop over
+	 * `ColorCollection` it does not follow. Named per block rather than guessed.
+	 */
+	{ kind: 'behaviour', reason: /^map colour/ },
 ];
 
 /**
@@ -161,8 +168,11 @@ interface Pack {
 	tints: { flat: Record<string, string>; blocks: Record<string, Record<string, { kind: string; }>>; };
 	/** `biomes.json`, which a pack with no biomes to describe does not write at all. */
 	biomes: Record<string, { temperature: number; downfall: number; water?: string; modifier?: string; grass?: string; foliage?: string; dryFoliage?: string; }> | null;
+	/** `tags.json` and `advancements.json`, straight from the jar's datapack. */
+	tags: Record<string, Record<string, string[]>> | null;
+	advancements: Record<string, string[]> | null;
 	/** `entities.json`, absent from a pack whose namespaces register no entities. */
-	entities: Record<string, { name: string; color?: string; texture?: string; model?: string; }> | null;
+	entities: Record<string, { name: string; color?: string; texture?: string; model?: string; width?: number; height?: number; }> | null;
 	/** `entity-models.json`, absent unless the export was given code to read geometry out of. */
 	entityModels: {
 		padding: number;
@@ -212,6 +222,8 @@ async function exportPack(
 		meta: await read<Pack['meta']>('meta.json'),
 		tints: await read<Pack['tints']>('tints.json'),
 		biomes: existsSync(path.join(directory, 'biomes.json')) ? await read<NonNullable<Pack['biomes']>>('biomes.json') : null,
+		tags: existsSync(path.join(directory, 'tags.json')) ? await read<NonNullable<Pack['tags']>>('tags.json') : null,
+		advancements: existsSync(path.join(directory, 'advancements.json')) ? await read<NonNullable<Pack['advancements']>>('advancements.json') : null,
 		items: existsSync(path.join(directory, 'items.json')) ? await read<NonNullable<Pack['items']>>('items.json') : null,
 		entities: existsSync(path.join(directory, 'entities.json')) ? await read<NonNullable<Pack['entities']>>('entities.json') : null,
 		entityModels: existsSync(path.join(directory, 'entity-models.json'))
@@ -481,7 +493,8 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		expect(pack.entities?.['minecraft:cow']?.name).toBe('Cow');
 		expect(pack.entities?.['minecraft:cow']?.color).toMatch(/^#[\da-f]{6}$/);
 		// An item entity draws the stack it holds, so it has no colour of its own and none is invented
-		expect(pack.entities?.['minecraft:item']).toStrictEqual({ name: 'Item' });
+		expect(pack.entities?.['minecraft:item']?.name).toBe('Item');
+		expect(pack.entities?.['minecraft:item']?.color).toBeUndefined();
 		const coloured = Object.values(pack.entities ?? {}).filter(entry => entry.color);
 		expect(coloured.length).toBeGreaterThanOrEqual(testCase.entityColours);
 		// A colour taken from outside `entity/` is a marker tinted like whatever block shares a word
@@ -522,9 +535,39 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		 */
 		expect(pack.biomes, 'biomes.json').not.toBeNull();
 		const biomes = pack.biomes as NonNullable<Pack['biomes']>;
-		expect(biomes['minecraft:plains']).toEqual({ temperature: 0.8, downfall: 0.4 });
+		expect(biomes['minecraft:plains']).toMatchObject({ temperature: 0.8, downfall: 0.4 });
 		expect(biomes['minecraft:swamp']).toMatchObject({ modifier: 'swamp', water: '#617b64' });
 		expect(pack.meta.counts.biomes).toBe(Object.keys(biomes).length);
+
+		/*
+		 * The version's own tags and advancements, under one spelling at every version: 1.21 renamed
+		 * `tags/blocks` to `tags/block` and `advancements` to `advancement`, and a consumer must not care.
+		 */
+		expect(pack.tags?.block?.['minecraft:logs']?.length).toBeGreaterThan(0);
+		expect(pack.tags?.block?.['minecraft:oak_logs']).toContain('minecraft:oak_log');
+		expect(pack.tags?.item?.['minecraft:logs']).toBeDefined();
+		expect(pack.advancements?.['minecraft:story/root']).toBeDefined();
+		expect(Object.keys(pack.advancements ?? {}).some(id => id.includes('recipes/'))).toBe(false);
+
+		/*
+		 * What only the code says, read in the same pass as light: stone's hardness and map colour, a
+		 * cow's hitbox, and the rules under the spelling the version stores them by. 1.13 publishes no
+		 * mappings to read builder calls by, so it gets rules (named by strings) but no behaviour or sizes.
+		 */
+		const optional = async <T>(file: string): Promise<T | null> => (existsSync(path.join(pack.directory, file))
+			? JSON.parse(await readFile(path.join(pack.directory, file), 'utf8')) as T
+			: null);
+		const behaviour = await optional<Record<string, { hardness: number; resistance: number; mapColor?: unknown; }>>('behaviour.json');
+		const rules = await optional<Record<string, { type: string; default: unknown; }>>('game-rules.json');
+		const keepInventory = rules?.keepInventory ?? rules?.keep_inventory;
+		expect(keepInventory).toEqual({ type: 'boolean', default: false });
+		if (testCase.version === '1.13.2') {
+			expect(behaviour).toBeNull();
+			expect(pack.entities?.['minecraft:cow']?.width).toBeUndefined();
+		} else {
+			expect(behaviour?.['minecraft:stone']).toMatchObject({ hardness: 1.5, resistance: 6, mapColor: 11 });
+			expect(pack.entities?.['minecraft:cow']).toMatchObject({ width: 0.9, height: 1.4 });
+		}
 
 		/*
 		 * The tint table is this version's, not the union of every version: a climate
@@ -607,14 +650,13 @@ describe('block pack contents', () => {
 		 * 1.19.3 is where a client jar started carrying `data/minecraft/worldgen/biome/`, and where it
 		 * does those values are the version's own answer rather than a transcription of a later one. The
 		 * pair below is the whole rule: 1.19.4 states a swamp with no dry-foliage colour, because dry
-		 * foliage did not exist yet, while the table this exporter carries does state one — and 1.18.2,
-		 * whose jar has no biome data at all, comes out as the table exactly.
+		 * foliage did not exist yet, and nothing newer than it — and 1.18.2, whose jar has no biome data
+		 * at all, comes out as its own frozen table exactly.
 		 */
 		const modern = await exportPack('1.19.4-biomes', await prepareVersionResources({
 			version: '1.19.4',
 			jar: vanillaJar('1.19.4'),
 		}));
-		expect(VANILLA_BIOME_CLIMATES['minecraft:swamp'].dryFoliage).toBeDefined();
 		expect(modern.biomes?.['minecraft:swamp']).toBeDefined();
 		expect(modern.biomes?.['minecraft:swamp'].dryFoliage).toBeUndefined();
 		expect(modern.biomes?.['minecraft:swamp']).toMatchObject({ modifier: 'swamp', water: '#617b64' });
@@ -623,7 +665,9 @@ describe('block pack contents', () => {
 			version: '1.18.2',
 			jar: vanillaJar('1.18.2'),
 		}));
-		expect(legacy.biomes?.['minecraft:swamp']).toEqual(VANILLA_BIOME_CLIMATES['minecraft:swamp']);
+		expect(legacy.biomes).toEqual(vanillaBiomesFor('1.18.2'));
+		// Nothing from a later version leaks into one that ships its own biomes
+		expect(modern.biomes?.['minecraft:cherry_grove']).toBeUndefined();
 	});
 
 	it('gives blocks the game draws in code a shape and an orientation', { timeout: 180000 }, async () => {

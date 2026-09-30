@@ -10,8 +10,12 @@
  */
 
 import type { BiomeClimatePack } from './biomes.ts';
+import type { BlockBehaviour } from './block-behaviour.ts';
 import type { BlockStateMultipartCase, BlockStateVariantCase } from './blockstate-eval.ts';
+import type { AdvancementPack, TagPack } from './datapack.ts';
+import type { GameRulePack } from './game-rules.ts';
 import type { MeshGroup } from './obj-mesh.ts';
+import type { BlockStatesPack } from './states.ts';
 import type { BlockTintPack } from './tints.ts';
 import type {
 	FaceDirectionName,
@@ -153,11 +157,40 @@ export type BlockPackLight =
 export type BlockPackLightFile = Record<string, BlockPackLight>;
 
 /**
+ * `behaviour.json`, by block id: hardness, collision, replaceability, map colour and the rest of what
+ * the block's `Properties` builder chain states. Read from the code, like `light.json`, so absent
+ * from an `--assets` run and from 1.13, whose builder calls have no names without mappings.
+ */
+export type BlockPackBehaviourFile = Record<string, BlockBehaviour>;
+
+/**
  * `biomes.json`, present only when the pack has biomes to describe: vanilla's
  * whole table, or the ones a mod's datapack declares. Absent is not empty — a
  * consumer with no file falls back to tinting at `tints.json`'s flat climate.
  */
 export type BlockPackBiomesFile = BiomeClimatePack;
+
+/**
+ * `tags.json`: registry → tag id → values, exactly as the version's datapack states them. Unexpanded,
+ * so a value starting `#` names another tag in the same registry. Registries are keyed by their 1.21+
+ * singular folder name (`block`, `item`, `entity_type`, `worldgen/biome`) at every version.
+ */
+export type BlockPackTagsFile = TagPack;
+
+/** `advancements.json`: advancement id → its criteria names, recipe unlocks left out. */
+export type BlockPackAdvancementsFile = AdvancementPack;
+
+/**
+ * `states.json`: every block's properties, values in the game's order, and its default state. Present
+ * only when the export was given the version's data generator reports.
+ */
+export type BlockPackStatesFile = BlockStatesPack;
+
+/**
+ * `game-rules.json`: every rule the version registers, by the name `level.dat` stores it under
+ * (camelCase before 26.x, snake_case from it), with its type and default. Vanilla packs only.
+ */
+export type BlockPackGameRulesFile = GameRulePack;
 
 /** One flat sprite of an item's layer stack, in the order the client draws them. */
 export interface ItemPackLayer {
@@ -226,6 +259,12 @@ export interface EntityPackEntry {
 	texture?: string;
 	/** Key into `entity-models.json`'s `models`, when geometry was recovered for this entity. */
 	model?: string;
+	/**
+	 * Hitbox in blocks, as `EntityType.Builder.sized` states it: the base size, before a baby or a big
+	 * slime scales its own. Absent where no code was read (an `--assets` run, 1.13).
+	 */
+	width?: number;
+	height?: number;
 }
 
 /**
@@ -364,6 +403,16 @@ export interface BlockPackMetaFile {
 		entityModels: number;
 		/** Emitting blocks in `light.json`; `0` means the file is absent. */
 		light: number;
+		/** Blocks in `behaviour.json`; `0` means the file is absent. */
+		behaviour: number;
+		/** Tags across every registry in `tags.json`; `0` means the file is absent. */
+		tags: number;
+		/** Advancements in `advancements.json`; `0` means the file is absent. */
+		advancements: number;
+		/** Blocks in `states.json`; `0` means the file is absent. */
+		states: number;
+		/** Rules in `game-rules.json`; `0` means the file is absent. */
+		gameRules: number;
 		failures: number;
 	};
 	/** sha256 per file, enough to verify a cached copy without refetching it. */

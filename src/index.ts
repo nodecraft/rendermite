@@ -56,5 +56,5 @@ export { packAtlas } from './blocks/atlas-pack.ts';
 export type { PackEntry, PackOptions, PackedAtlas, PackedPage, PackedRect } from './blocks/atlas-pack.ts';
 export { buildBlockTints, UNREGISTERED_TINTS } from './blocks/tints.ts';
 export type { BlockTint, BlockTintPack } from './blocks/tints.ts';
-export { buildBiomeClimates, parseBiomeClimate, VANILLA_BIOME_CLIMATES, DEFAULT_WATER_COLOR } from './blocks/biomes.ts';
+export { buildBiomeClimates, parseBiomeClimate, vanillaBiomesFor, LEGACY_BIOMES, PRE_JAR_BIOMES, VANILLA_BIOME_CLIMATES, DEFAULT_WATER_COLOR } from './blocks/biomes.ts';
 export type { BiomeClimate, BiomeClimatePack } from './blocks/biomes.ts';

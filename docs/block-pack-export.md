@@ -100,6 +100,11 @@ Two changes landed outside `src/blocks/` and both benefit the icon path too:
   tints.json           flat plains colours, colormaps, ramps, per-block semantics
   biomes.json          biome id -> climate and the colours it overrides (absent when there are none)
   light.json           block id -> light emitted, per state where it varies (absent when nothing emits; block-light.md)
+  behaviour.json       block id -> hardness, collision, replaceable, map colour… from the code (absent without it)
+  states.json          block id -> every property, values in order, and the default state (only with --reports)
+  tags.json            registry -> tag id -> values, unexpanded, from the jar's own datapack
+  advancements.json    advancement id -> criteria names, recipe unlocks left out
+  game-rules.json      rule name -> { type, default }, from the code (vanilla packs only)
   colormap/*.png       the version's own grass/foliage/dry_foliage maps
   items.json           item id  -> flat layer sprites, with its own atlas (absent when there are none)
   item-atlas-N.png     the item sheet's own page(s), addressed by items.json
@@ -159,11 +164,54 @@ is one of `{kind: 'grass'|'foliage'|'dry_foliage'|'water'}`, `{kind: 'constant',
 addresses the triangular half of a colormap (`x = (1 - temperature) * 255`,
 `y = (1 - downfall * temperature) * 255`, each clamped to 0-1 first); `modifier` applies to the grass
 sample afterwards (`dark_forest` is `((c & 0xFEFEFE) + 0x28340A) >> 1`, `swamp` substitutes
-`#6a7039`); an entry with no `water` is `#3f76e4`. The values come from the jar's own
-`data/<ns>/worldgen/biome/*.json` wherever it ships them — vanilla does from 1.19.3, and a mod always
-does — so a pack states its own version's answer; 1.13 to 1.19.2 fall back to the transcribed table
-in `src/blocks/biomes.ts`. A modded pack describes its own biomes and nothing else. The file is absent when a pack has no biomes to describe, and a consumer without one
-falls back to `tints.json`'s flat plains colours.
+`#6a7039`); an entry with no `water` is `#3f76e4`.
+
+The file holds exactly the version's biomes under the names that version uses, so it doubles as the
+biome list. The values come from the jar's own `data/<ns>/worldgen/biome/*.json` wherever it ships
+them (vanilla from 1.19.3, a mod always), and only those are used. 1.13 to 1.19.2 kept biomes in
+code, so they come from two frozen tables in `src/blocks/biomes.ts`, taken from the data generator's
+own reports: 1.18 to 1.19.2 from 1.19.2's `worldgen/biome` report, and 1.13 to 1.17 from 1.17.1's
+`biomes` report, under the pre-1.18 names (`mountains`, `giant_tree_taiga`). A pre-1.18 entry also
+carries `id`, the number its chunks store the biome as, so a consumer decodes an old chunk against the
+version's own registry instead of a table of its own. The climates differ by era: a 1.16 savanna is
+1.2, not 2.
+
+A modded pack describes its own biomes and nothing else. The file is absent when a pack has no biomes
+to describe, and a consumer without one falls back to `tints.json`'s flat plains colours.
+
+**`tags.json`.** Every tag the jar's datapack ships for the pack's namespaces, as
+`{ [registry]: { [tag]: values[] } }`, unexpanded: a value starting `#` names another tag in the same
+registry. Registries use the 1.21 singular folder name (`block`, `item`, `entity_type`, `fluid`,
+`worldgen/biome`) at every version, since 1.21 renamed `tags/blocks` to `tags/block` and a consumer
+should not have to care. An optional `{ id, required: false }` entry is written as its id.
+
+**`advancements.json`.** Advancement id to the names of its criteria, from `data/<ns>/advancement/`
+(`advancements/` before 1.21). Recipe unlocks are left out: the game grants hundreds of them silently.
+
+**`states.json`.** Every block's properties with their values in the game's order, and its default
+state: `{ properties?, default? }`, both absent for a block with none. `blockstates.json` only names
+the properties that change a model, so it cannot say that stairs are `waterlogged` or what a freshly
+placed block looks like. Nothing in the client jar says either. They come from the data generator's
+`blocks.json` report (`java -jar server.jar --reports`), which needs a JDK, so the export only writes
+this file when it is handed that report with `--reports <dir>`.
+
+**`behaviour.json`.** What the block's `Properties` builder chain states, read in the same pass as
+light (see `block-light.md`): `{ hardness, resistance, mapColor?, collision?: false, occludes?: false,
+replaceable?, air?, liquid?, flammable?, pushReaction?, requiresTool?, randomTicks?, friction?,
+speedFactor?, jumpFactor? }`, each flag written only when it is not the default. `mapColor` is the map
+colour id (0 to 63; absent is 0, `NONE`), or per-state cases in `light.json`'s shape where a function
+of state picks it: an oak log is 34 on its bark and 13 on its end grain. Before 1.20 half of this lived
+on the block's `Material`, whose flags are read off the constant the registration named.
+
+Only builder calls are read. A block class that overrides `canBeReplaced` or `getMapColor` answers for
+itself at runtime, and that is not followed. A sign's colour is its log's at the log's default state,
+which the chain does not state, and 26.x registers every dyed block in a `ColorCollection` loop the
+interpreter does not follow. Those blocks carry no `mapColor` and a `behaviour` failure each. 1.13
+publishes no mappings, so its builder calls have no names and it gets no file.
+
+**`game-rules.json`.** Every rule `GameRules` registers, by the name `level.dat` stores it under
+(camelCase before 26.x, snake_case from it), as `{ type: 'boolean' | 'integer', default }`. Read from
+the code, so vanilla packs only.
 
 **`items.json`.** The flat items — the ones the game draws as a stack of sprites rather than as
 geometry, because `ItemModelGenerator` builds the slab in code and no asset states it. `items[id]`
@@ -181,7 +229,11 @@ The file is **self-contained** — its own `padding`, `pages` and `sprites`, on 
 pages rather than the block atlas's. A consumer that only draws blocks never fetches it at all; one
 drawing a world's dropped stacks fetches it once it finds a stack of something that is not a block.
 
-**`entities.json`.** Every entity type the namespaces register, as `{ name, color?, texture?, model? }`.
+**`entities.json`.** Every entity type the namespaces register, as `{ name, color?, texture?, model?,
+width?, height? }`. `width` and `height` are the hitbox in blocks, read from `EntityType.Builder.sized`
+in the code: the base size, before a baby or a large slime scales it. They are absent for 1.13, which
+set sizes in each mob's constructor and publishes no mappings, and for a lang-only name such as
+`killer_bunny`, which has no type of its own.
 
 There is no geometry here and there cannot be: **no jar contains entity models, at any version** —
 they are Java code, and 26.2 ships 850 entity *textures* against zero entity models. What a consumer
@@ -301,6 +353,10 @@ blocks/modded/<namespace>/   one mod's namespace, fetched on demand
 | `tints.json` | 2 KB | 1 KB | always |
 | `biomes.json` | 4 KB | 1 KB | only for real biome tints |
 | `light.json` | 10 KB | 2 KB | only for lighting |
+| `behaviour.json` | 118 KB | 9 KB | only for editing and map art |
+| `tags.json` | 26.2: 176 KB | 26 KB | only for tag patterns and masks |
+| `advancements.json` | 26.2: 14 KB | 3 KB | only for a player's advancements |
+| `game-rules.json` | 26.2: 3 KB | 1 KB | only for world settings |
 | `items.json` | 170 KB | 14 KB | only for drawing dropped items |
 | `item-atlas-0.png` | 86 KB | 86 KB | only for drawing dropped items |
 | `entities.json` | 12 KB | 2 KB | only for naming and tinting entities |

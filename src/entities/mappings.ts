@@ -51,6 +51,11 @@ export interface Mappings {
 	 */
 	fieldOf: Map<string, string>;
 	methodOf: Map<string, string>;
+	/**
+	 * The other way: a member as the obfuscated client spells it (`eea$d.a(FF)Leea$d;`) to its original
+	 * name (`strength`), for reading what the game's own code calls. Absent for an identity mapping.
+	 */
+	nameOf?: Map<string, string>;
 }
 
 const PRIMITIVE_DESCRIPTORS: Record<string, string> = {
@@ -153,6 +158,9 @@ export function parseMappings(text: string): Mappings {
 	const originalOf = new Map<string, string>();
 	const fieldOf = new Map<string, string>();
 	const methodOf = new Map<string, string>();
+	// Held until every class is known, since a method's obfuscated descriptor names classes declared after it
+	const methods: Array<{ owner: string; name: string; descriptor: string; obfuscated: string; }> = [];
+	const fields: Array<{ owner: string; name: string; obfuscated: string; }> = [];
 	let owner = '';
 	for (const line of text.split('\n')) {
 		if (line.length === 0 || line.startsWith('#')) {
@@ -185,14 +193,23 @@ export function parseMappings(text: string): Mappings {
 		const open = signature.indexOf('(');
 		if (open === -1) {
 			fieldOf.set(`${owner}.${signature}`, obfuscated);
+			fields.push({ owner, name: signature, obfuscated });
 			continue;
 		}
 		const name = signature.slice(0, open);
 		const params = signature.slice(open + 1, -1);
 		const descriptor = `(${params.length === 0 ? '' : params.split(',').map(param => typeDescriptor(param.trim())).join('')})${typeDescriptor(returnType)}`;
 		methodOf.set(`${owner}.${name}${descriptor}`, obfuscated);
+		methods.push({ owner, name, descriptor, obfuscated });
 	}
-	return { obfuscatedOf, originalOf, fieldOf, methodOf };
+	const nameOf = new Map<string, string>();
+	for (const field of fields) {
+		nameOf.set(`${obfuscatedOf.get(field.owner)}.${field.obfuscated}`, field.name);
+	}
+	for (const method of methods) {
+		nameOf.set(`${obfuscatedOf.get(method.owner)}.${method.obfuscated}${remapDescriptor(method.descriptor, obfuscatedOf)}`, method.name);
+	}
+	return { obfuscatedOf, originalOf, fieldOf, methodOf, nameOf };
 }
 
 export async function loadMappings(version: string, cacheDir: string): Promise<Mappings> {

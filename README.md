@@ -76,8 +76,15 @@ blocks/1.21.8/
   tints.json           # plains tints, colormaps, ramps, per-block tint semantics
   colormap/*.png       # the version's own grass/foliage/dry_foliage maps
   items.json           # flat item sprite stacks + their own atlas, for drawing dropped stacks
-  entities.json        # entity names, marker colours, and which model each uses
+  entities.json        # entity names, marker colours, hitbox sizes, and which model each uses
   entity-models.json   # entity geometry recovered from the client's own bytecode + its atlas
+  biomes.json          # the version's own biomes: climate, colour overrides, pre-1.18 numeric ids
+  light.json           # light each block emits, read from the code
+  behaviour.json       # hardness, collision, replaceability, map colour, read from the code
+  tags.json            # the version's own tags, every registry, unexpanded
+  advancements.json    # each advancement's criteria
+  game-rules.json      # every game rule with its type and default
+  states.json          # every property and default state (with --reports <data generator reports>)
   failures.json        # anything not fully handled, with reasons, never silent
   meta.json            # version, counts, sha256 of every other file
 ```

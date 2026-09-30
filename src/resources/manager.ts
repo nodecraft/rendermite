@@ -26,6 +26,8 @@ export const ResourceKind = {
 	raw: { root: 'assets', directory: '', extension: '' },
 	/** A datapack biome: climate and the colours a renderer tints its blocks with. */
 	biome: { root: 'data', directory: 'worldgen/biome', extension: '.json' },
+	/** Any datapack JSON under data/<ns>/: tags, advancements, whatever the version ships as data. */
+	data: { root: 'data', directory: '', extension: '.json' },
 } as const;
 
 export type ResourceKindName = keyof typeof ResourceKind;

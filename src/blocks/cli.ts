@@ -44,6 +44,8 @@ Options:
       --no-items           do not export items.json (flat sprites for non-block items)
       --no-entities        do not export entities.json (entity names and marker colours)
       --no-entity-geometry do not read the jar's code for entity model geometry
+      --reports <dir>      data generator reports for this version (blocks.json
+                           becomes states.json: every property and default state)
       --cache-dir <dir>    jar download cache (default ~/.rendermite)
 `;
 
@@ -88,6 +90,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			'padding': { type: 'string' },
 			'max-page-size': { type: 'string' },
 			'cache-dir': { type: 'string' },
+			'reports': { type: 'string' },
 			'builtin': { type: 'string' },
 			'no-builtin': { type: 'boolean', default: false },
 			'no-items': { type: 'boolean', default: false },
@@ -171,6 +174,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			entities: !values['no-entities'],
 			classes: classes ?? undefined,
 			cacheDir,
+			reports: values.reports,
 			onProgress: (stage, done, total) => {
 				if (done === total || done % 250 === 0) {
 					console.log(`${stage}: ${done}/${total}`);
@@ -193,6 +197,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 		console.log(result.biomes > 0
 			? `${result.biomes} biomes described in biomes.json.`
 			: 'No biomes to describe; biomes.json not written.');
+		console.log(`${result.tags} tags, ${result.advancements} advancements${result.states > 0 ? `, ${result.states} block state definitions` : ''}.`);
 		console.log(`${result.failures.length} entries in failures.json.`);
 		return 0;
 	} finally {

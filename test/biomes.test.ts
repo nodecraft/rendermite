@@ -1,8 +1,9 @@
 /**
  * Biome climate: the half of a real per-biome tint that is not in the assets.
  *
- * Vanilla's table is transcribed, so what is worth testing there is that it says
- * what the game says. A mod's is read out of its jar, so what is worth testing
+ * Vanilla's tables for the versions whose jars carry no biome data are frozen
+ * history, so what is worth testing there is that each version gets its own set
+ * under its own names. A mod's is read out of its jar, so what is worth testing
  * there is every shape a datapack writes one in — the newest vanilla files use
  * `#rrggbb` and every jar built before them writes the same colour as a decimal
  * int — and that a mod stating no climate at all is not guessed at.
@@ -10,7 +11,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { fixtureModJar } from './fixtures/mods.ts';
-import { VANILLA_BIOME_CLIMATES, buildBiomeClimates, parseBiomeClimate } from '../src/blocks/biomes.ts';
+import {
+	LEGACY_BIOMES,
+	buildBiomeClimates,
+	parseBiomeClimate,
+	vanillaBiomesFor,
+} from '../src/blocks/biomes.ts';
 import { JarResourceManager } from '../src/resources/jar.ts';
 import { MapResourceManager } from '../src/resources/synthetic.ts';
 
@@ -61,34 +67,50 @@ describe('parseBiomeClimate', () => {
 	});
 });
 
-describe('VANILLA_BIOME_CLIMATES', () => {
-	it('carries what the game carries, for the biomes whose colour is recognisable', () => {
-		expect(VANILLA_BIOME_CLIMATES['minecraft:plains']).toEqual({ temperature: 0.8, downfall: 0.4 });
-		expect(VANILLA_BIOME_CLIMATES['minecraft:swamp']).toMatchObject({ modifier: 'swamp', water: '#617b64' });
-		expect(VANILLA_BIOME_CLIMATES['minecraft:badlands']).toMatchObject({ grass: '#90814d', foliage: '#9e814d' });
-		expect(VANILLA_BIOME_CLIMATES['minecraft:warm_ocean']).toMatchObject({ water: '#43d5ee' });
-		expect(VANILLA_BIOME_CLIMATES['minecraft:dark_forest']).toMatchObject({ modifier: 'dark_forest' });
+describe('vanillaBiomesFor', () => {
+	it('gives a pre-1.18 version its own names and the ids its chunks store', () => {
+		const pack = vanillaBiomesFor('1.16.5');
+		expect(pack['minecraft:mountains']).toEqual({ id: 3, temperature: 0.2, downfall: 0.3 });
+		expect(pack['minecraft:windswept_hills']).toBeUndefined();
+		// Savanna ran cooler before 1.18 retuned it, so a modern table tints an old world wrong
+		expect(pack['minecraft:savanna']).toMatchObject({ temperature: 1.2 });
+		expect(vanillaBiomesFor('1.18.2')['minecraft:savanna']).toMatchObject({ temperature: 2 });
 	});
 
-	it('states a climate for every biome, since that is what addresses a colormap', () => {
-		for (const [id, climate] of Object.entries(VANILLA_BIOME_CLIMATES)) {
-			expect(id, id).toMatch(/^minecraft:[a-z_]+$/);
-			expect(typeof climate.temperature, id).toBe('number');
-			expect(typeof climate.downfall, id).toBe('number');
-			for (const colour of [climate.water, climate.grass, climate.foliage, climate.dryFoliage]) {
-				if (colour !== undefined) {
-					expect(colour, id).toMatch(/^#[\da-f]{6}$/);
-				}
-			}
-		}
+	it('holds back the biomes a release had not added yet', () => {
+		const old = vanillaBiomesFor('1.13.2');
+		expect(old['minecraft:bamboo_jungle']).toBeUndefined();
+		expect(old['minecraft:nether']).toMatchObject({ id: 8 });
+		expect(old['minecraft:nether_wastes']).toBeUndefined();
+		expect(vanillaBiomesFor('1.14.4')['minecraft:bamboo_jungle']).toMatchObject({ id: 168 });
+		expect(vanillaBiomesFor('1.16.1')['minecraft:nether_wastes']).toMatchObject({ id: 8 });
+		expect(vanillaBiomesFor('1.16.5')['minecraft:lush_caves']).toBeUndefined();
+		expect(vanillaBiomesFor('1.17.1')['minecraft:lush_caves']).toMatchObject({ id: 175 });
+		expect(vanillaBiomesFor('1.18.2')['minecraft:deep_dark']).toBeUndefined();
+		expect(vanillaBiomesFor('1.19.2')['minecraft:deep_dark']).toBeDefined();
+	});
+
+	it('gives no ids once chunks store biomes by name', () => {
+		expect(Object.values(vanillaBiomesFor('1.18.2')).some(climate => climate.id !== undefined)).toBe(false);
+	});
+
+	it('keeps every legacy id distinct, since a chunk decodes against them', () => {
+		const ids = LEGACY_BIOMES.map(biome => biome.id);
+		expect(new Set(ids).size).toBe(ids.length);
 	});
 });
 
 describe('buildBiomeClimates', () => {
-	it('gives the minecraft namespace the whole vanilla table', async () => {
-		const built = await buildBiomeClimates(new MapResourceManager(), ['minecraft']);
-		expect(built.pack['minecraft:plains']).toEqual({ temperature: 0.8, downfall: 0.4 });
-		expect(Object.keys(built.pack).length).toBe(Object.keys(VANILLA_BIOME_CLIMATES).length);
+	it('gives the minecraft namespace the version table when the jar has no biome data', async () => {
+		const built = await buildBiomeClimates(new MapResourceManager(), ['minecraft'], '1.18.2');
+		expect(built.pack).toEqual(vanillaBiomesFor('1.18.2'));
+	});
+
+	it('uses only the biomes a jar ships where it ships any, so no other version leaks in', async () => {
+		const resources = new MapResourceManager();
+		resources.set('biome', 'minecraft:plains', JSON.stringify({ temperature: 0.8, downfall: 0.4 }));
+		const built = await buildBiomeClimates(resources, ['minecraft'], '26.3');
+		expect(built.pack).toEqual({ 'minecraft:plains': { temperature: 0.8, downfall: 0.4 } });
 	});
 
 	it('carries only its own biomes for a mod namespace', async () => {
@@ -100,7 +122,7 @@ describe('buildBiomeClimates', () => {
 			downfall: 0.5,
 			effects: { water_color: '#112233', grass_color: '#445566' },
 		}));
-		const built = await buildBiomeClimates(resources, ['examplemod']);
+		const built = await buildBiomeClimates(resources, ['examplemod'], '26.3');
 		expect(built.pack).toEqual({
 			'examplemod:crystal_fields': { temperature: 0.5, downfall: 0.5, water: '#112233', grass: '#445566' },
 		});
@@ -110,7 +132,7 @@ describe('buildBiomeClimates', () => {
 		const resources = new MapResourceManager();
 		resources.set('biome', 'examplemod:broken', '{ not json');
 		resources.set('biome', 'examplemod:climateless', JSON.stringify({ effects: { water_color: 1 } }));
-		const built = await buildBiomeClimates(resources, ['examplemod']);
+		const built = await buildBiomeClimates(resources, ['examplemod'], '26.3');
 		expect(built.pack).toEqual({});
 		expect(built.unreadable.toSorted((left, right) => left.localeCompare(right)))
 			.toEqual(['examplemod:broken', 'examplemod:climateless']);
@@ -121,7 +143,7 @@ describe('buildBiomeClimates', () => {
 		// see a datapack biome, and a modded biome is only ever a datapack file
 		const jar = new JarResourceManager(fixtureModJar('depcore'));
 		try {
-			const built = await buildBiomeClimates(jar, ['depcore']);
+			const built = await buildBiomeClimates(jar, ['depcore'], '26.3');
 			expect(built.pack['depcore:machine_wastes']).toEqual({
 				temperature: 0.4,
 				downfall: 0.2,

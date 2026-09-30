@@ -38,13 +38,16 @@ export type {
 	MultipartCondition,
 } from './blocks/blockstate-eval.ts';
 export type {
+	BlockPackAdvancementsFile,
 	BlockPackAtlasFile,
 	BlockPackAtlasPage,
+	BlockPackBehaviourFile,
 	BlockPackBiomesFile,
 	BlockPackBlockState,
 	BlockPackBlockStatesFile,
 	BlockPackElement,
 	BlockPackFace,
+	BlockPackGameRulesFile,
 	BlockPackLight,
 	BlockPackLightFile,
 	BlockPackMetaFile,
@@ -53,9 +56,13 @@ export type {
 	BlockPackRenderLayer,
 	BlockPackSprite,
 	BlockPackSpriteFrame,
+	BlockPackStatesFile,
+	BlockPackTagsFile,
 	BlockPackTintsFile,
 	BlockPackVariant,
 } from './blocks/pack-format.ts';
 export type { MeshGroup, ObjMesh } from './blocks/obj-mesh.ts';
 export type { BlockTint, BlockTintPack } from './blocks/tints.ts';
 export type { BiomeClimate, BiomeClimatePack } from './blocks/biomes.ts';
+export type { BlockBehaviour, PushReactionName } from './blocks/block-behaviour.ts';
+export type { GameRule } from './blocks/game-rules.ts';
