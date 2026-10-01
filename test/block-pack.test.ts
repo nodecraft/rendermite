@@ -79,7 +79,9 @@ const ASSET_ALLOWANCES: Array<{ kind: string; reason: RegExp; }> = [
 	 * state, which only the data generator's report states, and these exports are given none. Named
 	 * per block rather than guessed.
 	 */
-	{ kind: 'behaviour', reason: /^map colour/ },
+	{ kind: 'behaviour', reason: /^(read from 1\.14\.4: )?map colour/ },
+	// 1.13's behaviour is 1.14.4's, which renamed `sign` and `wall_sign` and so has nothing to lend them
+	{ kind: 'behaviour', reason: /^1\.14\.4 registers no such block/ },
 ];
 
 /**
@@ -164,7 +166,7 @@ interface Pack {
 	atlas: AtlasJson;
 	models: ModelsJson;
 	blockStates: BlockStatesJson;
-	meta: { counts: Record<string, number>; hashes: Record<string, string>; };
+	meta: { counts: Record<string, number>; behaviourFrom?: string; hashes: Record<string, string>; };
 	tints: { flat: Record<string, string>; blocks: Record<string, Record<string, { kind: string; }>>; };
 	/** `biomes.json`, which a pack with no biomes to describe does not write at all. */
 	biomes: Record<string, { temperature: number; downfall: number; water?: string; modifier?: string; grass?: string; foliage?: string; dryFoliage?: string; }> | null;
@@ -200,6 +202,7 @@ async function exportPack(
 	namespaces?: string[],
 	/** A jar to read entity geometry out of; without one the pack carries names and colours only. */
 	classes?: JarClassReader,
+	behaviourFrom?: { version: string; classes: JarClassReader; },
 ): Promise<Pack> {
 	const directory = path.join(packRoot, name);
 	// The vendored pack is what gives chests, shulker boxes and signs a shape.
@@ -210,6 +213,7 @@ async function exportPack(
 		namespaces,
 		builtin: builtinPackPath('modern'),
 		classes,
+		behaviourFrom,
 		cacheDir: fixturesDir,
 	});
 	const read = async <T>(file: string): Promise<T> => JSON.parse(await readFile(path.join(directory, file), 'utf8')) as T;
@@ -429,8 +433,11 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 			jar: vanillaJar(testCase.version),
 		});
 		const classes = new JarClassReader(vanillaJar(testCase.version));
-		const pack = await exportPack(testCase.version, resources, undefined, classes);
+		// What the CLI does for a version with no mappings
+		const behaviourFrom = testCase.version === '1.13.2' ? { version: '1.14.4', classes: new JarClassReader(vanillaJar('1.14.4')) } : undefined;
+		const pack = await exportPack(testCase.version, resources, undefined, classes, behaviourFrom);
 		await classes.close();
+		await behaviourFrom?.classes.close();
 
 		expect(pack.result.blocks).toBeGreaterThanOrEqual(testCase.blocks);
 		expect(pack.result.models).toBeGreaterThanOrEqual(testCase.models);
@@ -552,7 +559,8 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		/*
 		 * What only the code says, read in the same pass as light: stone's hardness and map colour, a
 		 * cow's hitbox, and the rules under the spelling the version stores them by. 1.13 publishes no
-		 * mappings to read builder calls by, so it gets rules (named by strings) but no behaviour or sizes.
+		 * mappings to read builder calls by, so it gets rules (named by strings) and 1.14.4's behaviour,
+		 * but no sizes.
 		 */
 		const optional = async <T>(file: string): Promise<T | null> => (existsSync(path.join(pack.directory, file))
 			? JSON.parse(await readFile(path.join(pack.directory, file), 'utf8')) as T
@@ -562,9 +570,14 @@ describe.each(CASES)('block pack for $version', (testCase) => {
 		const keepInventory = rules?.keepInventory ?? rules?.keep_inventory;
 		expect(keepInventory).toEqual({ type: 'boolean', default: false });
 		if (testCase.version === '1.13.2') {
-			expect(behaviour).toBeNull();
+			expect(pack.meta.behaviourFrom).toBe('1.14.4');
+			expect(behaviour?.['minecraft:stone']).toMatchObject({ hardness: 1.5, resistance: 6, mapColor: 11 });
+			// Renamed `oak_sign` in 1.14, so there is nothing to borrow, and it says so rather than going missing
+			expect(behaviour?.['minecraft:sign']).toBeUndefined();
+			expect(pack.result.failures).toContainEqual(expect.objectContaining({ id: 'minecraft:sign', kind: 'behaviour' }));
 			expect(pack.entities?.['minecraft:cow']?.width).toBeUndefined();
 		} else {
+			expect(pack.meta.behaviourFrom).toBeUndefined();
 			expect(behaviour?.['minecraft:stone']).toMatchObject({ hardness: 1.5, resistance: 6, mapColor: 11 });
 			expect(pack.entities?.['minecraft:cow']).toMatchObject({ width: 0.9, height: 1.4 });
 			// What a block's own class answers: a stair tests its shape for light, kelp is always under water

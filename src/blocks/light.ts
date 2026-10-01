@@ -69,7 +69,7 @@ const MIN_REFERRER_REFS = 100;
  * Blockstate files that describe no block. The item frames are entities whose model the game looks up
  * through a blockstate, so they have no registration to find and emit nothing.
  */
-const NOT_BLOCKS = new Set(['minecraft:item_frame', 'minecraft:glow_item_frame']);
+export const NOT_BLOCKS: ReadonlySet<string> = new Set(['minecraft:item_frame', 'minecraft:glow_item_frame']);
 
 /** Strings a class's constant pool holds, for spotting the one that registers the blocks. */
 function stringConstants(classFile: ClassFile): Set<string> {
