@@ -423,6 +423,11 @@ export interface BlockPackMetaFile {
 		names: number;
 		failures: number;
 	};
+	/**
+	 * The version `behaviour.json` was read from, when it is not this pack's own: 1.13 to 1.14.3 ship
+	 * no mappings, so their table is 1.14.4's, kept to the blocks this version has.
+	 */
+	behaviourFrom?: string;
 	/** sha256 per file, enough to verify a cached copy without refetching it. */
 	hashes: Record<string, string>;
 }

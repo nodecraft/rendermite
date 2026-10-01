@@ -29,7 +29,7 @@ import { collectEntitySizes } from './entity-sizes.ts';
 import { collectGameRules } from './game-rules.ts';
 import { geoBlockModel } from './geo-blocks.ts';
 import { collectItemSprites } from './item-sprites.ts';
-import { collectBlockLight } from './light.ts';
+import { NOT_BLOCKS, collectBlockLight } from './light.ts';
 import { collectNames } from './names.ts';
 import { buildObjMesh } from './obj-mesh.ts';
 import { MISSING_SPRITE, buildSpriteSheet } from './sprite-sheet.ts';
@@ -118,6 +118,11 @@ export interface ExportBlockPackOptions {
 	 * answer there is no geometry rather than a silent gap.
 	 */
 	classes?: ClassSource;
+	/**
+	 * A mapped version's classes to read `behaviour.json` from, for a jar with no mappings of its own
+	 * (1.13 to 1.14.3), whose builder calls have no names to read. Used only when `classes` read none.
+	 */
+	behaviourFrom?: { version: string; classes: ClassSource; };
 	/** Where mappings cache; the jar cache directory. */
 	cacheDir?: string;
 	/**
@@ -990,22 +995,44 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 	const states = options.reports === undefined ? null : await readBlockStates(options.reports);
 	let lightPack: BlockPackLightFile = {};
 	let behaviourPack: BlockPackBehaviourFile = {};
+	let behaviourFrom: string | undefined;
 	if (options.classes) {
+		const blockIds = [...new Set([...blockLocators.map(locator => locator.toString()), ...Object.keys(blockStates)])];
+		const defaultStateOf = (id: string): Readonly<Record<string, string>> | null => states?.[id]?.default ?? null;
 		const collected = await collectBlockLight({
 			version,
 			cacheDir: options.cacheDir ?? output,
 			classes: options.classes,
-			blockIds: [...new Set([...blockLocators.map(locator => locator.toString()), ...Object.keys(blockStates)])],
-			defaultStateOf: id => states?.[id]?.default ?? null,
+			blockIds,
+			defaultStateOf,
 			onProgress: (count, total) => report('light', count, total),
 		});
 		lightPack = sortedByKey(collected.light);
 		for (const failure of collected.failures) {
 			failures.push({ id: failure.id, kind: 'light', reason: failure.reason });
 		}
-		behaviourPack = sortedByKey(collected.behaviour);
-		for (const failure of collected.behaviourFailures) {
-			failures.push({ id: failure.id, kind: 'behaviour', reason: failure.reason });
+		let behaviour = collected;
+		if (Object.keys(collected.behaviour).length === 0 && options.behaviourFrom) {
+			// Asked about this version's own block list, so nothing only the other version has leaks in
+			behaviour = await collectBlockLight({
+				version: options.behaviourFrom.version,
+				cacheDir: options.cacheDir ?? output,
+				classes: options.behaviourFrom.classes,
+				blockIds,
+				defaultStateOf,
+				onProgress: (count, total) => report('behaviour', count, total),
+			});
+			behaviourFrom = options.behaviourFrom.version;
+			// A block the other version renamed or dropped would otherwise just be absent from the file
+			for (const id of blockIds) {
+				if (!NOT_BLOCKS.has(id) && !(id in behaviour.behaviour)) {
+					failures.push({ id, kind: 'behaviour', reason: `${behaviourFrom} registers no such block, so its behaviour is unknown` });
+				}
+			}
+		}
+		behaviourPack = sortedByKey(behaviour.behaviour);
+		for (const failure of behaviour.behaviourFailures) {
+			failures.push({ id: failure.id, kind: 'behaviour', reason: behaviourFrom ? `read from ${behaviourFrom}: ${failure.reason}` : failure.reason });
 		}
 		// The interpreter's account of the run: which classes it took for registries, what it gave up on
 		if (process.env.RENDERMITE_LIGHT_DEBUG) {
@@ -1325,6 +1352,7 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 		version,
 		namespaces,
 		counts,
+		...(behaviourFrom && Object.keys(behaviourPack).length > 0 && { behaviourFrom }),
 		hashes: sortedByKey(hashes),
 	} satisfies BlockPackMetaFile, null, '\t'));
 	return { ...counts, writtenFiles, failures };

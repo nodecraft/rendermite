@@ -228,8 +228,13 @@ The rest of a block class's code is not followed. A class that overrides `canBeR
 `getMapColor` answers for itself at runtime. A sign's colour is its log's at the log's default state,
 which only the data generator's report states, so without `--reports` signs carry no `mapColor` and
 a `behaviour` failure each. 26.x registers dyed blocks through `ColorCollection` and coppers through
-`WeatheringCopperCollection`, both of which are followed. 1.13 publishes no mappings, so its builder
-calls have no names and it gets no file.
+`WeatheringCopperCollection`, both of which are followed.
+
+1.13 to 1.14.3 publish no mappings, so their builder calls have no names to read. The CLI reads
+1.14.4's jar for them instead, asked for the older version's own block list, and `meta.json` records
+`"behaviourFrom": "1.14.4"`. 1.14.4 has every 1.14 block; 1.13's `sign` and `wall_sign` (renamed
+`oak_sign` in 1.14) have no entry and a `behaviour` failure each. That the blocks behaved the same in
+the older release is an assumption nothing can check without its mappings.
 
 **`game-rules.json`.** Every rule `GameRules` registers, by the name `level.dat` stores it under
 (camelCase before 26.x, snake_case from it), as `{ type: 'boolean' | 'integer', default }`. Read from

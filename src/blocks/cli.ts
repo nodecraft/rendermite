@@ -21,6 +21,8 @@ import type { ResourceManager } from '../resources/manager.ts';
 
 /** The Flattening: below it a block is `35:14` and needs a numeric-id table. */
 const MINIMUM_VERSION = '1.13';
+/** The first release Mojang published mappings for; older jars borrow its block behaviour. */
+const FIRST_MAPPED_VERSION = '1.14.4';
 
 const HELP = `rendermite blocks — Minecraft block pack export (geometry + atlas, 1.13+)
 
@@ -124,12 +126,18 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 	 * An `--assets` run has none, and exports entity names and colours without shapes.
 	 */
 	let classes: ClassSource | null = null;
+	let behaviourFrom: { version: string; classes: ClassSource; } | undefined;
 	if (values.version) {
 		console.log(`Fetching client jar for ${values.version}…`);
 		const jar = await downloadClientJar(values.version, cacheDir);
 		resources = await prepareVersionResources({ version: values.version, jar });
 		if (!values['no-entity-geometry']) {
 			classes = new JarClassReader(jar);
+			// Vanilla only: the other jar describes vanilla's blocks, never a mod's
+			if (compareVersions(values.version, FIRST_MAPPED_VERSION) < 0 && !values.mod?.length) {
+				console.log(`Fetching client jar for ${FIRST_MAPPED_VERSION}, to read the block behaviour ${values.version} has no mappings for…`);
+				behaviourFrom = { version: FIRST_MAPPED_VERSION, classes: new JarClassReader(await downloadClientJar(FIRST_MAPPED_VERSION, cacheDir)) };
+			}
 		}
 	} else {
 		const managers = (values.assets ?? []).map(root => new FolderResourceManager(root));
@@ -173,6 +181,7 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 			items: !values['no-items'],
 			entities: !values['no-entities'],
 			classes: classes ?? undefined,
+			behaviourFrom,
 			cacheDir,
 			reports: values.reports,
 			onProgress: (stage, done, total) => {
@@ -203,5 +212,6 @@ export async function runBlocksCli(argv: string[]): Promise<number> {
 	} finally {
 		await closeMods?.();
 		await classes?.close();
+		await behaviourFrom?.classes.close();
 	}
 }
