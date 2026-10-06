@@ -627,6 +627,7 @@ export const VANILLA_LIGHT: Record<string, BlockPackLight> = {
 	sculk_catalyst: 6,
 	amethyst_cluster: 5,
 	large_amethyst_bud: 4,
+	ice_crystal: 4,
 	magma_block: 3,
 	medium_amethyst_bud: 2,
 	firefly_bush: 2,
