@@ -56,11 +56,17 @@ interface VersionIndex {
 }
 
 let indexPromise: Promise<VersionIndex> | null = null;
+let refreshed = false;
 
-async function versionIndex(): Promise<VersionIndex> {
+async function versionIndex(refresh = false): Promise<VersionIndex> {
+	// CI restores older fixture caches, so a cached index can predate a version a suite just added.
+	if (refresh && !refreshed) {
+		refreshed = true;
+		indexPromise = null;
+	}
 	indexPromise ??= (async () => {
 		const cache = path.join(fixturesDir, 'mcversions.json');
-		if (!existsSync(cache)) {
+		if (refreshed || !existsSync(cache)) {
 			await mkdir(fixturesDir, { recursive: true });
 			const response = await fetchRetry('https://mcversions.net/mcversions.json');
 			if (!response.ok) {
@@ -83,8 +89,8 @@ export async function ensureVanillaJar(version: string): Promise<string> {
 	if (existsSync(jarPath)) {
 		return jarPath;
 	}
-	const index = await versionIndex();
-	const entry = index.stable[version] ?? index.snapshot[version];
+	const lookup = (index: VersionIndex) => index.stable[version] ?? index.snapshot[version];
+	const entry = lookup(await versionIndex()) ?? lookup(await versionIndex(true));
 	if (!entry) {
 		throw new Error(`Version ${version} not found in the mcversions index`);
 	}

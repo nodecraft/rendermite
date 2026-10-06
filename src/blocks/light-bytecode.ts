@@ -1154,7 +1154,12 @@ class Interpreter {
 		 * grouped, which a later `COPPER_BLOCK.weathering().pick(state)` reads. It is followed instead.
 		 */
 		const returnsRecord = returns.startsWith('L') && source.resolve(returns.slice(1, -1))?.superClass === 'java/lang/Record';
-		const registered = returnsRecord ? null : this.detectRegistration(args, `${remapped.owner}.${remapped.name}${remapped.descriptor}`);
+		/*
+		 * Nor does a registration hand back a `Properties`: 26.4's `sound(BlockSoundSets.ANVIL)` carries a key
+		 * whose path names the anvil block, and read as a registration it swapped the bell's props for the anvil.
+		 */
+		const returnsProps = returns.startsWith('L') && this.isPropsType(returns.slice(1, -1));
+		const registered = returnsRecord || returnsProps ? null : this.detectRegistration(args, `${remapped.owner}.${remapped.name}${remapped.descriptor}`);
 		if (registered) {
 			this.push(returns === 'V' ? null : (returns.startsWith('L') ? { kind: 'object', handle: registered } : UNKNOWN));
 			return;
@@ -1230,12 +1235,6 @@ class Interpreter {
 			}
 		}
 
-		/*
-		 * Follow the call when something tracked goes in or a `Properties` comes out; otherwise it is
-		 * plumbing — `vanillaBlockId(String)`, a sound event lookup — and its result is the taint of its
-		 * inputs. That keeps the interpreter out of `ResourceLocation`'s character validation loops.
-		 */
-		const returnsProps = returns.startsWith('L') && this.isPropsType(returns.slice(1, -1));
 		/*
 		 * A static `Properties` factory given a block or another `Properties` is a copy — `ofFullCopy`,
 		 * `ofLegacyCopy`, the 1.13 `from` — and is answered as one rather than followed: the real method

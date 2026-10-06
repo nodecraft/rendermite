@@ -26,8 +26,9 @@ export interface BlockModelVariant {
 	/** Blockstate rotation in degrees about Y. */
 	y: number;
 	/**
-	 * Rotation about Z, applied after X and Y. Vanilla has no third axis; AE2
-	 * adds one as `ae2:z` so a drive or charger can spin on the wall it faces.
+	 * Rotation about Z, applied after X and Y. Vanilla first used it in
+	 * 26.4-snapshot-3 to stand icicles up; AE2 writes it as `ae2:z` so a drive or
+	 * charger can spin on the wall it faces.
 	 */
 	z: number;
 	/** Hold UVs still while the model rotates. */
@@ -76,8 +77,8 @@ function propertyValue(value: unknown): string {
 }
 
 /**
- * The third rotation axis, which vanilla does not have. AE2 writes it as
- * `ae2:z`; the namespace is left open because a loader extension is a loader
+ * The third rotation axis: vanilla's icicles write a bare `z`, AE2 writes
+ * `ae2:z`. The namespace is left open because a loader extension is a loader
  * extension whoever ships it, and only a numeric `z` key can match.
  */
 function zRotation(entry: Record<string, unknown>): number {
