@@ -4,17 +4,16 @@ Status: **implemented.** `rendermite blocks` / `exportBlockPack()`. Source in `s
 tests in `test/block-pack.test.ts`, `test/blockstate-eval.test.ts` and `test/atlas-pack.test.ts`.
 
 rendermite renders finished item icons. This is a second output mode that emits **block geometry
-and textures as data**, for a renderer that draws blocks itself — specifically the in-browser
-Minecraft world editor in Nodecraft's `ui` repo, which reads Anvil regions today and needs to put
-chunks on screen in 3D next.
+and textures as data**, for a renderer that draws blocks itself, such as an in-browser world viewer
+or editor that reads Anvil regions and puts chunks on screen in 3D.
 
 ## Why this belongs in rendermite
 
 The rasterizer is useless to that consumer: it draws 64px PNGs on the CPU, and a chunk renderer
 needs a GPU and per-frame geometry. But **everything above the rasterizer is exactly what it needs**,
 and that layer is the part that takes months to get right — jar layering, parent-chain flattening,
-`#texture` resolution, atlas sources, per-era shims, and the long tail of mod formats catalogued in
-`docs/research/mod-failure-taxonomy.md`.
+`#texture` resolution, atlas sources, per-era shims, and the long tail of mod formats described in
+`docs/mod-coverage.md`.
 
 Rebuilding that in a browser would mean reimplementing this repo badly. Exporting from here means
 the browser gets a flat, pre-resolved data pack and the asset knowledge stays in one place.
@@ -291,8 +290,8 @@ leaves `entity/` — widening it tints a marker off whatever block happens to sh
 takes a projectile or a piece of equipment filed in a mob's own directory, or a llama comes out the
 colour of its own spit.
 
-**`meta.json`** carries sha256 for every other file, because the consumer caches these immutably per
-version the same way `icons/<version>/` is cached today.
+**`meta.json`** carries sha256 for every other file, because a consumer can cache these immutably per
+version.
 
 **`minecraft:missingno`** is a synthesized sprite, the black-and-magenta 16×16 the game draws for an
 unresolved texture. Faces pointing at it are faces whose texture the mod did not ship or did not
@@ -302,9 +301,8 @@ bind; the game draws them the same way, so the pack does too rather than leaving
 
 - **Infer the render layer from alpha.** A sprite whose alpha is only ever 0 or 255 is cutout;
   anything in between is translucent; fully opaque is solid. Right default, covers mods for free.
-- **One version per pack**, immutable, published under `blocks/<version>/` on the `mc-assets` R2
-  bucket beside `icons/<version>/`. Modded namespaces publish separately and are fetched on demand,
-  exactly as `icons/modded/<namespace>` works now.
+- **One version per pack**, immutable. Modded namespaces export separately so a consumer can fetch
+  them on demand. Where and how the pack is hosted is up to the consumer.
 - **Flat plains tint in v1**, but the colormaps ship in the pack, so real biome tints only need a
   per-biome temperature/downfall table on the consumer side — not a re-export.
 - **Do not pre-render anything.** The consumer wants geometry, not pictures.
@@ -328,12 +326,11 @@ bind; the game draws them the same way, so the pack does too rather than leaving
   the missing-texture sprite, so no model names an id `atlas.json` has no entry for.
 - **Atlas page size.** 4px padding inflates a 16×16 sprite to 24×24, which more than doubles the
   packed area — but vanilla still lands on a single page across the whole range (2048×1024 at 26.2,
-  1024×1024 or smaller below it). The doc's earlier "single 1024×1024" estimate did not account for
-  padding; the packer picks the smallest power-of-two that fits and only spills at the ceiling.
+  1024×1024 or smaller below it). The packer picks the smallest power-of-two that fits and only spills at the ceiling.
   Both page dimensions are always powers of two, so a `--max-page-size` that is not one is rounded
   down to the largest that is.
 
-## Publishing, and consuming from `ui`
+## Publishing and consuming a pack
 
 ### `@nodecraft/rendermite/pack`, the entry a renderer imports
 
@@ -349,8 +346,7 @@ import type { BlockPackAtlasFile, BlockPackModel, BlockPackBlockState } from '@n
 
 That evaluation is worth importing rather than reimplementing: it has a most-constrained-key rule for
 the overlapping keys mods ship, and the wildcard retry described above. A consumer that reimplements
-it and misses the retry draws a hole where every Functional Storage drawer stands — which is exactly
-what `ui` did until the two were compared.
+it and misses the retry draws a hole where every Functional Storage drawer stands.
 
 `test/pack-entry.test.ts` bundles this entry the way a consumer's bundler would and fails on anything
 that came along: it reaches two modules, pulls in no dependency and no `node:` builtin, and bundles
@@ -363,8 +359,7 @@ native binaries, for a 13 KB function. It is free for anything that already has 
 devDependencies — a build script, a test — and for a library shipped to third parties it is not, so
 that case wants either these two moved behind optional peers or the entry split into its own package.
 
-The pack rides the rails `icons/` already uses: the `mc-assets` R2 bucket, one immutable directory
-per version, URLs listed in `ui`'s `libs/minecraft/icon-assets.ts`.
+A layout that suits the pack, on any static host or CDN:
 
 ```
 blocks/<version>/            one vanilla version, immutable
@@ -620,8 +615,8 @@ a fixed rule and the vendored single chest already pins that rule down. Two thin
 The tie-break was the sheets themselves. `normal_left` leaves nothing where its west face samples
 and `normal_right` nothing at its east, which says which end is the seam and agrees with
 `ChestBlock.getConnectedDirection` putting a left half's partner clockwise of its facing.
-`.work/check-doubles.mjs` then measures the join in all four facings, since a one-pixel gap is not
-something an isometric render will show you.
+The join was then measured in all four facings, since a one-pixel gap is not something an isometric
+render will show you.
 
 ### Fluids
 
@@ -721,8 +716,8 @@ being the nine the game itself draws nothing for, and the version matrix test as
 ## Mods
 
 Vanilla is the easy half. The mod work was driven by exporting a pack per jar across the corpus and
-reading the failure taxonomy back — `.work/survey-mods.ts` in a working tree, not committed — rather
-than guessing at what mods do. Everything below is a class the survey surfaced, in the order it cost
+bucketing the failures (the same approach as `scripts/coverage/`) rather than guessing at what mods
+do. Everything below is a class the survey surfaced, in the order it cost
 the most geometry.
 
 ### OBJ geometry — the big one
@@ -831,7 +826,7 @@ boxes. Two real bugs came out of it.
   models across the corpus, and they are faithful: Ars Nouveau's alteration table names `#3` on
   every face and binds only `particle`, so the game draws it magenta too.
 
-The rest of what the sweep found is mods being mods: 2,412 meshes with many named groups that all
+The rest of what the sweep found is expected content: 2,412 meshes with many named groups that all
 legitimately draw together, and 2,210 models with a genuinely duplicated element, which is what a
 Blockbench user pressing duplicate produces. Those pass through verbatim.
 
@@ -850,8 +845,7 @@ Three layers, because each catches what the others cannot:
   substitution, still fails the run.
 - **Looking at it.** Counts cannot see a block that exports happily and draws wrong. The floating
   blueprint on IE's workbench passed every count and every assertion; it was found by rendering the
-  pack and looking. `.work/render-sample.mjs` in a working tree draws a sample across every
-  namespace in a pack for exactly that.
+  pack and looking, drawing a sample across every namespace in a pack.
 
 ### What mods still cannot give us
 
@@ -940,15 +934,14 @@ dangling model references in `blockstates.json` **99 → 0**.
 1.21.8 on disk: `atlas-0.png` 316 KB, `models.json` 1.9 MB, `blockstates.json` 919 KB,
 `atlas.json` 119 KB. The JSON gzips well and caches immutably.
 
-## Consumer context
+## Notes for consumers
 
-The `ui` repo's `NCRegionWorkbench` reads Anvil regions in the browser today — chunk map, per-chunk
-NBT editing, download. The next phase there is decoding chunk block states and meshing them, which
-is what this pack feeds. Its mesher is deliberately written against a `BlockAccessor` interface
-rather than a chunk, so structures and schematics render through the same path.
+A consumer typically decodes chunk block states and meshes them against this pack. Writing the
+mesher against a block-access interface rather than a chunk lets structures and schematics render
+through the same path.
 
-The 1.13 floor obliges that decoder to handle three section layouts, not one: 1.13–1.15 pack palette
+The 1.13 floor obliges a chunk decoder to handle three section layouts, not one: 1.13–1.15 pack palette
 indices tightly across long boundaries, 1.16–1.17 pad so an index never straddles two longs, and
 1.18+ moved sections to the chunk root under `block_states`. All three are namespaced, so all three
 are in scope for this pack — a version this exporter supports is one the consumer must be able to
-read, and vice versa. Keep the two floors in step.
+read.

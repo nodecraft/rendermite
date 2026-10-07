@@ -18,6 +18,18 @@ node scripts/mod-models/build.ts
 the texture, and which parts draw emissive or translucent — with each value citing the class
 it came from. Regenerating after a mod update is one command; review the resulting diff.
 
+## Provenance
+
+Every value here is derived from the named mod's own jar: box geometry from its model classes,
+and the `display` block copied from its item model. No textures are included; those still come
+from the mod jar at render time. The data remains subject to each mod's license:
+
+| namespace | mod | license |
+| --- | --- | --- |
+| `mekanism` | [Mekanism](https://github.com/mekanism/Mekanism) | MIT |
+| `botania` | [Botania](https://github.com/VazkiiMods/Botania) | Botania License, see upstream |
+| `ad_astra` | [Ad Astra](https://github.com/terrarium-earth/Ad-Astra) | Terrarium License v1, see upstream |
+
 ## Precedence
 
 This pack layers **above** the mod jars, so it shadows the jar's `builtin/entity` stub in
@@ -128,3 +140,15 @@ and crystal poses collapse into one; the brewery's plate heights are the excepti
 `sin(i·40)` even at tick 0, exactly as in game on that tick.
 
 All nine of Botania's `builtin/entity` items are ported.
+
+### Ad Astra (1.20.1, Fabric)
+
+Both vehicle `ItemRenderer`s pose identically: `Axis.ZP 180°` then `translate(0, -1.501, 0)`,
+with no centring translate of their own. The jar is intermediary-mapped, which `extract.ts`
+reads by rewriting the class ids. `RocketModel` holds all four tiers, so each spec names the
+layer method to read.
+
+| item | model class | layer method |
+| --- | --- | --- |
+| `tier_1_rocket` … `tier_4_rocket` | `RocketModel` | `createTier1Layer` … `createTier4Layer` |
+| `tier_1_rover` | `RoverModel` | `createBodyLayer` |

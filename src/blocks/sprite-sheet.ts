@@ -194,10 +194,11 @@ export async function buildSpriteSheet(
 	for (const key of packed.oversized) {
 		const id = key.split('#', 1)[0];
 		// Every frame of an animated sprite is the same size, so report once
-		if (!missing.has(id)) {
-			failures.push({ id, reason: 'sprite is larger than one atlas page; drawn as the missing texture' });
-			missing.add(id);
+		if (missing.has(id)) {
+			continue;
 		}
+		failures.push({ id, reason: 'sprite is larger than one atlas page; drawn as the missing texture' });
+		missing.add(id);
 	}
 	if (options.includeMissing && missing.has(MISSING_SPRITE)) {
 		throw new Error('the missing-texture sprite does not fit an atlas page; maxPageSize is too small');

@@ -1,6 +1,6 @@
 /**
  * Worker-thread pool for parallel item rendering. Design goals born from the
- * PHP tool's failure modes (docs/research/mod-failure-taxonomy.md): errors
+ * PHP tool's failure modes (docs/mod-coverage.md): errors
  * cross the worker boundary as structured data, a dead worker's in-flight items
  * are reported rather than orphaned, and results stream back so output lands
  * incrementally.

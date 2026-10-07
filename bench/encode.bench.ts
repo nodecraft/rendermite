@@ -50,10 +50,7 @@ async function icon(id: string): Promise<Icon> {
 	return { frames, delaysMs };
 }
 
-const statics: Icon[] = [];
-for (const id of STATIC_ITEMS) {
-	statics.push(await icon(id));
-}
+const statics = await Array.fromAsync(STATIC_ITEMS, icon);
 const animated = await icon(ANIMATED_ITEM);
 if (animated.frames.length < 2) {
 	throw new Error(`${ANIMATED_ITEM} rendered ${animated.frames.length} frames; the animated benchmark needs more`);

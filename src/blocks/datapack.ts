@@ -87,19 +87,20 @@ export async function collectDatapack(resources: ResourceManager, namespaces: re
 				tags[registry][`${namespace}:${split[2]}`] = values;
 				continue;
 			}
-			if (ADVANCEMENT_FOLDER.test(locator.path)) {
-				const name = locator.path.replace(ADVANCEMENT_FOLDER, '');
-				// Hundreds of these, all granted silently by the game; nothing a consumer lists
-				if (name.startsWith('recipes/')) {
-					continue;
-				}
-				const json = await readJson(resources, locator) as { criteria?: unknown; } | null;
-				if (typeof json?.criteria !== 'object' || json.criteria === null) {
-					unreadable.push(locator.toString());
-					continue;
-				}
-				advancements[`${namespace}:${name}`] = Object.keys(json.criteria);
+			if (!ADVANCEMENT_FOLDER.test(locator.path)) {
+				continue;
 			}
+			const name = locator.path.replace(ADVANCEMENT_FOLDER, '');
+			// Hundreds of these, all granted silently by the game; nothing a consumer lists
+			if (name.startsWith('recipes/')) {
+				continue;
+			}
+			const json = await readJson(resources, locator) as { criteria?: unknown; } | null;
+			if (typeof json?.criteria !== 'object' || json.criteria === null) {
+				unreadable.push(locator.toString());
+				continue;
+			}
+			advancements[`${namespace}:${name}`] = Object.keys(json.criteria);
 		}
 	}
 	return { tags, advancements, unreadable };

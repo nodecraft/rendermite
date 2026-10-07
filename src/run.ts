@@ -205,10 +205,11 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		};
 		for (const id of pipeline.dynamicItems) {
 			const namespace = id.split(':', 1)[0];
-			if ((groupAvailable[namespace] ?? true) && !seen.has(id)) {
-				seen.add(id);
-				ids.push(id);
+			if (!(groupAvailable[namespace] ?? true) || seen.has(id)) {
+				continue;
 			}
+			seen.add(id);
+			ids.push(id);
 		}
 	}
 

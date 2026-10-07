@@ -142,7 +142,7 @@ export async function ensureModrinthJar(spec: ModrinthSpec): Promise<string> {
 		loaders: JSON.stringify([spec.loader]),
 	});
 	const response = await fetchRetry(`https://api.modrinth.com/v2/project/${spec.slug}/version?${query}`, {
-		headers: { 'user-agent': 'nodecraft/renderchest tests (https://nodecraft.com)' },
+		headers: { 'user-agent': 'nodecraft/rendermite tests (https://github.com/nodecraft/rendermite)' },
 	});
 	if (!response.ok) {
 		throw new Error(`Modrinth version list failed for ${spec.slug}: ${response.status}`);

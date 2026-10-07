@@ -1027,7 +1027,7 @@ class Interpreter {
 			if (name === 'filter' && args[0]?.kind === 'lambda') {
 				const kept = receiver.items.filter((item) => {
 					const verdict = this.invokeLambda(args[0] as LambdaValue, [item]);
-					return verdict?.kind === 'number' ? verdict.value !== 0 : true;
+					return verdict?.kind !== 'number' || verdict.value !== 0;
 				});
 				return { kind: 'array', items: kept };
 			}

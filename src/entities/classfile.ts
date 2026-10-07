@@ -387,11 +387,12 @@ export function parseClassFile(bytes: Uint8Array): ClassFile {
 		 */
 		for (const argument of row.argumentIndexes) {
 			const handle = constants[argument];
-			if (handle?.tag === 'methodHandle' && handle.referenceIndex !== undefined) {
-				const target = reference(handle.referenceIndex);
-				if (target) {
-					return target;
-				}
+			if (handle?.tag !== 'methodHandle' || handle.referenceIndex === undefined) {
+				continue;
+			}
+			const target = reference(handle.referenceIndex);
+			if (target) {
+				return target;
 			}
 		}
 		return null;

@@ -196,11 +196,12 @@ function modelsNamedBy(file: ClassFile, mappings: Mappings): string[] {
 		const original = mappings.originalOf.get(file.utf8(index).replaceAll('/', '.'));
 		// Nested model classes exist too: the dragon's is `EnderDragonRenderer$DragonModel`
 		// `TropicalFishModelA` and `…ModelB` are two real models with a variant letter appended
-		if (original && /Model[A-Z]?$/.test(original) && /\.client\.(?:model|renderer)[.$]/.test(original)) {
-			const simple = original.split(/[.$]/).pop() ?? '';
-			if (!ABSTRACT_MODELS.has(simple)) {
-				found.add(original);
-			}
+		if (!original || !/Model[A-Z]?$/.test(original) || !/\.client\.(?:model|renderer)[.$]/.test(original)) {
+			continue;
+		}
+		const simple = original.split(/[.$]/).pop() ?? '';
+		if (!ABSTRACT_MODELS.has(simple)) {
+			found.add(original);
 		}
 	}
 	return [...found];

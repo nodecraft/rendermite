@@ -61,10 +61,11 @@ for (const line of registry) {
 	}
 	const named = /ldc(?:_w)?\s+#\d+\s+\/\/ String ([a-z\d_]+)$/.exec(line.trim());
 	const colours = pending && coloursByClass.get(pending);
-	if (named && colours) {
-		entries.push({ id: named[1], colours });
-		pending = null;
+	if (!named || !colours) {
+		continue;
 	}
+	entries.push({ id: named[1], colours });
+	pending = null;
 }
 
 const out = path.join(import.meta.dirname, '..', '..', 'assets', 'mod-tints', 'mysticalagriculture', 'items');

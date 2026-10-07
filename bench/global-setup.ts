@@ -1,6 +1,6 @@
 /**
  * Benchmarks stage only the fixtures they measure — one vanilla jar and the
- * synthetic mod jars — rather than the whole test corpus, so `npm run bench` on
+ * synthetic mod jars — rather than the whole test corpus, so `node --run bench` on
  * a fresh checkout is a short download instead of every supported version.
  */
 

@@ -10,7 +10,7 @@
  * `--png` writes through `encodeIcon`. Never hand a FloatTexture to sharp
  * directly: `data` is a Float64Array normalized [0,1], and read as raw bytes it
  * produces washed-out garbage for every item. That mistake cost a wrong
- * conclusion once — see docs/research/mod-coverage-campaign.md.
+ * conclusion once — see docs/mod-coverage.md.
  */
 import fs from 'node:fs';
 import path from 'node:path';

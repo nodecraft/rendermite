@@ -139,9 +139,8 @@ export function applyElementRotation(rotation: ElementRotationJson | undefined, 
 		rotateAll(corners, origin, rotation.axis, rotation.angle * toRadians);
 		return;
 	}
-	const multiAxis = rotation as unknown as { x?: number; y?: number; z?: number; };
 	for (const axis of ['x', 'y', 'z'] as const) {
-		const angle = multiAxis[axis];
+		const angle = rotation[axis];
 		if (typeof angle === 'number' && angle !== 0) {
 			rotateAll(corners, origin, axis, angle * toRadians);
 		}

@@ -180,11 +180,13 @@ export async function spawnEggTints(
 		if (score === 0) {
 			continue;
 		}
-		if (score > bestScore || (score === bestScore && parts.length < bestNoise)) {
-			best = candidate;
-			bestScore = score;
-			bestNoise = parts.length;
+		const better = score > bestScore || (score === bestScore && parts.length < bestNoise);
+		if (!better) {
+			continue;
 		}
+		best = candidate;
+		bestScore = score;
+		bestNoise = parts.length;
 	}
 	const skin = best ? await textures.load(best) : null;
 	if (!skin) {
@@ -427,10 +429,11 @@ async function findShieldTexture(
 				score += 2;
 			}
 		}
-		if (score > bestScore) {
-			best = locator;
-			bestScore = score;
+		if (score <= bestScore) {
+			continue;
 		}
+		best = locator;
+		bestScore = score;
 	}
 	return best;
 }

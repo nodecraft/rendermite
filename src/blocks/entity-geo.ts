@@ -98,7 +98,7 @@ function ranked(files: string[], name: string): string[] {
 		.toSorted((left, right) => nameTokens(baseName(right)).length - nameTokens(baseName(left)).length);
 	const variants = files.filter((path) => {
 		const tokens = new Set(nameTokens(baseName(path)));
-		return [...wanted].every(token => tokens.has(token));
+		return wanted.isSubsetOf(tokens);
 	});
 	return [...new Set([...exact, ...spelling, ...decorated, ...variants])];
 }

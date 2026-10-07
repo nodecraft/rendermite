@@ -1205,18 +1205,20 @@ export async function exportBlockPack(options: ExportBlockPackOptions): Promise<
 				const sheetSizes = new Map<string, Set<string>>();
 				for (const [id, model] of geometry.modelOf) {
 					const sprite = sheet.sprites[collected.entities[id].texture ?? ''];
-					if (sprite) {
-						const sizes = sheetSizes.get(model) ?? new Set<string>();
-						sizes.add(`${sprite.w}x${sprite.h}`);
-						sheetSizes.set(model, sizes);
+					if (!sprite) {
+						continue;
 					}
+					const sizes = sheetSizes.get(model) ?? new Set<string>();
+					sizes.add(`${sprite.w}x${sprite.h}`);
+					sheetSizes.set(model, sizes);
 				}
 				for (const [model, sizes] of sheetSizes) {
-					const [only] = [...sizes];
-					if (sizes.size === 1) {
-						const [width, height] = only.split('x').map(Number);
-						geometry.models[model].textureSize = [width, height];
+					if (sizes.size !== 1) {
+						continue;
 					}
+					const [only] = [...sizes];
+					const [width, height] = only.split('x').map(Number);
+					geometry.models[model].textureSize = [width, height];
 				}
 				entityPages = sheet.pages;
 				entityModelPack = {

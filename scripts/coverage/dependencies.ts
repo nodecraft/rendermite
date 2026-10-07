@@ -5,7 +5,7 @@
  *
  * This exists because surveying an addon without its dependency invents
  * failures. Half of one 1,200-mod sweep's failures were Create addons measured
- * without Create — see docs/research/mod-coverage-campaign.md. Reading `depends`
+ * without Create — see docs/mod-coverage.md. Reading `depends`
  * out of the jars we already hold resolves that with no network.
  */
 import { execFileSync } from 'node:child_process';

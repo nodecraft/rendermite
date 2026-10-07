@@ -1,6 +1,6 @@
 /**
  * Stylesheet generation matching the renderchest CSS contract
- * (docs/research/css-contract.md). Differences by design: selectors are
+ * (docs/css-output.md). Differences by design: selectors are
  * sanitized (junk mod item names once broke whole sheets), and the URL prefix
  * is configurable so published sheets need no downstream rebasing.
  */
@@ -125,15 +125,16 @@ export function generateStylesheet(items: ItemStyle[], options: StylesheetOption
 				blocks.push(`${variantSelector}.${prefix}enchanted {\n    mask-image: ${url(`${variant.image}.${baseExtension}`, urlPrefix)};\n}`);
 				upgrade.push(`${variantSelector} { background-image: ${url(`${variant.image}.${format}`, urlPrefix)}; }`);
 			}
-			if (variant.before) {
-				const variantSelector = `${selector}.${prefix}${variant.suffix}:before`;
-				const props = [`background-image: ${url(`${variant.before.image}.${baseExtension}`, urlPrefix)};`];
-				if (variant.before.mask) {
-					props.push(`mask-image: ${url(`${variant.before.mask}.${baseExtension}`, urlPrefix)};`);
-				}
-				blocks.push(`${variantSelector} {\n    ${props.join('\n    ')}\n}`);
-				upgrade.push(`${variantSelector} { background-image: ${url(`${variant.before.image}.${format}`, urlPrefix)}; }`);
+			if (!variant.before) {
+				continue;
 			}
+			const variantSelector = `${selector}.${prefix}${variant.suffix}:before`;
+			const props = [`background-image: ${url(`${variant.before.image}.${baseExtension}`, urlPrefix)};`];
+			if (variant.before.mask) {
+				props.push(`mask-image: ${url(`${variant.before.mask}.${baseExtension}`, urlPrefix)};`);
+			}
+			blocks.push(`${variantSelector} {\n    ${props.join('\n    ')}\n}`);
+			upgrade.push(`${variantSelector} { background-image: ${url(`${variant.before.image}.${format}`, urlPrefix)}; }`);
 		}
 	}
 

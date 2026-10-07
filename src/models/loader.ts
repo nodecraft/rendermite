@@ -791,12 +791,13 @@ export class ModelLoader {
 			if (json.gui_light !== undefined) {
 				guiLight = json.gui_light;
 			}
-			if (json.elements !== undefined) {
-				elements = normalizeElements(json.elements);
-				// Elements capture the light in effect where they are defined (same-file
-				// gui_light applies first); later overrides don't relight them.
-				elementsGuiLight = guiLight;
+			if (json.elements === undefined) {
+				continue;
 			}
+			elements = normalizeElements(json.elements);
+			// Elements capture the light in effect where they are defined (same-file
+			// gui_light applies first); later overrides don't relight them.
+			elementsGuiLight = guiLight;
 		}
 
 		// OBJ geometry declared anywhere in the chain (deepest wins).

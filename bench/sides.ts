@@ -10,7 +10,7 @@
  *
  * `scripts/bench-against.ts` supplies the base side by checking the ref out into
  * `.bench/base` and dropping this tree's `bench/subject.ts` into it. Without
- * that env variable, as in a plain `npm run bench`, only the head cases register.
+ * that env variable, as in a plain `node --run bench`, only the head cases register.
  */
 
 import { bench, describe } from 'vitest';

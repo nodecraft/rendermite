@@ -1,7 +1,7 @@
 /**
  * 1.21.4+ item-definition (`assets/<ns>/items/*.json`) evaluation for a static
  * GUI icon, mirroring upstream's Item classes and property defaults
- * (docs/research/renderchest-spec.md §3).
+ * (docs/renderchest-spec.md §3).
  */
 
 import { fromItemTransform, identity, multiply } from '../render/vector.ts';

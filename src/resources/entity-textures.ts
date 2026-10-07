@@ -172,14 +172,16 @@ export async function findChestTexture(
 		// one sheet per wood leaves nothing to score at all — every wood ties, and
 		// oak is the one vanilla means by "chest".
 		const tied = score === bestScore && candidate.length === bestNoise;
-		if (best === null
+		const better = best === null
 			|| score > bestScore
 			|| (score === bestScore && candidate.length < bestNoise)
-			|| (tied && isOakSheet(locator) && !isOakSheet(best))) {
-			best = locator;
-			bestScore = score;
-			bestNoise = candidate.length;
+			|| (tied && isOakSheet(locator) && !isOakSheet(best));
+		if (!better) {
+			continue;
 		}
+		best = locator;
+		bestScore = score;
+		bestNoise = candidate.length;
 	}
 	return best;
 }
@@ -210,11 +212,13 @@ export async function findBedTexture(
 		if (score === 0) {
 			continue;
 		}
-		if (best === null || score > bestScore || (score === bestScore && candidate.length < bestNoise)) {
-			best = locator;
-			bestScore = score;
-			bestNoise = candidate.length;
+		const better = best === null || score > bestScore || (score === bestScore && candidate.length < bestNoise);
+		if (!better) {
+			continue;
 		}
+		best = locator;
+		bestScore = score;
+		bestNoise = candidate.length;
 	}
 	return best;
 }
@@ -353,10 +357,11 @@ export async function findEntityTexture(
 				score += 2;
 			}
 		}
-		if (score > bestScore) {
-			best = locator;
-			bestScore = score;
+		if (score <= bestScore) {
+			continue;
 		}
+		best = locator;
+		bestScore = score;
 	}
 	return best;
 }
@@ -392,11 +397,13 @@ export async function findFluidStill(
 		if (score < wanted.length) {
 			continue;
 		}
-		if (best === null || score > bestScore || (score === bestScore && candidate.length < bestNoise)) {
-			best = locator;
-			bestScore = score;
-			bestNoise = candidate.length;
+		const better = best === null || score > bestScore || (score === bestScore && candidate.length < bestNoise);
+		if (!better) {
+			continue;
 		}
+		best = locator;
+		bestScore = score;
+		bestNoise = candidate.length;
 	}
 	return best;
 }

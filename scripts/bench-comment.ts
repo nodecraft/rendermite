@@ -47,7 +47,7 @@ if (!values.report) {
  * So this is a screen for changes worth a reviewer's attention, not a
  * guarantee. A real regression under the floor reads as white; the collapsed
  * table carries every number for anyone who wants to look closer, and
- * `npm run bench:against -- --base HEAD` says what today's floor really is.
+ * `node --run bench:against -- --base HEAD` says what today's floor really is.
  */
 const FLOOR = 0.1;
 

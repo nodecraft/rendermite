@@ -1153,16 +1153,17 @@ export function extractModel(bytes: Uint8Array, following?: Following): Extracte
 		 * own is not this: before 1.17 a model's parts were fields, and a flat list is what it *is*.
 		 */
 		const orphans = roots.filter(root => root.orphaned).length;
+		const modelNotes = [...shared.notes];
+		if (orphans > 0) {
+			modelNotes.push(`${orphans} disconnected roots: built for a parent in another class, so each sits at the model origin`);
+		}
+		if (shared.branched) {
+			modelNotes.push('a conditional was taken; the shape is one of the variants this builder makes');
+		}
 		const model: ExtractedModel = {
 			textureSize: shared.textureSize,
 			parts: roots.map(root => toPart(root)),
-			notes: [
-				...shared.notes,
-				...(orphans > 0
-					? [`${orphans} disconnected roots: built for a parent in another class, so each sits at the model origin`]
-					: []),
-				...(shared.branched ? ['a conditional was taken; the shape is one of the variants this builder makes'] : []),
-			],
+			notes: modelNotes,
 		};
 		candidates.push({ model, ownMesh: buildsOwnMesh(model), cubes: cubesOf(model) });
 	}

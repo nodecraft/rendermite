@@ -188,10 +188,11 @@ async function findVariantTexture(
 		const named = tokens(leaf).some(token => wanted.includes(token));
 		const depth = locator.path.split('/').length;
 		score = (inFamily ? 1000 : 0) + score * 10 + (named ? 5 : 0) - depth - candidate.length;
-		if (score > bestScore) {
-			best = locator;
-			bestScore = score;
+		if (score <= bestScore) {
+			continue;
 		}
+		best = locator;
+		bestScore = score;
 	}
 	return best;
 }

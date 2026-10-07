@@ -58,22 +58,22 @@
 	},
 	"dependencies": {
 		"lightningcss": "1.33.0",
-		"sharp": "0.35.4",
+		"sharp": "0.35.5",
 		"yauzl": "3.4.0"
 	},
 	"devDependencies": {
-		"@nodecraft/eslint-config": "50.2.0",
+		"@nodecraft/eslint-config": "52.1.0",
 		"@semantic-release/changelog": "7.0.0",
-		"@types/node": "24.13.3",
+		"@types/node": "24.19.0",
 		"@types/yauzl": "3.4.0",
 		"@types/yazl": "3.3.1",
-		"eslint": "10.9.1",
+		"eslint": "10.11.0",
 		"rimraf": "6.1.3",
-		"rolldown": "1.2.6",
+		"rolldown": "1.2.11",
 		"semantic-release": "25.0.9",
-		"tsdown": "0.22.14",
+		"tsdown": "0.23.0",
 		"typescript": "6.0.3",
-		"typescript-eslint": "8.68.0",
+		"typescript-eslint": "8.71.0",
 		"vitest": "4.1.11",
 		"yazl": "3.3.1"
 	}

@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config';
  * instead of all of them, and they must run in a single process so timings are
  * not measured against whatever else a worker pool happens to be doing.
  *
- * `npm run bench:against` adds a second source tree to that process rather than
+ * `node --run bench:against` adds a second source tree to that process rather than
  * a second run; see `bench/sides.ts`.
  */
 export default defineConfig({

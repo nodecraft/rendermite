@@ -48,8 +48,8 @@ export function guiSideLight(): LightSource {
 }
 
 /**
- * Legacy single-direction light used by the tags the published corpus was rendered
- * with (v2.5.2 through v5.1.0): darkness = max(0, (dot(n, dir) + 1)/2 - baseLight),
+ * Legacy single-direction light used by renderchest tags v2.5.2 through v5.1.0
+ * (docs/renderchest-compat.md): darkness = max(0, (dot(n, dir) + 1)/2 - baseLight),
  * front light entirely inactive. Kept for golden-image comparison, not default output.
  */
 export class LegacyLightSource implements LightSource {

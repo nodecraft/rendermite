@@ -199,8 +199,7 @@ export interface ParseBlockStateOptions {
  * `base_model` is what the block looks like before whatever the loader does at
  * runtime — for FramedBlocks' 233 camouflage blocks, the uncamouflaged cube.
  */
-function parseDefinitionLoader(namespace: string, json: object, context: string): BlockStateDefinition | null {
-	const entries = json as Record<string, unknown>;
+function parseDefinitionLoader(namespace: string, entries: Record<string, unknown>, context: string): BlockStateDefinition | null {
 	const loader = Object.entries(entries)
 		.find(([name]) => name === 'definition_type' || name.endsWith(':definition_type'))?.[1];
 	if (typeof loader !== 'string') {
@@ -288,7 +287,7 @@ export function parseBlockState(
 			}, context, options),
 		};
 	}
-	const viaLoader = parseDefinitionLoader(namespace, json, context);
+	const viaLoader = parseDefinitionLoader(namespace, json as Record<string, unknown>, context);
 	if (viaLoader !== null) {
 		options.onNote?.('a loader defines this blockstate; exported as its base_model, which is what the block shows before the loader runs');
 		return viaLoader;

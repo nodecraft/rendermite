@@ -342,10 +342,11 @@ export async function collectArmourTrims(
 						patterns[pattern] ??= {};
 						patterns[pattern][material] = { ...patterns[pattern][material], [layer]: sprite };
 						spriteIds.add(sprite);
-						if (material.endsWith('_darker')) {
-							const plain = material.slice(0, -'_darker'.length);
-							darker[plain] = material;
+						if (!material.endsWith('_darker')) {
+							continue;
 						}
+						const plain = material.slice(0, -'_darker'.length);
+						darker[plain] = material;
 					}
 				}
 			}

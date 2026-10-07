@@ -69,10 +69,9 @@ export function parseGeo(json: GeoFile): ParsedGeo | null {
 		};
 	}
 	for (const [key, value] of Object.entries(json)) {
-		if (!(key.startsWith('geometry.') && value && typeof value === 'object')) {
+		if (!key.startsWith('geometry.') || !value || typeof value !== 'object') {
 			continue;
 		}
-
 		const legacy = value as { texturewidth?: number; textureheight?: number; bones?: GeoBone[]; };
 		if (legacy.bones) {
 			return {
@@ -415,10 +414,12 @@ async function findVariantTexture(
 		}
 		// Fewest unrelated tokens wins, so the plain skin beats an overlay.
 		const extra = tokens.length - wanted.length;
-		if (extra < bestExtra || (extra === bestExtra && best !== null && locator.path.length < best.path.length)) {
-			best = locator;
-			bestExtra = extra;
+		const better = extra < bestExtra || (extra === bestExtra && best !== null && locator.path.length < best.path.length);
+		if (!better) {
+			continue;
 		}
+		best = locator;
+		bestExtra = extra;
 	}
 	return best;
 }
@@ -445,10 +446,12 @@ async function findTextureByName(
 		if (!exact && leaf !== `${name}_texture`) {
 			continue;
 		}
-		if (best === null || (exact && !bestExact) || (exact === bestExact && locator.path.length < best.path.length)) {
-			best = locator;
-			bestExact = exact;
+		const better = best === null || (exact && !bestExact) || (exact === bestExact && locator.path.length < best.path.length);
+		if (!better) {
+			continue;
 		}
+		best = locator;
+		bestExact = exact;
 	}
 	return best;
 }

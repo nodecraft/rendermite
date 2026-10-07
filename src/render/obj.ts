@@ -298,17 +298,19 @@ export async function renderObjModel(
 				if (alpha <= 0) {
 					continue;
 				}
-				if (scratch.depths[pixel] >= out.depths[pixel] || out.colors[offset + 3] === 0) {
-					if (alpha >= 1 || out.colors[offset + 3] === 0) {
-						out.colors[offset] = scratch.colors[offset];
-						out.colors[offset + 1] = scratch.colors[offset + 1];
-						out.colors[offset + 2] = scratch.colors[offset + 2];
-						out.colors[offset + 3] = alpha;
-					} else {
-						blendPixel(out.colors, offset, scratch.colors[offset], scratch.colors[offset + 1], scratch.colors[offset + 2], alpha);
-					}
-					out.depths[pixel] = Math.max(out.depths[pixel], scratch.depths[pixel]);
+				const inFront = scratch.depths[pixel] >= out.depths[pixel] || out.colors[offset + 3] === 0;
+				if (!inFront) {
+					continue;
 				}
+				if (alpha >= 1 || out.colors[offset + 3] === 0) {
+					out.colors[offset] = scratch.colors[offset];
+					out.colors[offset + 1] = scratch.colors[offset + 1];
+					out.colors[offset + 2] = scratch.colors[offset + 2];
+					out.colors[offset + 3] = alpha;
+				} else {
+					blendPixel(out.colors, offset, scratch.colors[offset], scratch.colors[offset + 1], scratch.colors[offset + 2], alpha);
+				}
+				out.depths[pixel] = Math.max(out.depths[pixel], scratch.depths[pixel]);
 			}
 		}
 	}

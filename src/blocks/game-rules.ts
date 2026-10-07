@@ -114,14 +114,16 @@ function rulesIn(owner: ClassFile, code: Uint8Array): GameRulePack {
 			}
 			continue;
 		}
-		if ((op === 0xB8 || op === 0xB7) && name && first !== null) {
-			const call = owner.reference(index);
-			const kind = call ? valueKind(call.descriptor) : null;
-			if (kind) {
-				rules[name] = kind === 'boolean' ? { type: 'boolean', default: first !== 0 } : { type: 'integer', default: Number(first) };
-				name = null;
-			}
+		if ((op !== 0xB8 && op !== 0xB7) || !name || first === null) {
+			continue;
 		}
+		const call = owner.reference(index);
+		const kind = call ? valueKind(call.descriptor) : null;
+		if (!kind) {
+			continue;
+		}
+		rules[name] = kind === 'boolean' ? { type: 'boolean', default: first !== 0 } : { type: 'integer', default: Number(first) };
+		name = null;
 	}
 	return rules;
 }
