@@ -1,7 +1,6 @@
 /**
- * Model synthesis for mods that ship textures without item models, ported from
- * the ui pipeline's synthesizeItemModels. Every rule below was earned on the
- * 419k-item modded run:
+ * Model synthesis for mods that ship textures without item models. Every rule
+ * below was earned on a 419k-item modded run:
  * - a real model from the mod always beats a synthesized one;
  * - lang-declared ids filter out invented items (a mod with no lang file
  *   synthesizes everything — losing coverage is worse than a few extras);

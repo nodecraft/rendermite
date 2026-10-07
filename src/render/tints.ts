@@ -1,6 +1,6 @@
 /**
  * Tint definition → color resolution for static icons, mirroring upstream's
- * Tinter classes (docs/research/renderchest-spec.md §8).
+ * Tinter classes (docs/renderchest-spec.md §8).
  */
 
 import { ResourceLocator } from '../resources/locator.ts';

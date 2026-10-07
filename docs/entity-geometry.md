@@ -71,7 +71,7 @@ The file is self-contained and lazily fetchable: a consumer that never draws a m
 
 ## How it works
 
-`src/entities/` is seven pieces:
+`src/entities/` is ten pieces:
 
 | file | job |
 | --- | --- |
@@ -214,7 +214,7 @@ The whole sweep is 16 s for 309 jars.
 
 Extraction is not a meaningful cost, per `bench/entities.bench.ts` against 1.21.8: reading every model
 class in the jar up front is 71 ms, interpreting all 102 of them is 8.9 ms, and one entity is ~1 ms to
-extract and ~0.7 ms to link. A 546-pack seed pays about a minute for the lot.
+extract and ~0.7 ms to link. Exporting every version and modpack in a large batch (546 packs) spends about a minute on it in total.
 
 ## What it will not do
 

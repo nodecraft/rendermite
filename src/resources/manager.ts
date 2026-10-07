@@ -52,7 +52,7 @@ export interface ResourceManager {
 /**
  * Reads a resource pack laid out on disk. Accepts both layouts in the wild:
  * `<root>/assets/<ns>/…` (an extracted jar/pack) and `<root>/<ns>/…`
- * (what renderchest's --assets and the ui pipeline pass).
+ * (what renderchest's --assets takes).
  */
 export class FolderResourceManager implements ResourceManager {
 	/** What `root` was before the `assets/` layout was detected, so `data/` is reachable too. */

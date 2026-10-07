@@ -122,8 +122,8 @@ interpreter never recognised (a Fabric jar's `FabricBlockSettings`) is a failure
 
 ## Checked against a world
 
-`ui`'s `test/nbt/bench/light-check.ts` recomputes block light for real chunks from `light.json` and
-diffs it against the light the game saved, cell by cell, over chunks the game flagged as lit. On a
+A test harness recomputed block light for real chunks from `light.json` and diffed it against the
+light the game saved, cell by cell, over chunks the game flagged as lit. On a
 vanilla 1.21.5 world it matched on 100.00% of 6.1 million cells. On a heavily modded 1.21.1 save
 (FTB OceanBlock 2, 67 mod namespaces exported from the pack's own jars) it matched 99.98% of 8.8
 million overworld cells and 99.95% of 10.2 million cells in a dimension built from 290,000

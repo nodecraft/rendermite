@@ -1,7 +1,7 @@
 /**
  * Faithful port of renderchest's TriangleRasterizer (scanline, nearest-neighbour
  * sampling by truncation, 0.3 sub-texel start bias, 1px color overdraw with
- * depth written only inside the span). See docs/research/renderchest-spec.md §4.4.
+ * depth written only inside the span). See docs/renderchest-spec.md §4.4.
  */
 
 import { shadeTexel } from './blend.ts';

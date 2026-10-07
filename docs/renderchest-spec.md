@@ -1,6 +1,7 @@
-# renderchest v5.2.0-beta — technical spec for the Node/TS reimplementation
+# renderchest behaviour reference (v5.2.0-beta.3)
 
-Extracted 2026-08-12 from a local clone of aternos/renderchest (master). File:line cites refer there.
+How [aternos/renderchest](https://github.com/aternosorg/renderchest) renders, as read from its source at v5.2.0-beta.3 (commit 4b00eed). File:line cites refer to that revision; rendermite reimplements this behaviour.
+
 Key global fact: **all pixel math runs on float color values in [0,1], in sRGB (non-linearized)
 space. No gamma correction anywhere.**
 
@@ -45,7 +46,7 @@ space. No gamma correction anywhere.**
 - Stylesheet: `<prefix><namespaces[0]>-<size>.css` → `rc-minecraft-64.css`.
 - Item list: `<prefix><namespaces[0]>.json` → flat JSON array of locator strings, task-completion
   order (nondeterministic), only successfully rendered items.
-- Glint: `<prefix>enchantment.<format>`. **Upstream bug: non-fallback write skips setFormat, so
+- Glint: `<prefix>enchantment.<format>`. **Upstream behaviour: the non-fallback write skips setFormat, so
   `rc-enchantment.webp` contains PNG bytes.**
 
 ## 2. Resource management
@@ -182,7 +183,7 @@ Scanline split-at-middle-vertex; per-scanline lerp of x, u, v, depth:
 For each pixel: sort face images ascending by their depth value (stable), then source-over
 blend each non-null, alpha>0 color in that order. Straight-alpha over:
 `ra = 1-(1-sa)(1-da); rc = (sc·sa + dc·da·(1-sa))/ra` (rgb=0 when ra=0).
-(Upstream latent bug: usort reindexes while the animation loop reassigns by original face
+(Upstream edge case: usort reindexes while the animation loop reassigns by original face
 index — multi-frame multi-face models can attach a face image to the wrong slot.)
 
 ### 4.6 Lighting
@@ -226,7 +227,7 @@ index — multi-frame multi-face models can attach a face image to the wrong slo
   `textures/ + path + (.png unless already)`.
 - directory: path must start with prefix; rewrite to `source + "/" + rest`.
 - single: sprite id = `sprite ?? resource`, exact match, resolves `resource`.
-- unstitch: crop regions scaled by divisor_x/divisor_y × base dims. **Upstream bug:
+- unstitch: crop regions scaled by divisor_x/divisor_y × base dims. **Upstream behaviour:
   baseHeight reads image WIDTH.** Animation metadata dropped.
 - paletted_permutations (armor trims):
   - sprite = `<base path><separator ?? "_"><permutation name>`.
@@ -255,8 +256,8 @@ memoized per instance).
 - Constant parsing: null/−1 → no tint; int → ARGB (`b=v&0xff, g=v>>8, r=v>>16, a=v>>24`,
   alpha /255); `[r,g,b]` floats ×255 (alpha 255).
 - ColorMapTinter: `x = floor(sampleX*W)`, `y = floor(sampleY*H)`, `index = y*W+x`, out of
-  range → `#ff00ff`. **GrassTinter param parsing is buggy upstream: temperature/downfall
-  become false → samples (1.0, 1.0) = bottom-right corner.** Reproduce for parity.
+  range → `#ff00ff`. **Upstream GrassTinter parsing turns temperature/downfall into
+  `false`, so it samples (1.0, 1.0) = bottom-right corner.** Reproduce for parity.
 - Tint index mapping: 3D faces `tintindex` → `tints[index]`; GeneratedItem layer N → tints[N].
 - **`tintImage`: uses ONLY the red channel as luminance** — `blend = tint.rgb * pixel.R,
   alpha = pixel.alpha`, then source-over onto the pixel. Opaque = `tint.rgb * R`; translucent
@@ -316,8 +317,7 @@ FILTER_BOX final downscale; colormap fallback #ff00ff
    cube 0.1–15.9, mobhead overlays 3.5–12.5).
 6. builtin/ shadows user assets for files; atlas sources priority-REVERSED (last root wins).
 7. All arithmetic in sRGB; no linearization.
-8. Upstream bugs to decide on: GrassTinter corner sample, unstitch height-from-width,
+8. Upstream quirks with a parity decision to make: GrassTinter corner sample, unstitch height-from-width,
    rc-enchantment.webp containing PNG bytes, combineFaceImages usort reindex,
    RangeDispatch first-match scan, double onProgress on failure.
 9. Ignored by upstream: texture_size, cullface, element color, rescale, non-gui display slots.
-```

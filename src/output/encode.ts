@@ -1,7 +1,6 @@
 /**
- * Icon encoding via sharp. Defaults reproduce the ui pipeline's post-pass so no
- * separate optimization step is needed: lossless everywhere, strictly-smaller
- * candidates only.
+ * Icon encoding via sharp. Defaults are tuned so no separate optimization step
+ * is needed: lossless everywhere, strictly-smaller candidates only.
  */
 
 import sharp from 'sharp';

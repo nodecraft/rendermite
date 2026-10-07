@@ -68,7 +68,7 @@ async function topMods(gameVersion: string, loader: string): Promise<SearchHit[]
 	]);
 	const query = new URLSearchParams({ limit: '100', index: 'downloads', facets });
 	const response = await fetch(`https://api.modrinth.com/v2/search?${query}`, {
-		headers: { 'user-agent': 'nodecraft/renderchest sweep (https://nodecraft.com)' },
+		headers: { 'user-agent': 'nodecraft/rendermite sweep (https://github.com/nodecraft/rendermite)' },
 	});
 	if (!response.ok) {
 		throw new Error(`Modrinth search failed: ${response.status}`);

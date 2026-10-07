@@ -1,6 +1,6 @@
 /**
  * Stylesheet generation matching the renderchest CSS contract
- * (docs/research/css-contract.md). Differences by design: selectors are
+ * (docs/css-output.md). Differences by design: selectors are
  * sanitized (junk mod item names once broke whole sheets), and the URL prefix
  * is configurable so published sheets need no downstream rebasing.
  */

@@ -22,7 +22,7 @@ const hasFixture = existsSync(assetsJar)
 
 /**
  * References come from a local run of the real renderchest v5.1.0 docker image
- * (`.work/golden/1.21.8-docker/`, see DESIGN.md) — the published corpus is NOT
+ * (`.work/golden/1.21.8-docker/`, see DESIGN.md) — previously published icons are NOT
  * usable as pixel ground truth: its PNGs were palette-quantized and its WebPs
  * are lossy (Imagick's webp:lossless option never took effect upstream).
  */
@@ -79,7 +79,7 @@ describe.skipIf(!hasFixture)('golden comparison against published renderchest ou
 	const models = new ModelLoader(resources);
 	const textures = new TextureLoader(resources);
 
-	// Every case must match the published corpus EXACTLY (tolerance 0): the
+	// Every case must match the reference render EXACTLY (tolerance 0): the
 	// renderer reproduces v5.1.0 byte-for-byte, including its iterator row-shift
 	// quirk, Q16 quantization, and the PNG encoder's truncating quantum scale.
 	const exactCases: Array<[item: string, model: string]> = [
@@ -94,7 +94,7 @@ describe.skipIf(!hasFixture)('golden comparison against published renderchest ou
 		['oak_fence', 'minecraft:block/oak_fence_inventory'],
 	];
 
-	it.each(exactCases)('renders %s pixel-identical to the published corpus', async (item, modelLocator) => {
+	it.each(exactCases)('renders %s pixel-identical to renderchest v5.1.0', async (item, modelLocator) => {
 		const model = await models.load(modelLocator);
 		const rendered = toByteTexture(await renderModel(model, textures, {
 			size: 64,

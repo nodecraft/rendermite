@@ -1,7 +1,6 @@
 /**
- * Pre-1.6 texture recovery, ported from the ui pipeline's legacy-assets.ts:
- * 1.5.x jars keep individually-named textures at the archive root under old
- * names (`oreDiamond.png`); ≤1.4.7 has only stitched sheets (terrain.png,
+ * Pre-1.6 texture recovery: 1.5.x jars keep individually-named textures at the
+ * archive root under old names (`oreDiamond.png`); ≤1.4.7 has only stitched sheets (terrain.png,
  * gui/items.png) whose cell identity lived in hardcoded Java. Both are
  * recovered by pixel-matching against the 1.6.4 reference art (the version
  * whose names the donor block models reference), emitting the pre-1.13 plural

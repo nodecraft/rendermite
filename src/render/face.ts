@@ -1,6 +1,6 @@
 /**
  * Face rendering: cull, transform, project, tint, darken, rasterize — a faithful
- * port of upstream Face::render (docs/research/renderchest-spec.md §4).
+ * port of upstream Face::render (docs/renderchest-spec.md §4).
  */
 
 import {

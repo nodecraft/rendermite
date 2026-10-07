@@ -83,7 +83,7 @@ Options:
       --gif                also emit animated GIFs for legacy browsers
       --avif               also emit AVIF
   -i, --item-list          write the rendered item id list JSON
-      --lighting-profile   modern (default) | legacy (matches published corpus)
+      --lighting-profile   modern (default) | legacy (matches renderchest v2.5.2-v5.1.0)
       --builtin <dir>      override the builtin pack (defaults per era)
       --cache-dir <dir>    jar download cache (default ~/.rendermite)
       --concurrency <n>    in-flight items per thread (default 8)

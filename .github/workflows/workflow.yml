@@ -1,11 +1,13 @@
 name: CI
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
+# Read-only by default; jobs that need more ask for it themselves.
 permissions:
-  id-token: write
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
 
 jobs:
   test:
@@ -16,10 +18,16 @@ jobs:
         node: [24]
     name: Node ${{ matrix.node }} Test
     if: (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
+    # Only PR runs are cancelled: on main a cancelled test would also skip that commit's release.
+    concurrency:
+      group: test-${{ matrix.node }}-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: ${{ matrix.node }}
           cache: "npm"
@@ -28,15 +36,15 @@ jobs:
       # .work/fixtures; they are immutable per version, so cache them keyed on
       # the fixture definitions that decide what gets fetched.
       - name: Cache test fixtures
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .work/fixtures
           key: fixtures-${{ hashFiles('test/global-setup.ts', 'test/fixtures/*.ts') }}
           restore-keys: fixtures-
-      - run: npm run lint:ci
-      - run: npm run typecheck
-      - run: npm run build
-      - run: npm run test
+      - run: node --run lint:ci
+      - run: node --run typecheck
+      - run: node --run build
+      - run: node --run test
         env:
           # One ceiling per worker, and vitest now runs one worker per core, so
           # this has to leave room for both inside the runner's 7GB.
@@ -50,42 +58,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     name: Benchmarks
+    permissions:
+      contents: read
+      pull-requests: write # sticky benchmark comment
     # A second push should replace an in-flight run rather than race it to the same comment
     concurrency:
       group: bench-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.title, '[skip bench]')
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
           cache: "npm"
       - run: npm ci
       # Benchmarks stage one vanilla jar; share the test job's fixture cache.
       - name: Cache test fixtures
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           key: fixtures-${{ hashFiles('test/global-setup.ts', 'test/fixtures/*.ts') }}
           path: .work/fixtures
           restore-keys: fixtures-
       - name: Benchmark against the base commit
-        run: npm run bench:against -- --base "$BASE_SHA"
+        run: node --run bench:against -- --base "$BASE_SHA"
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
       - name: Upload raw numbers
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bench-json
           path: .bench/bench.json
           if-no-files-found: warn
           retention-days: 90
+      # Fork PRs get a read-only token, so the numbers stay in the artifact instead of a comment.
       - name: Post benchmark comment
-        uses: marocchino/sticky-pull-request-comment@v3
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: benchmarks
           path: .bench/comment.md
@@ -96,21 +110,28 @@ jobs:
     name: Release
     needs: test
     if: github.ref == 'refs/heads/main' && (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
+    permissions:
+      contents: write # release tags and GitHub releases
+      issues: write # semantic-release comments on released issues
+      pull-requests: write # semantic-release comments on released PRs
+      id-token: write # npm trusted publishing
+    concurrency:
+      group: release
+      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v6
-        # options required to enable us to push back to the repo
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-node@v6
+      # No dependency cache here, so nothing a PR run wrote can end up in a published tarball.
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
-          cache: "npm"
           registry-url: "https://registry.npmjs.org"
 
       - run: npm ci
 
-      - run: npm run build
+      - run: node --run build
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

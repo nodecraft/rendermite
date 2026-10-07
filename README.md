@@ -44,7 +44,7 @@ Or use an extracted asset tree directly:
 rendermite --assets ./my-resource-pack --output ./icons
 ```
 
-Useful flags: `--size <px>` (default 64), `--format webp|avif`, `--gif` for legacy-browser animation, `--lighting-profile modern|legacy`, `--concurrency <n>`. Run `rendermite` with no arguments for the full list.
+Useful flags: `--size <px>` (default 64), `--format webp|avif`, `--gif` for legacy-browser animation, `--lighting-profile modern|legacy`, `--workers <n>`. Run `rendermite --help` for the full list, and `rendermite blocks --help` for block packs.
 
 ### Output layout
 
@@ -99,10 +99,17 @@ Mods are first-class. Forge/NeoForge **OBJ geometry** exports as triangle meshes
 Everything the CLI does is exported, from the high-level `run()` and `exportBlockPack()` down to individual pieces (`ModelLoader`, `TextureLoader`, `renderModel`, `prepareVersionResources`, `prepareModResources`, `generateStylesheet`, `evaluateBlockState`, `packAtlas`).
 
 ```ts
-import { run, exportBlockPack, prepareModResources, builtinPackPath } from '@nodecraft/rendermite';
+import { prepareVersionResources, run } from '@nodecraft/rendermite';
+
+const resources = await prepareVersionResources({ version: '1.21.8', jar: './1.21.8-client.jar' });
+const result = await run({ resources, output: './icons', itemList: true });
+
+console.log(`${result.rendered.length} rendered, ${result.failed.length} failed`);
 ```
 
-Reading a published block pack needs none of that toolchain, so it has its own entry — no `sharp`,
+The CLI also picks the era-appropriate builtin pack (chests, banners, heads) and donor jars for old versions, so it is the easiest starting point; [`src/cli.ts`](src/cli.ts) shows how it wires the pieces together.
+
+Reading a published block pack needs none of that toolchain, so it has its own entry with no `sharp`,
 no `node:` builtin, 13 KB bundled:
 
 ```ts
@@ -112,26 +119,51 @@ import type { BlockPackModel } from '@nodecraft/rendermite/pack';
 
 ## Performance
 
-Benchmarked against PHP renderchest v5.1.0 on the same machine, rendering the same extracted 1.21.8 assets at 64px (PNG + WebP):
+Compared with PHP renderchest v5.1.0 on the same machine, rendering the same extracted 1.21.8 assets at 64px (PNG + WebP):
 
-| | wall time | items written | silent drops | throughput |
-| --- | --- | --- | --- | --- |
-| renderchest (docker, 8 cores) | 186s | 1,573 | 33 | ~506/min |
-| rendermite (one Node process, 8 worker threads) | 12.1s | 2,035 | 0 | ~10,070/min |
+| | wall time | items written | throughput |
+| --- | --- | --- | --- |
+| renderchest (docker, 8 cores) | 186s | 1,573 | ~506/min |
+| rendermite (one Node process, 8 worker threads) | 12.1s | 2,035 | ~10,070/min |
 
-15x faster with 29% more items rendered. renderchest logged 1,606 items as rendered and exited 0,
-but wrote 1,573 of them; rendermite reports every item it could not draw in
-`rc-minecraft-failures.json`. Both run with `--size 64 --format webp --fallback --item-list`,
-median of warm runs, measured September 2026. Run `npm run bench` for current numbers on your
-machine; CI runs the same suite and comments the delta on pull requests.
+Both run with `--size 64 --format webp --fallback --item-list`, median of warm runs, measured September 2026. rendermite reports every item it could not draw in `rc-minecraft-failures.json`, and its summary counts files actually written. Run `node --run bench` for current numbers on your machine; CI runs the same suite and comments the delta on pull requests.
 
-## Testing
+## Docs
+
+- [DESIGN.md](DESIGN.md): architecture, version support matrix, mod support, output contract, performance notes
+- [docs/block-pack-export.md](docs/block-pack-export.md): the block pack format, with [block light](docs/block-light.md) and [entity geometry](docs/entity-geometry.md)
+- [docs/css-output.md](docs/css-output.md): the generated stylesheet
+- [docs/renderchest-compat.md](docs/renderchest-compat.md) and [docs/renderchest-spec.md](docs/renderchest-spec.md): parity with renderchest
+- [docs/mod-coverage.md](docs/mod-coverage.md): how mod coverage is measured
+
+## Development
 
 ```sh
-npm test
+npm ci
+node --run lint        # eslint with --fix (lint:ci for check only)
+node --run typecheck
+node --run build
+node --run test
+node --run bench       # benchmarks for the working tree
+node --run bench:against -- --base main   # this tree against another ref, as CI does on PRs
 ```
 
-The suite is fully self-contained: vanilla jars download from Mojang at test time (cached under `.work/fixtures/`), synthetic mod jars are built from committed declarations, and real mods download from Modrinth. Set `RENDERMITE_SKIP_ONLINE=1` to skip the Modrinth suite offline, and point `RENDERMITE_MODJARS` at a local directory of jars to run the optional real-mod suite (third-party jars are license-restricted and never committed).
+The test suite is self-contained. Vanilla jars download from Mojang on the first run and real mods from Modrinth, all cached under `.work/fixtures/`; synthetic mod jars are built from committed declarations in `test/fixtures/mods.ts`. Environment variables:
+
+- `RENDERMITE_SKIP_ONLINE=1` skips the suites that download mods from Modrinth.
+- `RENDERMITE_MODJARS=<dir>` runs an optional suite against a local directory of mod jars. Third-party jars are never committed.
+
+The golden pixel tests compare against a local render from the renderchest v5.1.0 docker image placed in `.work/golden/1.21.8-docker/`, and skip when it is absent. The generators in `scripts/mod-models/` need a JDK (`javap`) and `unzip`; nothing else does.
+
+## Contributing
+
+Issues and pull requests are welcome. Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/) because [semantic-release](https://semantic-release.gitbook.io/) derives versions and the changelog from them, so use `fix:`, `feat:`, `perf:` and so on. Please run `node --run lint`, `node --run typecheck` and `node --run test` before opening a PR.
+
+To report a security issue, see [SECURITY.md](SECURITY.md).
+
+## Disclaimer
+
+rendermite is not affiliated with or endorsed by Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Synergies AB. Rendered icons are derived from game and mod assets that you supply or download, so you are responsible for having the rights to render and publish them.
 
 ## Attribution
 

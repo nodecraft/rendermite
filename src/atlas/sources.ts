@@ -1,5 +1,5 @@
 /**
- * Atlas texture sources (docs/research/renderchest-spec.md §6): directory,
+ * Atlas texture sources (docs/renderchest-spec.md §6): directory,
  * single, unstitch, paletted_permutations. Sources resolve sprite ids to
  * texture content; the resolver checks sources in reverse load order
  * (last-loaded wins, matching upstream's unshift behavior).

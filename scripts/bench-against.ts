@@ -1,10 +1,10 @@
 /**
  * Benches this working tree against another ref and writes the pull request comment.
  *
- *   npm run bench:against                    # vs origin/main
- *   npm run bench:against -- --base HEAD~1
- *   npm run bench:against -- --base HEAD     # what this machine's own floor is today
- *   npm run bench:against -- --filter render
+ *   node --run bench:against                    # vs origin/main
+ *   node --run bench:against -- --base HEAD~1
+ *   node --run bench:against -- --base HEAD     # what this machine's own floor is today
+ *   node --run bench:against -- --filter render
  *
  * The base ref is checked out into `.bench/base` and given **this** tree's
  * `bench/subject.ts`, which is the whole surface the benchmarks use to reach it.
