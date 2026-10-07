@@ -292,16 +292,17 @@ export function drawTexturedTriangle(
 						}
 					}
 
-					if (x >= startX && x < endX && x >= 0 && x < width) {
-						// Depth lives in a Q16 Imagick channel upstream: quantized and clamped.
-						// Matching that makes coplanar/edge depths tie exactly, so the stable
-						// face order resolves them the same way.
-						const clamped = currentDepth < 0 ? 0 : (Math.min(currentDepth, 1));
-						buffer.depths[rowOffset + x] = Math.round(clamped * 65535) / 65535;
-						// textureX only advances inside this branch (upstream behavior): the
-						// leading overdraw pixel reuses the 0.3 bias, trailing ones the final value.
-						textureX += textureStep;
+					if (x < startX || x >= endX || x < 0 || x >= width) {
+						continue;
 					}
+					// Depth lives in a Q16 Imagick channel upstream: quantized and clamped.
+					// Matching that makes coplanar/edge depths tie exactly, so the stable
+					// face order resolves them the same way.
+					const clamped = currentDepth < 0 ? 0 : (Math.min(currentDepth, 1));
+					buffer.depths[rowOffset + x] = Math.round(clamped * 65535) / 65535;
+					// textureX only advances past this guard (upstream behavior): the
+					// leading overdraw pixel reuses the 0.3 bias, trailing ones the final value.
+					textureX += textureStep;
 				}
 				cursor.next();
 			}

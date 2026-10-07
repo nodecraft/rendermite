@@ -36,6 +36,10 @@ export interface ElementRotationJson {
 	/** -45 to 45 in 22.5 steps in vanilla; mods ship arbitrary angles. */
 	angle: number;
 	rescale?: boolean;
+	/** Per-axis form, used instead of `axis`/`angle` by newer versions. */
+	x?: number;
+	y?: number;
+	z?: number;
 }
 
 export interface ModelElementJson {

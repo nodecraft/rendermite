@@ -8,7 +8,7 @@
 import { PalettedPermutationsSource, createAtlasResolver, parseAtlasSources } from './sources.ts';
 import { ResourceLocator } from '../resources/locator.ts';
 
-import type { AtlasResolver, AtlasSource } from './sources.ts';
+import type { AtlasResolver, AtlasSource, AtlasSourceEntry } from './sources.ts';
 import type { ResourceManager } from '../resources/manager.ts';
 import type { Texture } from '../textures/loader.ts';
 
@@ -68,14 +68,15 @@ class InferredItemTrimSource implements AtlasSource {
 			const namespaced = namespaces
 				.filter(namespace => variant.startsWith(`${namespace}_`))
 				.map(namespace => new ResourceLocator(namespace, `trims/color_palettes/${variant.slice(namespace.length + 1)}`));
-			const palette = await this.firstTexture([
+			const candidates = [
 				new ResourceLocator(locator.namespace, `trims/color_palettes/${variant}`),
 				ResourceLocator.parse(`minecraft:trims/color_palettes/${variant}`),
-				...(separator > 0
-					? [new ResourceLocator(variant.slice(0, separator), `trims/color_palettes/${variant.slice(separator + 1)}`)]
-					: []),
-				...namespaced,
-			]);
+			];
+			if (separator > 0) {
+				candidates.push(new ResourceLocator(variant.slice(0, separator), `trims/color_palettes/${variant.slice(separator + 1)}`));
+			}
+			candidates.push(...namespaced);
+			const palette = await this.firstTexture(candidates);
 			if (!key || !palette) {
 				return null;
 			}
@@ -127,7 +128,7 @@ export async function loadAtlasResolver(
 			copies.reverse();
 			for (const raw of copies) {
 				try {
-					const json = JSON.parse(raw.toString('utf8')) as { sources?: Array<Record<string, unknown>>; };
+					const json = JSON.parse(raw.toString('utf8')) as { sources?: AtlasSourceEntry[]; };
 					sources.push(...parseAtlasSources(
 						namespace,
 						json,

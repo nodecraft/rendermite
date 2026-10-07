@@ -168,11 +168,12 @@ export async function prepareVersionResources(options: PrepareOptions): Promise<
 	// when only the old one exists (and vice versa costs nothing to cover).
 	for (const [modern, legacy] of MOVED_TEXTURES) {
 		const modernLocator = ResourceLocator.parse(modern);
-		if (!(await base.hasResource('texture', modernLocator))) {
-			const legacyContent = await base.getResource('texture', ResourceLocator.parse(legacy));
-			if (legacyContent) {
-				shims.set('texture', modern, legacyContent);
-			}
+		if (await base.hasResource('texture', modernLocator)) {
+			continue;
+		}
+		const legacyContent = await base.getResource('texture', ResourceLocator.parse(legacy));
+		if (legacyContent) {
+			shims.set('texture', modern, legacyContent);
 		}
 	}
 

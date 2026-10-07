@@ -231,11 +231,12 @@ function parse(listing: string, className: string): PartTable {
 			continue;
 		}
 		// Mekanism: createLayerDefinition(int texW, int texH, ModelPartData...)
-		if (method.includes('createLayerDefinition') && /^II[[L]/.test(argDesc)) {
-			const [width, height] = takeNums(2);
-			table.textureWidth = width;
-			table.textureHeight = height;
+		if (!method.includes('createLayerDefinition') || !/^II[[L]/.test(argDesc)) {
+			continue;
 		}
+		const [width, height] = takeNums(2);
+		table.textureWidth = width;
+		table.textureHeight = height;
 	}
 	return table;
 }

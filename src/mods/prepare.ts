@@ -108,11 +108,12 @@ export async function prepareModResources(options: PrepareModsOptions): Promise<
 		}
 		namespaces.push(namespace);
 		const result = await synthesizeItemModels(base, namespace);
-		if (result.synthesized > 0) {
-			synthesized += result.synthesized;
-			synthLayers.push(result.models);
-			options.onProgress?.(`Synthesized ${result.synthesized} item models for ${namespace}`);
+		if (result.synthesized <= 0) {
+			continue;
 		}
+		synthesized += result.synthesized;
+		synthLayers.push(result.models);
+		options.onProgress?.(`Synthesized ${result.synthesized} item models for ${namespace}`);
 	}
 
 	let tintOverrides = 0;

@@ -235,10 +235,11 @@ function evenlySpacedTicks(ticks: number, maxFrames: number): number[] {
 	let previous = -1;
 	for (let index = 0; index < count; index++) {
 		const tick = Math.floor(index * ticks / count);
-		if (tick !== previous) {
-			sampled.push(tick);
-			previous = tick;
+		if (tick === previous) {
+			continue;
 		}
+		sampled.push(tick);
+		previous = tick;
 	}
 	return sampled;
 }

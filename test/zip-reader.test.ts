@@ -39,7 +39,7 @@ const CONTENTS: Record<string, string> = {
 async function buildZip(file: string, comment?: string): Promise<void> {
 	const zip = new ZipFile();
 	for (const [name, content] of Object.entries(CONTENTS)) {
-		zip.addBuffer(Buffer.from(content), name, { compress: name.endsWith('.txt') ? false : undefined });
+		zip.addBuffer(Buffer.from(content), name, { compress: !name.endsWith('.txt') });
 	}
 	if (comment) {
 		zip.end({ comment, forceZip64Format: false });

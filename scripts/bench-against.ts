@@ -45,7 +45,7 @@ function run(command: string, args: string[], options: { quiet?: boolean; env?: 
 		env: options.env,
 		encoding: 'utf8',
 		// No shell: an argument like a `^(a|b)$` filter must not be re-parsed by cmd.exe
-		stdio: options.quiet ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'pipe', 'inherit'],
+		stdio: ['ignore', 'pipe', options.quiet ? 'pipe' : 'inherit'],
 	});
 	if (result.status !== 0) {
 		throw new Error(`${command} ${args.join(' ')} failed (${result.status}): ${result.stderr ?? ''}`);

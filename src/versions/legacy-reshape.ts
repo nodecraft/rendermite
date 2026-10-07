@@ -137,10 +137,11 @@ function matchTile(
 	let bestDistance = Infinity;
 	for (const [name, reference] of references) {
 		const distance = pixelDistance(pixels, reference);
-		if (distance < bestDistance) {
-			bestDistance = distance;
-			bestName = name;
+		if (distance >= bestDistance) {
+			continue;
 		}
+		bestDistance = distance;
+		bestName = name;
 	}
 	// First match wins: a second match means the reference merged or reused that art.
 	if (bestName !== null && bestDistance <= MATCH_TOLERANCE && !taken.has(bestName)) {

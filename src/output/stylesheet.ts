@@ -125,15 +125,16 @@ export function generateStylesheet(items: ItemStyle[], options: StylesheetOption
 				blocks.push(`${variantSelector}.${prefix}enchanted {\n    mask-image: ${url(`${variant.image}.${baseExtension}`, urlPrefix)};\n}`);
 				upgrade.push(`${variantSelector} { background-image: ${url(`${variant.image}.${format}`, urlPrefix)}; }`);
 			}
-			if (variant.before) {
-				const variantSelector = `${selector}.${prefix}${variant.suffix}:before`;
-				const props = [`background-image: ${url(`${variant.before.image}.${baseExtension}`, urlPrefix)};`];
-				if (variant.before.mask) {
-					props.push(`mask-image: ${url(`${variant.before.mask}.${baseExtension}`, urlPrefix)};`);
-				}
-				blocks.push(`${variantSelector} {\n    ${props.join('\n    ')}\n}`);
-				upgrade.push(`${variantSelector} { background-image: ${url(`${variant.before.image}.${format}`, urlPrefix)}; }`);
+			if (!variant.before) {
+				continue;
 			}
+			const variantSelector = `${selector}.${prefix}${variant.suffix}:before`;
+			const props = [`background-image: ${url(`${variant.before.image}.${baseExtension}`, urlPrefix)};`];
+			if (variant.before.mask) {
+				props.push(`mask-image: ${url(`${variant.before.mask}.${baseExtension}`, urlPrefix)};`);
+			}
+			blocks.push(`${variantSelector} {\n    ${props.join('\n    ')}\n}`);
+			upgrade.push(`${variantSelector} { background-image: ${url(`${variant.before.image}.${format}`, urlPrefix)}; }`);
 		}
 	}
 

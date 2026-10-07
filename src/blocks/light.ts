@@ -109,11 +109,12 @@ function findPropsClasses(
 			if (reference.descriptor === `(${TO_INT_FUNCTION})L${reference.owner};` && !reference.owner.startsWith('java/')) {
 				found.add(reference.owner);
 			}
-			if (reference.name === '<init>') {
-				const match = /L([^;]+);\)V$/.exec(reference.descriptor);
-				if (match && !match[1].startsWith('java/')) {
-					lastParams.set(match[1], (lastParams.get(match[1]) ?? 0) + 1);
-				}
+			if (reference.name !== '<init>') {
+				continue;
+			}
+			const match = /L([^;]+);\)V$/.exec(reference.descriptor);
+			if (match && !match[1].startsWith('java/')) {
+				lastParams.set(match[1], (lastParams.get(match[1]) ?? 0) + 1);
 			}
 		}
 	}
@@ -131,10 +132,11 @@ function findPropsClasses(
 	// The game's own builder by name, for a mod jar whose registry classes never call `lightLevel`
 	for (const known of ['net/minecraft/world/level/block/state/BlockBehaviour$Properties', 'net/minecraft/world/level/block/Block$Properties']) {
 		const internal = remapClass(known);
-		if (resolve(internal)) {
-			found.add(internal);
-			found.add(known);
+		if (!resolve(internal)) {
+			continue;
 		}
+		found.add(internal);
+		found.add(known);
 	}
 	if (found.size === 0) {
 		const commonest = [...lastParams].toSorted((left, right) => right[1] - left[1])[0];
@@ -524,10 +526,11 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 				continue;
 			}
 			const answer = extraction.lightOf(`${namespace}:${name}`);
-			if ('light' in answer && answer.light !== 0) {
-				light[`${namespace}:${name}`] = answer.light;
-				notes.push(`${namespace}:${name} emits but ships no blockstate; kept from its registration alone`);
+			if (!('light' in answer) || answer.light === 0) {
+				continue;
 			}
+			light[`${namespace}:${name}`] = answer.light;
+			notes.push(`${namespace}:${name} emits but ships no blockstate; kept from its registration alone`);
 		}
 	}
 
@@ -546,11 +549,12 @@ export async function collectBlockLight(options: CollectBlockLightOptions): Prom
 					invisible: method => alwaysInvisible(overrides, method),
 				})
 				: null;
-			if (read) {
-				behaviour[id] = read.behaviour;
-				for (const reason of read.failures) {
-					behaviourFailures.push({ id, reason });
-				}
+			if (!read) {
+				continue;
+			}
+			behaviour[id] = read.behaviour;
+			for (const reason of read.failures) {
+				behaviourFailures.push({ id, reason });
 			}
 		}
 	}

@@ -40,10 +40,11 @@ export async function discoverItems(
 
 	for (const locator of await resources.listResources('itemDefinition', namespace)) {
 		const id = locator.toString();
-		if (!seen.has(id)) {
-			seen.add(id);
-			items.push({ id, source: 'definition' });
+		if (seen.has(id)) {
+			continue;
 		}
+		seen.add(id);
+		items.push({ id, source: 'definition' });
 	}
 
 	// Namespaces predating item definitions (or mods shipping both eras): scan
@@ -64,10 +65,11 @@ export async function discoverItems(
 			continue;
 		}
 		const id = new ResourceLocator(locator.namespace, name).toString();
-		if (!seen.has(id)) {
-			seen.add(id);
-			items.push({ id, source: 'model' });
+		if (seen.has(id)) {
+			continue;
 		}
+		seen.add(id);
+		items.push({ id, source: 'model' });
 	}
 
 	return items;

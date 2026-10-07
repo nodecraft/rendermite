@@ -265,6 +265,9 @@ export class UnstitchAtlasSource implements AtlasSource {
 	}
 }
 
+/** One unvalidated entry of an atlas JSON's sources array: any source type's fields may be present. */
+export type AtlasSourceEntry = { type?: unknown; } & Partial<DirectorySettings & SingleSettings & PalettedPermutationsSettings & UnstitchSettings>;
+
 /**
  * Parses one atlas JSON's sources array. Unknown types are reported and
  * skipped rather than failing the file — mods ship experimental source types,
@@ -272,7 +275,7 @@ export class UnstitchAtlasSource implements AtlasSource {
  */
 export function parseAtlasSources(
 	namespace: string,
-	atlasJson: { sources?: Array<Record<string, unknown>>; },
+	atlasJson: { sources?: AtlasSourceEntry[]; },
 	loadTexture: (locator: ResourceLocator) => Promise<Texture | null>,
 	onUnknown?: (type: string) => void,
 	hasTexture: HasTexture = async locator => (await loadTexture(locator)) !== null,
@@ -282,19 +285,19 @@ export function parseAtlasSources(
 		const type = String(entry.type ?? '').replace(/^minecraft:/, '');
 		switch (type) {
 			case 'directory': {
-				sources.push(new DirectoryAtlasSource(namespace, entry as unknown as DirectorySettings, hasTexture));
+				sources.push(new DirectoryAtlasSource(namespace, entry as DirectorySettings, hasTexture));
 				break;
 			}
 			case 'single': {
-				sources.push(new SingleAtlasSource(entry as unknown as SingleSettings, hasTexture));
+				sources.push(new SingleAtlasSource(entry as SingleSettings, hasTexture));
 				break;
 			}
 			case 'paletted_permutations': {
-				sources.push(new PalettedPermutationsSource(entry as unknown as PalettedPermutationsSettings, loadTexture));
+				sources.push(new PalettedPermutationsSource(entry as PalettedPermutationsSettings, loadTexture));
 				break;
 			}
 			case 'unstitch': {
-				sources.push(new UnstitchAtlasSource(entry as unknown as UnstitchSettings, loadTexture));
+				sources.push(new UnstitchAtlasSource(entry as UnstitchSettings, loadTexture));
 				break;
 			}
 			case 'filter': {

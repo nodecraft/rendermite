@@ -117,10 +117,11 @@ export async function defaultBlockStateModel(
 			continue;
 		}
 		const score = scoreVariant(key, variant);
-		if (score > bestScore) {
-			best = variant;
-			bestScore = score;
+		if (score <= bestScore) {
+			continue;
 		}
+		best = variant;
+		bestScore = score;
 	}
 	// Multipart has no variants; the unconditional pieces are what always shows.
 	if (!best) {

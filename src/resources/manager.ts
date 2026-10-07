@@ -194,10 +194,11 @@ export class LayeredResourceManager implements ResourceManager {
 		for (const layer of this.layers) {
 			for (const locator of await layer.listResources(kind, namespace)) {
 				const key = locator.toString();
-				if (!seen.has(key)) {
-					seen.add(key);
-					merged.push(locator);
+				if (seen.has(key)) {
+					continue;
 				}
+				seen.add(key);
+				merged.push(locator);
 			}
 		}
 		return merged;

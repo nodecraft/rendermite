@@ -136,10 +136,11 @@ describe('geo face winding', () => {
 			for (const direction of ORDER) {
 				const [red, green, blue] = FACE_COLORS[direction];
 				const distance = Math.abs(data[offset] * 255 - red) + Math.abs(data[offset + 1] * 255 - green) + Math.abs(data[offset + 2] * 255 - blue);
-				if (distance < bestDistance) {
-					bestDistance = distance;
-					best = direction;
+				if (distance >= bestDistance) {
+					continue;
 				}
+				bestDistance = distance;
+				best = direction;
 			}
 			seen.set(best, (seen.get(best) ?? 0) + 1);
 		}
