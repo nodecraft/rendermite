@@ -10,7 +10,7 @@ import { buildFixtureModJars } from './fixtures/mods.ts';
 
 /** Every version the suites exercise, donors and the pre-1.6 reference included. */
 const VERSIONS = [
-	'26.4-snapshot-3',
+	'26.4-snapshot-4',
 	'26.3',
 	'26.2',
 	'26.1.2',
