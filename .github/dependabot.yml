@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # Keeps the SHA-pinned actions in workflow.yml current.
+  # Keeps the actions in workflow.yml and their actions.lock pins current.
   - package-ecosystem: github-actions
     directory: /
     schedule:
