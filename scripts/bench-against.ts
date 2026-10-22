@@ -109,7 +109,8 @@ run(process.execPath, [
 	'--run',
 	'--config',
 	path.join(root, 'vitest.bench.config.ts'),
-	'--outputJson',
+	'--reporter=json',
+	'--outputFile',
 	report,
 	...values.filter ? ['-t', values.filter] : [],
 ], {

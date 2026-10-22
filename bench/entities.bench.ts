@@ -4,11 +4,9 @@
  * Worth benchmarking because it runs once per pack and there are 546 packs in a full seed: a second per
  * version is a nine-minute tax on the seed, and a second per *mod* is two hours. The three phases cost
  * very different amounts and only one of them is obviously expensive, so they are measured apart.
- *
- * Setup is top-level because Vitest does not run suite hooks in benchmark mode.
  */
 
-import { bench, describe } from 'vitest';
+import { describe, test } from 'vitest';
 
 import { BENCH_VERSION } from './global-setup.ts';
 import {
@@ -72,15 +70,22 @@ for (const className of mappings.obfuscatedOf.keys()) {
 	}
 }
 
+/** One test per workload, so each one keeps its own row in the report. */
+function measure(name: string, run: () => unknown): void {
+	test(name, async ({ bench }) => {
+		await bench(name, run).run();
+	});
+}
+
 /** The jar's model code, read as the exporter reads it: once, before any interpretation. */
 const code = await loadModelCode(names, async name => await classes.read(name), name => mappings.originalOf.get(name) ?? name);
 
 describe('reading one class', () => {
-	bench('parse the constant pool and methods', () => {
+	measure('parse the constant pool and methods', () => {
 		parseClassFile(cowBytes);
 	});
 
-	bench('parse and interpret, one model', () => {
+	measure('parse and interpret, one model', () => {
 		extractModel(cowBytes);
 	});
 });
@@ -90,7 +95,7 @@ describe('a whole jar', () => {
 	 * The number that matters for a seed: every model in the jar, interpreted, with the bytes already in
 	 * hand. If this is slow the seed is slow, and no amount of caching elsewhere helps.
 	 */
-	bench(`interpret every model in ${BENCH_VERSION} (${modelBytes.length} classes)`, () => {
+	measure(`interpret every model in ${BENCH_VERSION} (${modelBytes.length} classes)`, () => {
 		for (const bytes of modelBytes) {
 			extractModel(bytes);
 		}
@@ -100,7 +105,7 @@ describe('a whole jar', () => {
 	 * Building the fuzzy-match index over every class name. Cheap, but it runs per jar and a mod pack has
 	 * three hundred of them, so a linear scan that turned quadratic would show up here first.
 	 */
-	bench(`index ${names.length} class names for the mod route`, () => {
+	measure(`index ${names.length} class names for the mod route`, () => {
 		buildModelNameIndex(names);
 	});
 });
@@ -113,11 +118,11 @@ describe('following calls', () => {
 	 * — interpretation is synchronous, so a call's target has to already be in hand — and that up-front
 	 * read is the part that would hurt a 546-pack seed if it were slow.
 	 */
-	bench(`read every model class in ${BENCH_VERSION} up front`, async () => {
+	measure(`read every model class in ${BENCH_VERSION} up front`, async () => {
 		await loadModelCode(names, async name => await classes.read(name), name => mappings.originalOf.get(name) ?? name);
 	});
 
-	bench('extract one model with its ancestors and its calls followed', async () => {
+	measure('extract one model with its ancestors and its calls followed', async () => {
 		await extractInheritedModel(mappings.obfuscatedOf.get(cowClass) as string, async name => await classes.read(name), code);
 	});
 });
@@ -138,11 +143,11 @@ describe('linking', () => {
 	 * the phase most likely to surprise. `classReader` caches, which is exactly what this measures the
 	 * value of.
 	 */
-	bench('link one entity to its model class', async () => {
+	measure('link one entity to its model class', async () => {
 		await linkEntityModel('cow', context);
 	});
 
-	bench('link a shared model through two chains (cave_spider)', async () => {
+	measure('link a shared model through two chains (cave_spider)', async () => {
 		await linkEntityModel('cave_spider', context);
 	});
 });
