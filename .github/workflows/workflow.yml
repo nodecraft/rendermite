@@ -50,6 +50,21 @@ jobs:
           # this has to leave room for both inside the runner's 7GB.
           NODE_OPTIONS: --max_old_space_size=3072
 
+  # Fails when actions.lock drifts from the workflows or a locked pin no longer verifies upstream.
+  lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: Verify actions.lock
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # Pinned because Dependabot can't bump gh extensions; update it by hand.
+      - run: gh extension install github/gh-actions-lock --pin v0.3.0
+      - run: gh actions-lock --verify
+
   # Performance monitoring (reporting, not a gate). Both sides are measured on
   # this runner, in one process, so full history is needed to check out the base
   # commit: a stored number from an earlier run of main folds the difference

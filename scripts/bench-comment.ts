@@ -1,5 +1,5 @@
 /**
- * Turns one paired `vitest bench --outputJson` report into the pull request comment.
+ * Turns one paired `vitest bench --reporter=json` report into the pull request comment.
  *
  *   node scripts/bench-comment.ts --report .bench/bench.json --out comment.md
  *
@@ -58,18 +58,24 @@ const CALIBRATION = 'reference :: calibration';
 const GROUP_SEPARATOR = ' :: ';
 const CASE_NAMES = { base: 'base', head: 'head', headRepeat: 'head2', baseRepeat: 'base2' } as const;
 
-/** The fields of tinybench's report this reads; Vitest passes them through untouched. */
+/** One case's latency, in milliseconds. */
 interface Benchmark {
-	name: string;
 	mean: number;
 	moe: number;
 	rme: number;
 	p99: number;
-	sampleCount: number;
+	samplesCount: number;
 }
 
-interface VitestBenchReport {
-	files: Array<{ filepath: string; groups: Array<{ fullName: string; benchmarks: Benchmark[]; }>; }>;
+/** The fields of Vitest's JSON report this reads; `latency` is tinybench's statistics, passed through untouched. */
+interface VitestJsonReport {
+	testResults: Array<{
+		assertionResults: Array<{
+			ancestorTitles: string[];
+			title: string;
+			benchmarks: Array<{ tasks: Array<{ name: string; latency: Benchmark; }>; }>;
+		}>;
+	}>;
 }
 
 type Verdict = 'faster' | 'slower' | 'same' | 'unpaired';
@@ -84,15 +90,19 @@ interface Comparison {
 	verdict: Verdict;
 }
 
-const report = JSON.parse(readFileSync(values.report, 'utf8')) as VitestBenchReport;
+const report = JSON.parse(readFileSync(values.report, 'utf8')) as VitestJsonReport;
 
 const comparisons: Comparison[] = [];
-for (const file of report.files) {
-	for (const group of file.groups) {
-		// `fullName` is `<file> > <area> :: <workload>`
-		const described = group.fullName.slice(group.fullName.indexOf(' > ') + 3);
+for (const file of report.testResults) {
+	for (const test of file.assertionResults) {
+		const tasks = test.benchmarks.flatMap(entry => entry.tasks);
+		if (tasks.length === 0) {
+			continue;
+		}
+		// `bench/sides.ts` titles a test `<area> :: <workload>`; a benchmark outside it has a describe for its area
+		const described = [...test.ancestorTitles, test.title].join(GROUP_SEPARATOR);
 		const [area, workload] = described.split(GROUP_SEPARATOR);
-		const find = (label: string): Benchmark | null => group.benchmarks.find(entry => entry.name === label) ?? null;
+		const find = (label: string): Benchmark | null => tasks.find(entry => entry.name === label)?.latency ?? null;
 		const first = { base: find(CASE_NAMES.base), head: find(CASE_NAMES.head) };
 		const second = { base: find(CASE_NAMES.baseRepeat), head: find(CASE_NAMES.headRepeat) };
 		const common = { area: area ?? described, workload: workload ?? '' };
@@ -214,7 +224,7 @@ lines.push(
 			time(entry.head?.mean),
 			entry.head ? `±${entry.head.rme.toFixed(1)}%` : '—',
 			time(entry.head?.p99),
-			entry.head ? String(entry.head.sampleCount) : '—',
+			entry.head ? String(entry.head.samplesCount) : '—',
 			entry.base && entry.head ? magnitude(entry.base.mean, entry.head.mean) : 'unpaired',
 			name(entry) === CALIBRATION ? '📏' : ICON[entry.verdict],
 		];

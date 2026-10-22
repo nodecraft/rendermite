@@ -236,9 +236,9 @@ Two things make the numbers usable on hosted runners:
 - **The calibration group** (`bench/reference.bench.ts`) is a fixed arithmetic workload that
   runs byte-identical code on both sides, so its gap is the run's own noise floor. Never
   change that benchmark: it is the ruler.
-- **Benchmarks assert their own workload.** Vitest does not run `beforeAll` in benchmark mode,
-  so setup is top-level and each benchmark checks it actually rendered/encoded something. A
-  benchmark measuring an empty loop reports a wonderful time.
+- **Benchmarks assert their own workload.** Setup is top-level and each benchmark checks it
+  actually rendered/encoded something. A benchmark measuring an empty loop reports a wonderful
+  time.
 
 Moves smaller than 10%, or smaller than the noise the run itself measured, are not called
 out.

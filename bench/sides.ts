@@ -13,7 +13,7 @@
  * that env variable, as in a plain `node --run bench`, only the head cases register.
  */
 
-import { bench, describe } from 'vitest';
+import { test } from 'vitest';
 
 export type Subject = typeof import('./subject.ts');
 
@@ -23,7 +23,7 @@ export const GROUP_SEPARATOR = ' :: ';
 /**
  * Case names within a group, registered in this order.
  *
- * A palindrome, and that is the whole point: tinybench runs cases in
+ * A palindrome, and that is the whole point: `bench.compare` runs cases in
  * registration order and the second one inherits a JIT and caches the first
  * warmed. Giving each side one early slot and one late slot lets the comparison
  * take the better of each and demand that both orderings agree.
@@ -95,19 +95,20 @@ export async function prepareSides<Context>(setup: (subject: Subject) => Promise
 
 	return {
 		compare(area, workload, options, run) {
-			describe([area, workload].join(GROUP_SEPARATOR), () => {
+			test([area, workload].join(GROUP_SEPARATOR), async ({ bench }) => {
 				if (!baseContext) {
-					bench('head', async () => {
+					await bench('head', async () => {
 						await run(head);
-					}, { ...OPTIONS, ...options });
+					}).run({ ...OPTIONS, ...options });
 					return;
 				}
-				for (const label of CASES) {
+				const cases = CASES.map((label) => {
 					const context = label.startsWith('base') ? baseContext : head;
-					bench(label, async () => {
+					return bench(label, async () => {
 						await run(context);
-					}, { ...OPTIONS, ...options });
-				}
+					});
+				});
+				await bench.compare(...cases, { ...OPTIONS, ...options });
 			});
 		},
 	};
