@@ -282,7 +282,7 @@ for (const cell of matrix) {
 	}
 }
 
-console.log(`\nTOTAL: ${totals.rendered}/${totals.items} (${(totals.rendered / Math.max(1, totals.items) * 100).toFixed(1)}%) — ${totals.geo} via geo, ${totals.sprites} via sprite fallback`);
+console.log(`\nTOTAL: ${totals.rendered}/${totals.items} (${(totals.rendered / Math.max(1, totals.items) * 100).toFixed(1)}%): ${totals.geo} via geo, ${totals.sprites} via sprite fallback`);
 console.log('Failure classes overall:');
 for (const [key, count] of [...globalFailures].toSorted((left, right) => right[1] - left[1])) {
 	console.log(`  ${String(count).padStart(6)}  ${key}`);

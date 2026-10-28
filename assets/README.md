@@ -1,7 +1,7 @@
 # Vendored builtin resource packs
 
 These packs originate from [aternos/renderchest](https://github.com/aternosorg/renderchest)
-(MIT license, © Aternos GmbH) and provide the hand-modeled replacements for items the game
+(MIT license, © Aternos GmbH, full text in [`LICENSE-renderchest`](LICENSE-renderchest)) and provide the hand-modeled replacements for items the game
 draws in code rather than through JSON models (chests, banners, shulker boxes, mob heads,
 conduit, shield, decorated pots, and the internal `rc_*` layer sources used by the CSS
 generators).

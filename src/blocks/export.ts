@@ -315,13 +315,13 @@ function serializeBlockState(
 	if (definition.kind === 'variants') {
 		const cases = definition.cases.flatMap((entry) => {
 			const apply = serializeApply(entry.apply);
-			return apply.length === 0 ? [] : [{ when: entry.when, apply }];
+			return apply.length === 0 ? [] : { when: entry.when, apply };
 		});
 		return cases.length === 0 ? null : { variants: cases };
 	}
 	const cases = definition.cases.flatMap((entry) => {
 		const apply = serializeApply(entry.apply);
-		return apply.length === 0 ? [] : [{ when: entry.when, apply }];
+		return apply.length === 0 ? [] : { when: entry.when, apply };
 	});
 	return cases.length === 0 ? null : { multipart: cases };
 }

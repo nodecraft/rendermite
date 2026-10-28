@@ -79,7 +79,9 @@ export class WorkerRenderPool<T> {
 			}
 			this.pump(entry);
 		});
-		entry.worker.on('error', (err) => {
+		entry.worker.on('error', (thrown) => {
+			// A worker can throw any value, not only an Error.
+			const err = thrown instanceof Error ? thrown : new Error(String(thrown));
 			if (entry.inFlight.size === 0) {
 				this.startupFailures++;
 				if (this.startupFailures > 3) {

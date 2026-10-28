@@ -24,7 +24,7 @@ const MINIMUM_VERSION = '1.13';
 /** The first release Mojang published mappings for; older jars borrow its block behaviour. */
 const FIRST_MAPPED_VERSION = '1.14.4';
 
-const HELP = `rendermite blocks — Minecraft block pack export (geometry + atlas, 1.13+)
+const HELP = `rendermite blocks - Minecraft block pack export (geometry + atlas, 1.13+)
 
 Usage:
   rendermite blocks --version <mc version> --output <dir> [options]

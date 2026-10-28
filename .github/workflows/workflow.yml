@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       matrix:
-        node: [24]
+        node: [26]
     name: Node ${{ matrix.node }} Test
     if: (!contains(github.event.head_commit.message, '[ci skip]') && !contains(github.event.head_commit.message, '[skip ci]'))
     # Only PR runs are cancelled: on main a cancelled test would also skip that commit's release.
@@ -89,7 +89,7 @@ jobs:
       - name: Setup node
         uses: actions/setup-node@v7.1.0
         with:
-          node-version: 24
+          node-version: 26
           cache: "npm"
       - run: npm ci
       # Benchmarks stage one vanilla jar; share the test job's fixture cache.
@@ -141,7 +141,7 @@ jobs:
       # No dependency cache here, so nothing a PR run wrote can end up in a published tarball.
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: 24
+          node-version: 26
           registry-url: "https://registry.npmjs.org"
 
       - run: npm ci
