@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>rendermite</title>
+	<meta name="description" content="rendermite renders inventory-identical Minecraft item icons for every version and thousands of mods, as optimized WebP, PNG, CSS and JSON. Open source, built by Nodecraft.">
+	<meta name="theme-color" content="#05080d">
+	<link rel="canonical" href="https://rendermite.dev/">
+	<link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
+
+	<meta property="og:type" content="website">
+	<meta property="og:url" content="https://rendermite.dev/">
+	<meta property="og:title" content="rendermite">
+	<meta property="og:description" content="Inventory-identical Minecraft item icons for every version and thousands of mods. Open source, built by Nodecraft.">
+	<meta name="twitter:card" content="summary">
+
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link rel="preconnect" href="https://assets.rendermite.dev">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Open+Sans:wght@400;600&family=Rajdhani:wght@600;700&display=swap">
+	<link rel="stylesheet" href="https://assets.rendermite.dev/icons/26.3/rc-minecraft-64.css">
+	<link rel="stylesheet" href="/styles.css">
+	<script src="/main.js" type="module"></script>
+</head>
+
+<body>
+	<div class="nag">
+		<div class="wrap nag-inner">
+			<a class="nag-brand" href="https://nodecraft.com/r/rendermite">
+				<img src="/images/nodecraft-powered-vertical.svg" alt="Powered by Nodecraft" width="162" height="36">
+			</a>
+			<p class="nag-copy">rendermite draws every item icon in the Nodecraft game panel. We open sourced it.</p>
+			<a class="btn btn-green" href="https://nodecraft.com/r/rendermite">Host a Minecraft server</a>
+		</div>
+	</div>
+
+	<header class="hero">
+		<div class="wrap hero-inner">
+			<div class="hero-copy">
+				<p class="eyebrow">Open source &middot; MIT &middot; Node.js 24+</p>
+				<h1>rendermite</h1>
+				<p class="lede">Minecraft item icons that match the inventory. Every version from 1.0 to 26.3, thousands of mods, rendered in seconds and served free from a CDN.</p>
+
+				<div class="install">
+					<code id="install-cmd">npm install @nodecraft/rendermite</code>
+					<button class="copy" type="button" data-copy="#install-cmd">Copy</button>
+				</div>
+
+				<div class="actions">
+					<a class="btn btn-blue" href="#hosted">Use the hosted icons</a>
+					<a class="btn btn-ghost" href="https://github.com/nodecraft/rendermite">View on GitHub</a>
+				</div>
+			</div>
+
+			<figure class="inventory" aria-labelledby="inventory-caption">
+				<div class="inventory-head">
+					<span class="inventory-title">Inventory</span>
+					<span class="chip">26.3</span>
+				</div>
+
+				<ul class="slots" aria-label="Vanilla items">
+					<li class="slot" tabindex="0" data-name="Diamond Sword" data-id="minecraft:diamond_sword" data-rarity="rare"><span class="rc-item rc-minecraft_diamond_sword rc-enchanted"></span></li>
+					<li class="slot" tabindex="0" data-name="Netherite Pickaxe" data-id="minecraft:netherite_pickaxe" data-rarity="rare"><span class="rc-item rc-minecraft_netherite_pickaxe rc-enchanted"></span></li>
+					<li class="slot" tabindex="0" data-name="Mace" data-id="minecraft:mace"><span class="rc-item rc-minecraft_mace"></span></li>
+					<li class="slot" tabindex="0" data-name="Trident" data-id="minecraft:trident" data-rarity="rare"><span class="rc-item rc-minecraft_trident rc-enchanted"></span></li>
+					<li class="slot" tabindex="0" data-name="Crossbow" data-id="minecraft:crossbow" data-note="Loaded with a firework rocket"><span class="rc-item rc-minecraft_crossbow rc-projectile-minecraft_firework_rocket"></span></li>
+					<li class="slot" tabindex="0" data-name="Elytra" data-id="minecraft:elytra"><span class="rc-item rc-minecraft_elytra"></span></li>
+					<li class="slot" tabindex="0" data-name="Totem of Undying" data-id="minecraft:totem_of_undying"><span class="rc-item rc-minecraft_totem_of_undying"></span></li>
+					<li class="slot" tabindex="0" data-name="Enchanted Golden Apple" data-id="minecraft:enchanted_golden_apple"><span class="rc-item rc-minecraft_enchanted_golden_apple"></span></li>
+					<li class="slot" tabindex="0" data-name="Enchanted Book" data-id="minecraft:enchanted_book"><span class="rc-item rc-minecraft_enchanted_book"></span></li>
+
+					<li class="slot" tabindex="0" data-name="Grass Block" data-id="minecraft:grass_block"><span class="rc-item rc-minecraft_grass_block"></span><span class="count">64</span></li>
+					<li class="slot" tabindex="0" data-name="Chest" data-id="minecraft:chest"><span class="rc-item rc-minecraft_chest"></span></li>
+					<li class="slot" tabindex="0" data-name="Beacon" data-id="minecraft:beacon"><span class="rc-item rc-minecraft_beacon"></span></li>
+					<li class="slot" tabindex="0" data-name="Enchanting Table" data-id="minecraft:enchanting_table"><span class="rc-item rc-minecraft_enchanting_table"></span></li>
+					<li class="slot" tabindex="0" data-name="Conduit" data-id="minecraft:conduit"><span class="rc-item rc-minecraft_conduit"></span></li>
+					<li class="slot" tabindex="0" data-name="Respawn Anchor" data-id="minecraft:respawn_anchor"><span class="rc-item rc-minecraft_respawn_anchor"></span></li>
+					<li class="slot" tabindex="0" data-name="Sculk Shrieker" data-id="minecraft:sculk_shrieker"><span class="rc-item rc-minecraft_sculk_shrieker"></span></li>
+					<li class="slot" tabindex="0" data-name="Copper Bulb" data-id="minecraft:copper_bulb"><span class="rc-item rc-minecraft_copper_bulb"></span><span class="count">12</span></li>
+					<li class="slot" tabindex="0" data-name="Creeper Head" data-id="minecraft:creeper_head"><span class="rc-item rc-minecraft_creeper_head"></span></li>
+
+					<li class="slot" tabindex="0" data-name="Dragon Head" data-id="minecraft:dragon_head"><span class="rc-item rc-minecraft_dragon_head"></span></li>
+					<li class="slot" tabindex="0" data-name="Shulker Box" data-id="minecraft:shulker_box"><span class="rc-item rc-minecraft_shulker_box"></span></li>
+					<li class="slot" tabindex="0" data-name="Red Bed" data-id="minecraft:red_bed"><span class="rc-item rc-minecraft_red_bed"></span></li>
+					<li class="slot" tabindex="0" data-name="Spyglass" data-id="minecraft:spyglass"><span class="rc-item rc-minecraft_spyglass"></span></li>
+					<li class="slot" tabindex="0" data-name="Bundle" data-id="minecraft:bundle"><span class="rc-item rc-minecraft_bundle"></span></li>
+					<li class="slot" tabindex="0" data-name="Heart of the Sea" data-id="minecraft:heart_of_the_sea"><span class="rc-item rc-minecraft_heart_of_the_sea"></span></li>
+					<li class="slot" tabindex="0" data-name="Nether Star" data-id="minecraft:nether_star"><span class="rc-item rc-minecraft_nether_star"></span></li>
+					<li class="slot" tabindex="0" data-name="Clock" data-id="minecraft:clock" data-note="Animated WebP"><span class="rc-item rc-minecraft_clock"></span></li>
+					<li class="slot" tabindex="0" data-name="Recovery Compass" data-id="minecraft:recovery_compass" data-note="Animated WebP"><span class="rc-item rc-minecraft_recovery_compass"></span></li>
+				</ul>
+
+				<div class="hotbar-head">
+					<span>Modded</span>
+					<span class="hotbar-meta">4,200+ mods on the CDN</span>
+				</div>
+
+				<ul class="slots hotbar" aria-label="Modded items">
+					<li class="slot" tabindex="0" data-name="Precision Mechanism" data-id="create:precision_mechanism" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/precision_mechanism.webp" alt="" width="64" height="64"></li>
+					<li class="slot" tabindex="0" data-name="Wrench" data-id="create:wrench" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/wrench.webp" alt="" width="64" height="64"></li>
+					<li class="slot" tabindex="0" data-name="Brass Ingot" data-id="create:brass_ingot" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/brass_ingot.webp" alt="" width="64" height="64"><span class="count">48</span></li>
+					<li class="slot" tabindex="0" data-name="Atomic Disassembler" data-id="mekanism:atomic_disassembler" data-mod="Mekanism"><img src="https://assets.rendermite.dev/icons/modded/items/mekanism/atomic_disassembler.webp" alt="" width="64" height="64"></li>
+					<li class="slot" tabindex="0" data-name="Meka-Tool" data-id="mekanism:meka_tool" data-mod="Mekanism"><img src="https://assets.rendermite.dev/icons/modded/items/mekanism/meka_tool.webp" alt="" width="64" height="64"></li>
+					<li class="slot" tabindex="0" data-name="Fluix Crystal" data-id="ae2:fluix_crystal" data-mod="Applied Energistics 2"><img src="https://assets.rendermite.dev/icons/modded/items/ae2/fluix_crystal.webp" alt="" width="64" height="64"><span class="count">16</span></li>
+					<li class="slot" tabindex="0" data-name="Terrasteel Ingot" data-id="botania:terrasteel_ingot" data-mod="Botania"><img src="https://assets.rendermite.dev/icons/modded/items/botania/terrasteel_ingot.webp" alt="" width="64" height="64"><span class="count">3</span></li>
+					<li class="slot" tabindex="0" data-name="Wand of the Forest" data-id="botania:twig_wand" data-mod="Botania"><img src="https://assets.rendermite.dev/icons/modded/items/botania/twig_wand.webp" alt="" width="64" height="64"></li>
+					<li class="slot" tabindex="0" data-name="Engineer's Hammer" data-id="immersiveengineering:hammer" data-mod="Immersive Engineering"><img src="https://assets.rendermite.dev/icons/modded/items/immersiveengineering/hammer.webp" alt="" width="64" height="64"></li>
+				</ul>
+
+				<figcaption id="inventory-caption">Every icon here is live from <code>assets.rendermite.dev</code>. Hover or focus a slot.</figcaption>
+			</figure>
+		</div>
+	</header>
+
+	<main>
+		<section class="band" aria-labelledby="why">
+			<div class="wrap">
+				<h2 id="why">Built to match the game</h2>
+				<p class="section-lede">rendermite reads the same models, textures and transforms the client does, then draws the icon the way the inventory draws it.</p>
+
+				<ul class="features">
+					<li>
+						<h3>Inventory-identical</h3>
+						<p>Orthographic block projection, per-face GUI lighting, display transforms, tints, enchant glint, and animated textures as animated WebP.</p>
+					</li>
+					<li>
+						<h3>Every version</h3>
+						<p>Era detection, donor geometry and legacy spritesheet slicing for old releases. Item definitions, atlases, armor trims and decorated pots for new ones.</p>
+					</li>
+					<li>
+						<h3>Real mod support</h3>
+						<p>Forge, NeoForge and Fabric loader models, OBJ and MTL meshes, GeckoLib Bedrock geometry, cross-jar dependencies, and the malformed JSON mods ship anyway.</p>
+					</li>
+					<li>
+						<h3>No black squares</h3>
+						<p>Items the game draws in code fall back through block models, builtin geometry and flat sprites. Anything still unrenderable is written to a failures file with a reason.</p>
+					</li>
+					<li>
+						<h3>Small, drop-in output</h3>
+						<p>Palette PNG only when it is lossless, lossless WebP, and a minified stylesheet that follows renderchest's class names, so existing markup keeps working.</p>
+					</li>
+					<li>
+						<h3>Block packs too</h3>
+						<p>Geometry, atlases, blockstates, tints, biomes and entity models exported as pre-resolved JSON, for renderers that draw the world themselves.</p>
+					</li>
+				</ul>
+			</div>
+		</section>
+
+		<section class="band band-alt" aria-labelledby="speed">
+			<div class="wrap">
+				<h2 id="speed">15&times; faster than renderchest</h2>
+				<p class="section-lede">Same machine, same extracted 1.21.8 assets, 64px icons in PNG and WebP. rendermite finishes the whole version before renderchest gets through a tenth of it, and draws more of the items.</p>
+
+				<div class="perf">
+					<div class="perf-chart" role="img" aria-label="Wall time to render 1.21.8: renderchest 186 seconds, rendermite 12.1 seconds.">
+						<p class="perf-axis">Wall time, lower is better</p>
+						<div class="perf-row">
+							<span class="perf-label">renderchest v5.1.0</span>
+							<div class="perf-track"><div class="perf-bar perf-bar-old"></div></div>
+							<span class="perf-value">186s</span>
+						</div>
+						<div class="perf-row">
+							<span class="perf-label">rendermite</span>
+							<div class="perf-track"><div class="perf-bar perf-bar-new"></div></div>
+							<span class="perf-value perf-value-new">12.1s</span>
+						</div>
+					</div>
+
+					<dl class="stats">
+						<div>
+							<dt>Items per minute</dt>
+							<dd><span class="stat-new">10,070</span> <span class="stat-old">vs 506</span></dd>
+						</div>
+						<div>
+							<dt>Items written</dt>
+							<dd><span class="stat-new">2,035</span> <span class="stat-old">vs 1,573</span></dd>
+						</div>
+					</dl>
+				</div>
+
+				<p class="footnote">renderchest ran in Docker on 8 cores; rendermite ran as one Node process with 8 worker threads. Both ran with <code>--size 64 --format webp --fallback --item-list</code>, median of warm runs, measured September 2026. Run <code>node --run bench</code> for numbers on your own machine.</p>
+			</div>
+		</section>
+
+		<section class="band" id="hosted" aria-labelledby="hosted-title">
+			<div class="wrap">
+				<h2 id="hosted-title">Hosted icons, free of charge</h2>
+				<p class="section-lede">Nodecraft renders every release and thousands of mods with rendermite and publishes the output to <code>assets.rendermite.dev</code>. Link the stylesheet and use the classes, or point an <code>&lt;img&gt;</code> at a single icon.</p>
+
+				<aside class="notice" aria-labelledby="artwork-title">
+					<h3 id="artwork-title">About the artwork</h3>
+					<p>We don't own any of these icons. Each one is drawn from textures and models that belong to Mojang or to the authors of each mod, and every right in that artwork stays with them. We host the renders free of charge as a convenience, with no ads, accounts or fees, and we don't sell them or offer any license to them. rendermite's MIT license covers its code only.</p>
+					<p>If you made a mod and want its icons changed or taken down, <a href="https://github.com/nodecraft/rendermite/issues">open an issue</a> and we will handle it.</p>
+				</aside>
+
+				<div class="split">
+					<div class="code-card">
+						<div class="code-head">
+							<span>index.html</span>
+							<button class="copy" type="button" data-copy="#snippet-css">Copy</button>
+						</div>
+						<pre><code id="snippet-css">&lt;link rel="stylesheet"
+  href="https://assets.rendermite.dev/icons/26.3/rc-minecraft-64.css"&gt;
+
+&lt;span class="rc-item rc-minecraft_diamond_sword rc-enchanted"&gt;&lt;/span&gt;
+&lt;span class="rc-item rc-minecraft_crossbow
+  rc-projectile-minecraft_firework_rocket"&gt;&lt;/span&gt;
+&lt;span class="rc-item rc-minecraft_clock"&gt;&lt;/span&gt;</code></pre>
+						<div class="code-result" aria-label="Rendered result">
+							<span class="rc-item rc-minecraft_diamond_sword rc-enchanted"></span>
+							<span class="rc-item rc-minecraft_crossbow rc-projectile-minecraft_firework_rocket"></span>
+							<span class="rc-item rc-minecraft_clock"></span>
+						</div>
+					</div>
+
+					<form class="lookup" id="lookup" novalidate>
+						<h3>Find an icon</h3>
+						<div class="field">
+							<label for="lookup-id">Item id</label>
+							<input id="lookup-id" name="id" type="text" value="minecraft:diamond_sword" list="lookup-ids" autocomplete="off" spellcheck="false">
+							<datalist id="lookup-ids">
+								<option value="minecraft:diamond_sword"></option>
+								<option value="minecraft:netherite_chestplate"></option>
+								<option value="minecraft:grass_block"></option>
+								<option value="minecraft:shulker_box"></option>
+								<option value="create:cogwheel"></option>
+								<option value="mekanism:meka_tool"></option>
+								<option value="ae2:fluix_crystal"></option>
+							</datalist>
+						</div>
+						<div class="field">
+							<label for="lookup-version">Version</label>
+							<select id="lookup-version" name="version">
+								<option selected>26.3</option>
+								<option>26.2</option>
+								<option>26.1.2</option>
+								<option>1.21.11</option>
+								<option>1.21.8</option>
+								<option>1.21.1</option>
+								<option>1.20.6</option>
+								<option>1.20.1</option>
+								<option>1.19.2</option>
+								<option>1.18.2</option>
+								<option>1.16.5</option>
+								<option>1.12.2</option>
+								<option>1.8.9</option>
+								<option>1.7.10</option>
+								<option>1.2.5</option>
+							</select>
+						</div>
+						<div class="lookup-result">
+							<div class="lookup-preview">
+								<img id="lookup-img" src="https://assets.rendermite.dev/icons/26.3/items/minecraft/diamond_sword.webp" alt="Icon preview" width="64" height="64">
+							</div>
+							<div class="lookup-url">
+								<code id="lookup-url">https://assets.rendermite.dev/icons/26.3/items/minecraft/diamond_sword.webp</code>
+								<p class="lookup-status" id="lookup-status" role="status">Vanilla icon from 26.3.</p>
+							</div>
+							<button class="copy" type="button" data-copy="#lookup-url">Copy</button>
+						</div>
+					</form>
+				</div>
+
+				<h3 class="table-title">URL layout</h3>
+				<div class="table-scroll">
+					<table class="urls">
+						<thead>
+							<tr>
+								<th scope="col">Path on assets.rendermite.dev</th>
+								<th scope="col">What it is</th>
+								<th scope="col">Cache</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><code>/versions.json</code></td>
+								<td>Every published version, newest first</td>
+								<td>5 min</td>
+							</tr>
+							<tr>
+								<td><code>/icons/<var>version</var>/rc-minecraft-64.css</code></td>
+								<td>Stylesheet with a class per item, glint and tint support</td>
+								<td>Immutable</td>
+							</tr>
+							<tr>
+								<td><code>/icons/<var>version</var>/items/minecraft/<var>item</var>.webp</code></td>
+								<td>One icon, 64px lossless WebP, animated where the item animates. <code>.png</code> also available.</td>
+								<td>Immutable</td>
+							</tr>
+							<tr>
+								<td><code>/icons/<var>version</var>/items-<var>version</var>.json</code></td>
+								<td>Item registry: id, display name, stack size</td>
+								<td>Immutable</td>
+							</tr>
+							<tr>
+								<td><code>/icons/<var>version</var>/rc-minecraft-failures.json</code></td>
+								<td>Items that did not render, each with a reason</td>
+								<td>Immutable</td>
+							</tr>
+							<tr>
+								<td><code>/icons/modded/namespaces.json</code></td>
+								<td>Every mod namespace on the CDN</td>
+								<td>Updated as mods are added</td>
+							</tr>
+							<tr>
+								<td><code>/icons/modded/css/<var>namespace</var>.css</code></td>
+								<td>Stylesheet for one mod</td>
+								<td>1 hour</td>
+							</tr>
+							<tr>
+								<td><code>/icons/modded/items/<var>namespace</var>/<var>item</var>.webp</code></td>
+								<td>One modded icon</td>
+								<td>30 days</td>
+							</tr>
+							<tr>
+								<td><code>/blocks/versions.json</code></td>
+								<td>Published block packs; each lives under <code>/blocks/<var>version</var>/</code></td>
+								<td>5 min</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p class="footnote">Everything under <code>/icons/<var>version</var>/</code> is immutable: a re-render gets a new path, so cache it for as long as you like.</p>
+			</div>
+		</section>
+
+		<section class="band band-alt" aria-labelledby="run">
+			<div class="wrap">
+				<h2 id="run">Render your own</h2>
+				<p class="section-lede">Point rendermite at a version and it downloads and caches the client jar. Add mod jars, a resource pack, or an extracted asset tree.</p>
+
+				<div class="split">
+					<div class="code-card">
+						<div class="code-head">
+							<span>Terminal</span>
+							<button class="copy" type="button" data-copy="#snippet-cli">Copy</button>
+						</div>
+						<pre><code id="snippet-cli">rendermite --version 1.21.8 --output ./icons
+
+rendermite --version 1.20.4 \
+  --mod ./create-1.20.1.jar \
+  --namespace create \
+  --output ./icons/create --item-list</code></pre>
+					</div>
+
+					<div class="code-card">
+						<div class="code-head">
+							<span>render.ts</span>
+							<button class="copy" type="button" data-copy="#snippet-lib">Copy</button>
+						</div>
+						<pre><code id="snippet-lib">import { prepareVersionResources, run } from '@nodecraft/rendermite';
+
+const resources = await prepareVersionResources({
+  version: '1.21.8',
+  jar: './1.21.8-client.jar',
+});
+const result = await run({ resources, output: './icons', itemList: true });
+
+console.log(`${result.rendered.length} rendered, ${result.failed.length} failed`);</code></pre>
+					</div>
+				</div>
+
+				<ul class="docs">
+					<li><a href="https://github.com/nodecraft/rendermite#readme">README and CLI flags</a></li>
+					<li><a href="https://github.com/nodecraft/rendermite/blob/main/docs/css-output.md">Stylesheet reference</a></li>
+					<li><a href="https://github.com/nodecraft/rendermite/blob/main/docs/block-pack-export.md">Block pack format</a></li>
+					<li><a href="https://github.com/nodecraft/rendermite/blob/main/DESIGN.md">Architecture and version matrix</a></li>
+				</ul>
+			</div>
+		</section>
+	</main>
+
+	<footer class="footer">
+		<div class="wrap footer-inner">
+			<a class="footer-brand" href="https://nodecraft.com/r/rendermite">
+				<img src="/images/logogram.svg" alt="" width="48" height="48">
+				<span>
+					<span class="footer-company">Nodecraft, Inc.</span>
+					<span class="footer-sub">&copy; 2026 All rights reserved</span>
+				</span>
+			</a>
+			<nav class="footer-links" aria-label="Project">
+				<a href="https://github.com/nodecraft/rendermite">GitHub</a>
+				<a href="https://www.npmjs.com/package/@nodecraft/rendermite">npm</a>
+				<a href="https://crafthead.net">Crafthead</a>
+				<a href="https://nodecraft.com/r/rendermite">Nodecraft</a>
+			</nav>
+			<div class="footer-legal">
+				<p>rendermite's code is MIT licensed. Builtin models adapted from <a href="https://github.com/aternosorg/renderchest">renderchest</a> by Aternos.</p>
+				<p>Rendered icons show artwork owned by Mojang and by the authors of each mod. Nodecraft claims no ownership of it and hosts the renders free of charge. Not an official Minecraft product. Not approved by or associated with Mojang or Microsoft.</p>
+			</div>
+		</div>
+	</footer>
+
+	<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+</body>
+
+</html>

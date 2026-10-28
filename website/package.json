@@ -1,0 +1,14 @@
+{
+	"name": "@nodecraft/rendermite-website",
+	"private": true,
+	"description": "Landing page for rendermite.dev, served as a static assets Worker.",
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"check": "wrangler deploy --dry-run",
+		"deploy": "wrangler deploy"
+	},
+	"devDependencies": {
+		"wrangler": "4.151.3"
+	}
+}

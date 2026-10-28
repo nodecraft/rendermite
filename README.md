@@ -153,6 +153,8 @@ The test suite is self-contained. Vanilla jars download from Mojang on the first
 - `RENDERMITE_SKIP_ONLINE=1` skips the suites that download mods from Modrinth.
 - `RENDERMITE_MODJARS=<dir>` runs an optional suite against a local directory of mod jars. Third-party jars are never committed.
 
+The [rendermite.dev](https://rendermite.dev) landing page lives in [`website/`](website/) as a static assets Worker with its own pinned wrangler. `npm ci --ignore-scripts && node --run dev` inside it serves the page locally. Pushes to `main` that touch it deploy through `.github/workflows/website.yml`, which reads `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` from the `website` GitHub environment.
+
 The golden pixel tests compare against a local render from the renderchest v5.1.0 docker image placed in `.work/golden/1.21.8-docker/`, and skip when it is absent. The generators in `scripts/mod-models/` need a JDK (`javap`) and `unzip`; nothing else does.
 
 ## Contributing
@@ -164,6 +166,8 @@ To report a security issue, see [SECURITY.md](SECURITY.md).
 ## Disclaimer
 
 rendermite is not affiliated with or endorsed by Mojang Studios or Microsoft. Minecraft is a trademark of Mojang Synergies AB. Rendered icons are derived from game and mod assets that you supply or download, so you are responsible for having the rights to render and publish them.
+
+The icons hosted on `assets.rendermite.dev` show artwork that belongs to Mojang and to the authors of each mod. Nodecraft claims no ownership of it, hosts the renders free of charge, and grants no license to them; the MIT license covers rendermite's code only. Mod authors who want their icons changed or removed can [open an issue](https://github.com/nodecraft/rendermite/issues).
 
 ## Attribution
 
