@@ -29,7 +29,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: 24
+          node-version: 26
       # Wrangler's postinstall scripts only fetch binaries for local dev; a static deploy needs none of them.
       - run: npm ci --ignore-scripts
       - run: node --run check
@@ -57,7 +57,7 @@ jobs:
       # No dependency cache here, so nothing a PR run wrote can end up in a deploy.
       - uses: actions/setup-node@v7.1.0
         with:
-          node-version: 24
+          node-version: 26
       - run: npm ci --ignore-scripts
       - run: node --run deploy
         env:

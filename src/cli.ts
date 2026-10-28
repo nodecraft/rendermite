@@ -60,7 +60,7 @@ const { values } = parseArgs({
 
 const hasInput = Boolean(values.assets?.length || values.version);
 if (values.help || !hasInput || !values.output) {
-	console.log(`rendermite — Minecraft item icon renderer
+	console.log(`rendermite - Minecraft item icon renderer
 
 Usage:
   rendermite --version <mc version> --output <dir> [options]

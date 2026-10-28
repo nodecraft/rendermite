@@ -19,7 +19,7 @@ Minecraft item icon renderer for Node.js. Point it at a game version or a pile o
 npm install @nodecraft/rendermite
 ```
 
-Requires Node.js 24+.
+Requires Node.js 26+.
 
 ## Usage
 
@@ -175,4 +175,4 @@ rendermite is a from-scratch Node.js renderer, but it owes its existence to [ate
 
 ## License
 
-[MIT](LICENSE) © Nodecraft, Inc. Vendored `assets/` packs © Aternos GmbH, MIT.
+[MIT](LICENSE) © Nodecraft, Inc. Vendored `assets/` packs © Aternos GmbH, [MIT](assets/LICENSE-renderchest).
