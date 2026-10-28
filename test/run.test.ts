@@ -1,8 +1,10 @@
 import {
+	mkdir,
 	mkdtemp,
 	readFile,
 	readdir,
 	rm,
+	writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -20,7 +22,7 @@ import { ensureVanillaJar } from './fixtures/index.ts';
 import { fixtureModJar } from './fixtures/mods.ts';
 import { builtinPackPath } from '../src/builtin.ts';
 import { JarResourceManager } from '../src/resources/jar.ts';
-import { LayeredResourceManager } from '../src/resources/manager.ts';
+import { FolderResourceManager, LayeredResourceManager } from '../src/resources/manager.ts';
 import { run } from '../src/run.ts';
 
 import type { RunResult } from '../src/run.ts';
@@ -179,5 +181,77 @@ describe('run() end to end', () => {
 		} finally {
 			await rm(avifOutput, { recursive: true, force: true });
 		}
+	}, 240000);
+});
+
+describe('run() tint layer sources', () => {
+	const layerTextures = [
+		'potion',
+		'potion_overlay',
+		'splash_potion',
+		'lingering_potion',
+		'tipped_arrow_base',
+		'tipped_arrow_head',
+		'firework_star',
+		'firework_star_overlay',
+		'filled_map',
+	];
+	let root: string;
+
+	/** A vanilla stand-in holding just the potion, the map and the textures the builtin layer sources read. */
+	async function writeTree(dir: string, mapMarkings: boolean): Promise<void> {
+		const textures = path.join(dir, 'minecraft', 'textures', 'item');
+		await mkdir(textures, { recursive: true });
+		await mkdir(path.join(dir, 'minecraft', 'items'), { recursive: true });
+		await mkdir(path.join(dir, 'minecraft', 'models', 'item'), { recursive: true });
+		const pixel = await sharp({ create: { width: 16, height: 16, channels: 4, background: '#808080' } }).png().toBuffer();
+		for (const name of mapMarkings ? [...layerTextures, 'filled_map_markings'] : layerTextures) {
+			await writeFile(path.join(textures, `${name}.png`), pixel);
+		}
+		await writeFile(path.join(dir, 'minecraft', 'models', 'item', 'generated.json'), JSON.stringify({ parent: 'builtin/generated' }));
+		for (const item of ['potion', 'filled_map']) {
+			await writeFile(path.join(dir, 'minecraft', 'items', `${item}.json`), JSON.stringify({ model: { type: 'minecraft:model', model: `minecraft:item/${item}` } }));
+			await writeFile(path.join(dir, 'minecraft', 'models', 'item', `${item}.json`), JSON.stringify({ parent: 'item/generated', textures: { layer0: `item/${item}` } }));
+		}
+	}
+
+	async function render(mapMarkings: boolean): Promise<{ result: RunResult; css: string; }> {
+		const dir = path.join(root, mapMarkings ? 'with-markings' : 'without-markings');
+		await writeTree(path.join(dir, 'assets'), mapMarkings);
+		const output = path.join(dir, 'out');
+		const result = await run({
+			workers: 1,
+			resources: new FolderResourceManager(path.join(dir, 'assets')),
+			builtin,
+			output,
+			namespaces: ['minecraft'],
+			minify: false,
+		});
+		return { result, css: await readFile(path.join(output, 'rc-minecraft-64.css'), 'utf8') };
+	}
+
+	beforeAll(async () => {
+		root = await mkdtemp(path.join(tmpdir(), 'rendermite-layers-'));
+	});
+
+	afterAll(async () => {
+		await rm(root, { recursive: true, force: true });
+	});
+
+	it('renders the builtin rc_ layer sources the tinted styles are built from', async () => {
+		const { result, css } = await render(true);
+		expect(result.failed).toEqual([]);
+		expect(result.rendered).toContain('minecraft:rc_potion_content');
+		expect(result.rendered).toContain('minecraft:rc_filled_map_overlay');
+		expect(css).toContain('--rc-layer-1-tint: #f800f8');
+		expect(css).toContain('items/minecraft/rc_filled_map_overlay.webp');
+	}, 240000);
+
+	it('leaves filled maps untinted where the markings texture is gone (26.3+)', async () => {
+		const { result, css } = await render(false);
+		expect(result.failed).toEqual([]);
+		expect(result.rendered.filter(id => id.startsWith('minecraft:rc_filled_map_'))).toEqual([]);
+		expect(result.rendered).toContain('minecraft:rc_potion_content');
+		expect(css).not.toContain('--rc-layer-2-tint: #46402e');
 	}, 240000);
 });
