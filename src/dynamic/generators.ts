@@ -6,7 +6,10 @@
  * names (underscore prefix) match upstream so the CSS contract stays stable.
  */
 
+import { ResourceLocator } from '../resources/locator.ts';
 import { MapResourceManager } from '../resources/synthetic.ts';
+
+import type { ResourceManager } from '../resources/manager.ts';
 
 export const TRIM_MATERIALS = [
 	'quartz',
@@ -56,6 +59,15 @@ export const POTTERY_SHERDS = [
 
 function sherdTextureName(sherd: string): string {
 	return sherd === 'brick' ? 'brick' : `${sherd}_pottery_sherd`;
+}
+
+/**
+ * Whether the version has armor trims, judged by the trim palette key: 26.3 moved it from
+ * textures/trims/color_palettes/trim_palette to textures/palettes/trim_base.
+ */
+export async function hasArmorTrims(resources: ResourceManager): Promise<boolean> {
+	return await resources.hasResource('texture', ResourceLocator.parse('minecraft:trims/color_palettes/trim_palette'))
+		|| await resources.hasResource('texture', ResourceLocator.parse('minecraft:palettes/trim_base'));
 }
 
 export interface DynamicItem {

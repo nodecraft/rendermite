@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 
+import { hasArmorTrims } from './dynamic/generators.ts';
 import { discoverItems } from './items/discovery.ts';
 import { curatedModelOverrides } from './mods/models.ts';
 import { encodeRasterAsset } from './output/encode.ts';
@@ -203,7 +204,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 	// generators — and each group only exists where its prerequisites do
 	// (1.12.2 has no trims, pots, or crossbows).
 	if (pipeline.dynamicItems && namespaces.includes('minecraft')) {
-		const hasTrims = await resources.hasResource('texture', ResourceLocator.parse('minecraft:trims/color_palettes/trim_palette'));
+		const hasTrims = await hasArmorTrims(resources);
 		const hasPot = await resources.hasResource('texture', ResourceLocator.parse('minecraft:entity/decorated_pot/decorated_pot_base'));
 		const hasCrossbow = await resources.hasResource('model', ResourceLocator.parse('minecraft:item/crossbow_arrow'));
 		const groupAvailable: Record<string, boolean> = {

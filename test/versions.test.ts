@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { loadAtlasResolver } from '../src/atlas/registry.ts';
 import { bedCompatPath, builtinPackPath } from '../src/builtin.ts';
-import { builtinDynamicResources } from '../src/dynamic/generators.ts';
+import { builtinDynamicResources, hasArmorTrims } from '../src/dynamic/generators.ts';
 import { defaultProperties } from '../src/items/definition.ts';
 import { discoverItems, resolveItem } from '../src/items/discovery.ts';
 import { ModelLoader } from '../src/models/loader.ts';
@@ -14,6 +14,7 @@ import { blendPixel, toByteTexture } from '../src/render/blend.ts';
 import { legacyTintsForChain } from '../src/render/legacy-tints.ts';
 import { renderModel } from '../src/render/renderer.ts';
 import { resolveTints } from '../src/render/tints.ts';
+import { JarResourceManager } from '../src/resources/jar.ts';
 import { FolderResourceManager, LayeredResourceManager } from '../src/resources/manager.ts';
 import { TextureLoader } from '../src/textures/loader.ts';
 import { eraForVersion, prepareVersionResources } from '../src/versions/prepare.ts';
@@ -365,4 +366,17 @@ describe.each(CASES.filter(entry => existsSync(jar(entry.version))))('version $v
 			}
 		}, 120000);
 	}
+});
+
+// run() gates leather dye layers and trim variants on this, so a miss silently drops them from the sheet.
+describe('armor trim availability', () => {
+	const cases: Array<[version: string, expected: boolean]> = [
+		['1.12.2', false],
+		['1.21.8', true],
+		['26.3', true],
+		['26.4-snapshot-4', true],
+	];
+	it.each(cases.filter(([version]) => existsSync(jar(version))))('%s has trims: %s', async (version, expected) => {
+		expect(await hasArmorTrims(new JarResourceManager(jar(version)))).toBe(expected);
+	});
 });
