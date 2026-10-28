@@ -170,6 +170,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 			ids.push(placeholder);
 		}
 	}
+	const hasMapMarkings = await resources.hasResource('texture', ResourceLocator.parse('minecraft:item/filled_map_markings'));
 	for (const namespace of namespaces) {
 		for (const item of await discoverItems(resources, namespace, {
 			filterUntranslatedModels: options.filterUntranslatedModels,
@@ -183,7 +184,15 @@ export async function run(options: RunOptions): Promise<RunResult> {
 			// failure mode, so require the id to exist beneath the builtin layer.
 			// Deliberately the caller's own tree, not the curated layer: curated
 			// supplies geometry for items a pack already has, never new items.
-			if (options.builtin && !(await itemExistsIn(options.resources, item.id))) {
+			// The modern pack's rc_* definitions are tint layer sources, never real items. The legacy
+			// pack's rc_* leather models are superseded by `_leather_armor`, so they stay out.
+			const layerSource = item.source === 'definition' && item.id.startsWith('minecraft:rc_');
+			if (layerSource) {
+				// 26.3 dropped the markings layer, so its maps are a single untinted icon
+				if (item.id.startsWith('minecraft:rc_filled_map_') && !hasMapMarkings) {
+					continue;
+				}
+			} else if (options.builtin && !(await itemExistsIn(options.resources, item.id))) {
 				continue;
 			}
 			seen.add(item.id);

@@ -49,9 +49,9 @@ Defaults the sheet sets:
 | Item | Variable | Default |
 |---|---|---|
 | leather armour | `--rc-layer-1-tint` | `#9e643f` |
-| potion, splash potion, lingering potion, tipped arrow | `--rc-layer-1-tint` | `#f800f8` |
-| filled map | `--rc-layer-2-tint` | `#46402e` |
-| firework star | `--rc-layer-2-tint` | `#8a8a8a` |
+| potion, splash potion, lingering potion, tipped arrow (1.21.4+) | `--rc-layer-1-tint` | `#f800f8` |
+| filled map (1.21.4 to 26.2; 26.3 dropped the markings layer) | `--rc-layer-2-tint` | `#46402e` |
+| firework star (1.21.4+) | `--rc-layer-2-tint` | `#8a8a8a` |
 
 ## Variant classes
 
