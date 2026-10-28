@@ -1,0 +1,66 @@
+name: Website
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  pull_request:
+    paths:
+      - "website/**"
+      - ".github/workflows/website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on PRs without any secrets, so fork PRs get the same config check as everyone else.
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: Check website
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      # Wrangler's postinstall scripts only fetch binaries for local dev; a static deploy needs none of them.
+      - run: npm ci --ignore-scripts
+      - run: node --run check
+
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: Deploy rendermite.dev
+    needs: check
+    if: github.repository == 'nodecraft/rendermite' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # Cloudflare secrets live on this environment, which only main may deploy to (Settings → Environments).
+    environment:
+      name: website
+      url: https://rendermite.dev
+    concurrency:
+      group: website-deploy
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # No dependency cache here, so nothing a PR run wrote can end up in a deploy.
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: node --run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_SEND_METRICS: "false"

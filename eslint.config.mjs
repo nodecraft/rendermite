@@ -8,6 +8,8 @@ export default [
 			'node_modules/**',
 			'.work/**',
 			'.bench/**',
+			'website/node_modules/**',
+			'website/.wrangler/**',
 		],
 	},
 
@@ -54,6 +56,14 @@ export default [
 					replace: [String.raw`^src/(.+)\.ts$`, 'dist/$1.js'],
 				}],
 			}],
+		},
+	},
+
+	// The landing page script runs in the browser, so Node's builtin support matrix doesn't apply.
+	{
+		files: ['website/public/**/*.js'],
+		rules: {
+			'n/no-unsupported-features/node-builtins': 'off',
 		},
 	},
 
