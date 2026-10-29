@@ -68,10 +68,9 @@ export function generateStylesheet(items: ItemStyle[], options: StylesheetOption
 	const unknown = 'items/renderchest/unknown';
 	const empty = 'items/renderchest/empty';
 
-	// Base rules mirror upstream's DefaultItemStyleGenerator globals. The glint slides an oversized
-	// layer instead of scrolling background-position, so it runs on the compositor, not repainting.
+	// Keyframes + base rules mirror upstream's DefaultItemStyleGenerator globals.
 	blocks.push(
-		`@keyframes ${prefix}enchanted {\n    from { transform: rotate(-8deg) translate(0, 0); }\n    to { transform: rotate(-8deg) translate(512px, -2048px); }\n}`,
+		`@keyframes ${prefix}enchanted {\n    from { background-position: -256px 1024px; }\n    to { background-position: 256px -1024px; }\n}`,
 		`${itemSelector} {\n    position: relative;\n    image-rendering: pixelated;\n    background-image: ${url(`${unknown}.${baseExtension}`, urlPrefix)};\n    mask-image: ${url(`${unknown}.${baseExtension}`, urlPrefix)};\n    background-size: cover;\n    background-color: var(--${prefix}layer-1-tint);\n    background-blend-mode: multiply;\n    mask-size: cover;\n}`,
 		`${itemSelector}.${prefix}enchanted {\n    mask-image: ${url(`${unknown}.${baseExtension}`, urlPrefix)};\n}`,
 		`${itemSelector}:before {\n    content: '';\n    position: absolute;\n    width: 100%;\n    height: 100%;\n    top: 0;\n    left: 0;\n    image-rendering: pixelated;\n    background-image: ${url(`${empty}.${baseExtension}`, urlPrefix)};\n    background-size: cover;\n    background-color: var(--${prefix}layer-2-tint);\n    background-blend-mode: multiply;\n    mask-size: cover;\n}`,
@@ -92,7 +91,7 @@ export function generateStylesheet(items: ItemStyle[], options: StylesheetOption
 		baseProps.push(`background-image: ${image(baseExtension)};`);
 		const mask = item.mask === undefined ? null : item.mask;
 		if (item.alwaysEnchanted) {
-			enchantedSelectors.push(`${selector}:after`);
+			enchantedSelectors.push(selector);
 			baseProps.push(`mask-image: ${image(baseExtension)};`);
 		} else if (mask === null) {
 			baseProps.push('mask-image: none;');
@@ -139,10 +138,15 @@ export function generateStylesheet(items: ItemStyle[], options: StylesheetOption
 		}
 	}
 
-	// Glint rule last (upstream's global post styles), unioned with always-enchanted items.
+	// Glint rule last (upstream's global post styles), unioned with always-enchanted items. Upstream's
+	// blur(2px) contrast(200%) is baked into the texture (bakeGlint), so each frame is a plain image draw.
+	// Every glint update repaints every glinting item, so steps(480) caps that at 15/s instead of the display's refresh rate.
 	if (options.glint ?? true) {
-		const glintSelectors = [...enchantedSelectors, `.${prefix}enchanted:after`];
-		const glint = `${glintSelectors.join(',\n')} {\n    position: absolute;\n    width: calc(200% + 512px);\n    height: calc(200% + 2048px);\n    top: -50%;\n    left: calc(-50% - 512px);\n    image-rendering: pixelated;\n    mix-blend-mode: screen;\n    content: '';\n    opacity: 0.6;\n    background-image: ${url(`${prefix}enchantment.${baseExtension}`, urlPrefix)};\n    background-size: 512px 512px;\n    background-position: 256px 0;\n    filter: blur(2px) contrast(200%);\n    transform-origin: calc(50% + 256px) calc(50% - 1024px);\n    transform: rotate(-8deg);\n    animation-name: ${prefix}enchanted;\n    animation-duration: 32s;\n    animation-timing-function: linear;\n    animation-iteration-count: infinite;\n}`;
+		const glintItems = [...enchantedSelectors, `.${prefix}enchanted`];
+		const glintSelectors = glintItems.map(selector => `${selector}:after`);
+		// The mask already hides the glint outside the silhouette; this stops its 200% box adding scrollable overflow.
+		blocks.push(`${glintItems.join(',\n')} {\n    overflow: hidden;\n}`);
+		const glint = `${glintSelectors.join(',\n')} {\n    position: absolute;\n    width: 200%;\n    height: 200%;\n    top: -50%;\n    left: -50%;\n    mix-blend-mode: screen;\n    content: '';\n    opacity: 0.6;\n    background-image: ${url(`${prefix}enchantment.${baseExtension}`, urlPrefix)};\n    background-size: 512px 512px;\n    transform: rotate(-8deg);\n    animation-name: ${prefix}enchanted;\n    animation-duration: 32s;\n    animation-timing-function: steps(480);\n    animation-iteration-count: infinite;\n}`;
 		blocks.push(glint);
 		upgrade.push(`${glintSelectors.join(', ')} { background-image: ${url(`${prefix}enchantment.${format}`, urlPrefix)}; }`);
 	}

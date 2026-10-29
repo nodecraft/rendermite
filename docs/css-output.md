@@ -5,7 +5,7 @@ A render writes, per run (`<prefix>` defaults to `rc-`, `<ns>` is the first `--n
 | File | Contents |
 |---|---|
 | `items/<namespace>/<path>.<ext>` | one icon per item, plus layer sources under `items/_leather_armor/`, `items/_armor_trims/`, `items/_decorated_pot/`, `items/_crossbow/` and `rc_*` names |
-| `<prefix>enchantment.<ext>` | the enchant glint texture |
+| `<prefix>enchantment.<ext>` | the enchant glint texture, as a 512px tile with upstream's blur and contrast baked in |
 | `<prefix><ns>-<size>.css` | the stylesheet described below, minified with lightningcss |
 | `<prefix><ns>.json` | sorted JSON array of every item id that rendered |
 | `<prefix><ns>-failures.json` | `[{ "id", "error" }]` for every item that did not |
@@ -71,9 +71,7 @@ points at a missing file.
 
 In source order:
 
-1. `@keyframes rc-enchanted`, which slides the oversized glint layer. It animates `transform`
-   rather than `background-position` so browsers run it on the compositor instead of repainting
-   every frame.
+1. `@keyframes rc-enchanted`, which scrolls the glint background.
 2. The base `.rc-item` rule: unknown placeholder image and mask, `--rc-layer-1-tint` multiply
    plumbing. A matching `.rc-item:before` rule carries the empty placeholder and
    `--rc-layer-2-tint`.
@@ -81,7 +79,12 @@ In source order:
    `.rc-enchanted` companion restores the mask so the glint is clipped to the silhouette.
    Layered items set a base image, a mask, a default tint and a `:before` overlay.
 4. The glint rule on `:after`, shared by `.rc-enchanted` and by items that always glint
-   (experience bottle, enchanted golden apple, enchanted book, written book).
+   (experience bottle, enchanted golden apple, enchanted book, written book). Upstream runs
+   `filter: blur(2px) contrast(200%)` on it every frame; rendermite bakes that filter into the
+   texture instead, which draws the same pixels without a filter pass per item per frame. Upstream
+   scrolls it linearly, repainting every glinting item at the display's refresh rate; rendermite
+   uses `steps(480)`, which caps that at 15 repaints a second on any display. A preceding rule gives the same items `overflow: hidden`, so the glint's 200% box never adds
+   scrollable overflow to the page (the mask already hides it outside the silhouette).
 5. With `--fallback`, every rule above uses PNG and a final `@media (min-resolution: 1dpi)`
    block repeats each `url()` in the primary format (WebP by default, or AVIF). Without
    `--fallback`, the rules use the primary format directly.
