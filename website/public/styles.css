@@ -1,41 +1,61 @@
-/* Layout: an inventory screen. Crafthead-style bands split by Nodecraft blue rules; the hero is a live slot grid. */
+/* Layout: one vertical dig. Each layer is a solid room for text; real block textures show only in the seams where one layer meets the next. */
 :root {
 	color-scheme: dark;
 
-	/* Nodecraft cool, blue and green scales */
-	--bg: #05080d;
-	--surface: #0d1219;
-	--raised: #161c20;
-	--line: #242b2f;
-	--line-strong: #3b3f43;
-	--text: #ebeef2;
-	--muted: #9fa4a8;
-	--faint: #676c72;
-	--blue: #0ea7e7;
-	--blue-hi: #3ec1ed;
-	--blue-ink: #040d14;
-	--blue-deep: #0e304f;
-	--green: #35d020;
-	--green-hi: #7fd741;
-	--green-edge: #2ea326;
-	--green-ink: #0c1d08;
-	--code: #f4fbe6;
+	--nag: #0d1219;
+	--sky-top: #86b0f8;
+	--sky-low: #cfe3ff;
+	--ink: #0f1a2e;
+	--ink-soft: #2a3a58;
+
+	/* The game's own GUI greys */
+	--gui: #c6c6c6;
+	--gui-ink: #2b2b2b;
+	--gui-dark: #373737;
+	--slot: #757575;
+
+	/* Solid layer colours, darkened from each block so text passes AA on them */
+	--stone: #2f3032;
+	--tuff: #2c2d28;
+	--deepslate: #222226;
+	--deepdark: #0a1d22;
+	--bedrock: #151515;
+
+	--text: #eceee9;
+	--muted: #bcc1b8;
+	--faint: #a3a89f;
+	--line: #4a4c4f;
+	--code-bg: #0c0d0e;
+	--code: #e7e9e3;
+	--link: #7ee8e0;
+	--link-hi: #c3fff9;
+	--focus: #fff;
+
+	--diamond: #6ff0e6;
+	--gold: #f7d94c;
+	--emerald: #3fe07c;
+	--redstone: #ff7a6b;
+	--lapis: #8eacff;
+	--copper: #ee9168;
+	--error: #ff8a7a;
+
+	--btn-grass: #3f7a24;
+	--btn-stone: #555;
 
 	/* Minecraft's own tooltip and rarity colours */
 	--mc-tooltip: #100010f0;
 	--mc-tooltip-edge: #5000ff50;
 	--mc-tooltip-edge-end: #28007f50;
 	--mc-rare: #55ffff;
-	--mc-mod: #5555ff;
-	--mc-grey: #aaaaaa;
+	--mc-mod: #8080ff;
+	--mc-grey: #aaa;
 
-	--font-display: 'Rajdhani', 'Arial Narrow', sans-serif;
-	--font-body: 'Open Sans', 'Helvetica Neue', Arial, sans-serif;
-	--font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+	--font-display: 'Pixelify Sans', 'Courier New', monospace;
+	--font-body: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-	--slot: clamp(28px, calc((100vw - 80px) / 9.6), 50px);
-	--radius: 8px;
-	--max: 1160px;
+	--max: 1120px;
+	--slot-size: clamp(30px, calc((100vw - 32px - 40px - 24px) / 9), 50px);
 }
 
 *,
@@ -50,7 +70,7 @@ html {
 
 body {
 	margin: 0;
-	background: var(--bg);
+	background: var(--bedrock);
 	color: var(--text);
 	font-family: var(--font-body);
 	font-size: 1rem;
@@ -62,10 +82,19 @@ h1,
 h2,
 h3 {
 	margin: 0;
-	font-family: var(--font-display);
-	font-weight: 700;
 	line-height: 1.1;
 	text-wrap: balance;
+}
+
+/* The pixel face is only legible large, so it stays on h1 and h2. */
+h1,
+h2 {
+	font-family: var(--font-display);
+	font-weight: 700;
+}
+
+h3 {
+	font-weight: 700;
 }
 
 p {
@@ -73,16 +102,18 @@ p {
 }
 
 a {
-	color: var(--blue);
+	color: var(--link);
+	text-decoration-thickness: 1px;
 	text-underline-offset: 3px;
 }
 
 a:hover {
-	color: var(--blue-hi);
+	color: var(--link-hi);
+	text-decoration-thickness: 2px;
 }
 
 :focus-visible {
-	outline: 2px solid var(--blue-hi);
+	outline: 3px solid var(--focus);
 	outline-offset: 2px;
 }
 
@@ -90,22 +121,20 @@ code,
 pre,
 var {
 	font-family: var(--font-mono);
-	font-size: 0.875em;
+	font-size: 0.9em;
 }
 
-p code,
-td code,
-figcaption code {
-	color: var(--code);
-	background: var(--raised);
-	padding: 0.1em 0.35em;
-	border-radius: 4px;
-	overflow-wrap: anywhere;
+pre code {
+	font-size: inherit;
 }
 
 var {
 	font-style: italic;
-	color: var(--blue-hi);
+	color: var(--diamond);
+}
+
+img {
+	max-width: 100%;
 }
 
 .wrap {
@@ -115,90 +144,58 @@ var {
 	padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 
-/* Buttons follow the Nodecraft panel: 2px border, rounded-lg, tinted fill. */
+/* Buttons follow the game's own: square and bevelled, with body type so the label stays legible. */
 .btn {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.5rem;
-	padding: 0.7rem 1.1rem;
-	border: 2px solid transparent;
-	border-radius: var(--radius);
-	font-family: var(--font-display);
-	font-size: 1.1rem;
+	padding: 0.75rem 1.2rem;
+	color: #fff;
+	font-family: var(--font-body);
+	font-size: 1.05rem;
 	font-weight: 700;
-	letter-spacing: 0.02em;
 	line-height: 1;
 	text-decoration: none;
 	white-space: nowrap;
-	transition: color 0.1s ease, border-color 0.1s ease, background-color 0.1s ease;
+	box-shadow: 0 0 0 3px #111, inset 3px 3px 0 rgb(255 255 255 / 0.3), inset -3px -3px 0 rgb(0 0 0 / 0.35);
 }
 
 .btn:hover {
-	text-decoration: none;
+	color: #fff;
+	filter: brightness(1.12);
 }
 
-.btn-green {
-	color: var(--green);
-	border-color: var(--green-edge);
-	background: var(--green-ink);
+.btn-grass {
+	background: var(--btn-grass);
 }
 
-.btn-green:hover {
-	color: var(--green-hi);
-	border-color: var(--green);
-}
-
-.btn-blue {
-	color: var(--text);
-	border-color: var(--blue);
-	background: linear-gradient(to top right, #0e86c9, var(--blue));
-}
-
-.btn-blue:hover {
-	color: var(--text);
-	border-color: var(--blue-hi);
-	background: linear-gradient(to bottom right, #0e86c9, var(--blue));
-}
-
-.btn-ghost {
-	color: var(--text);
-	border-color: var(--line-strong);
-	background: var(--raised);
-}
-
-.btn-ghost:hover {
-	color: var(--text);
-	border-color: var(--muted);
+.btn-stone {
+	background: var(--btn-stone);
 }
 
 .copy {
 	flex: none;
-	padding: 0.35rem 0.7rem;
-	border: 1px solid var(--line-strong);
-	border-radius: 6px;
-	background: var(--surface);
-	color: var(--muted);
-	font-family: var(--font-display);
-	font-size: 0.95rem;
-	font-weight: 600;
-	letter-spacing: 0.04em;
+	padding: 0.45rem 0.75rem;
+	border: 0;
+	background: #3c3c3c;
+	color: #f0f0f0;
+	font-family: var(--font-body);
+	font-size: 0.9375rem;
+	font-weight: 700;
 	cursor: pointer;
+	box-shadow: 0 0 0 2px #000, inset 2px 2px 0 rgb(255 255 255 / 0.25), inset -2px -2px 0 rgb(0 0 0 / 0.4);
 }
 
 .copy:hover {
-	color: var(--text);
-	border-color: var(--muted);
+	background: #4a4a4a;
 }
 
 .copy[data-state="done"] {
-	color: var(--green);
-	border-color: var(--green-edge);
+	background: #2f6b1f;
 }
 
 /* Nodecraft bar */
 .nag {
-	background: var(--surface);
-	border-bottom: 2px solid var(--blue-ink);
+	background: var(--nag);
 }
 
 .nag-inner {
@@ -206,7 +203,7 @@ var {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.75rem 1.5rem;
-	padding-block: 0.75rem;
+	padding-block: 0.7rem;
 }
 
 .nag-brand {
@@ -214,29 +211,101 @@ var {
 }
 
 .nag-brand img {
-	height: 36px;
+	height: 34px;
 	width: auto;
 }
 
 .nag-copy {
 	flex: 1 1 20rem;
 	min-width: 0;
-	color: var(--muted);
-	font-size: 0.9rem;
+	color: #b4bcc6;
 }
 
-/* Hero */
-.hero {
-	background: linear-gradient(180deg, var(--blue-ink) 80%, var(--blue-deep));
-	border-bottom: 2px solid var(--blue);
+.nag .btn {
+	padding: 0.6rem 0.9rem;
+	font-size: 1rem;
+}
+
+/* Surface */
+.surface {
+	--focus: var(--ink);
+	position: relative;
+	overflow: clip;
+	background: linear-gradient(180deg, var(--sky-top), var(--sky-low) 85%);
+	color: var(--ink);
+}
+
+/* The sun and clouds keep to a band above the content so nothing peeks out from behind the inventory or the wordmark. */
+.sky {
+	position: relative;
+	height: 6.5rem;
+}
+
+.sun {
+	position: absolute;
+	top: 24px;
+	right: max(6vw, 32px);
+	width: 56px;
+	height: 56px;
+	background: #fff7c2;
+	box-shadow: 0 0 0 8px rgb(255 250 210 / 0.4);
+}
+
+.cloud {
+	position: absolute;
+	height: 22px;
+	background: rgb(255 255 255 / 0.9);
+	animation: drift 140s linear infinite;
+}
+
+.cloud::before {
+	content: "";
+	position: absolute;
+	left: 22%;
+	bottom: 100%;
+	width: 46%;
+	height: 18px;
+	background: inherit;
+}
+
+.cloud-a {
+	top: 44px;
+	left: -10%;
+	width: 200px;
+}
+
+.cloud-b {
+	top: 72px;
+	left: 38%;
+	width: 140px;
+	animation-duration: 190s;
+	opacity: 0.8;
+}
+
+.cloud-c {
+	top: 30px;
+	left: 70%;
+	width: 110px;
+	animation-duration: 230s;
+	opacity: 0.7;
+}
+
+@keyframes drift {
+	from {
+		transform: translateX(0);
+	}
+
+	to {
+		transform: translateX(110vw);
+	}
 }
 
 .hero-inner {
+	position: relative;
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) auto;
-	align-items: center;
+	align-items: end;
 	gap: 3rem;
-	padding-block: 4.5rem 5rem;
 }
 
 .hero-copy {
@@ -245,71 +314,89 @@ var {
 	align-items: flex-start;
 	gap: 1.25rem;
 	min-width: 0;
+	padding-bottom: 4rem;
+	container-type: inline-size;
 }
 
 .hero-404 {
-	padding-block: 6rem;
+	padding-bottom: 5rem;
 }
 
 .eyebrow {
-	color: var(--blue-hi);
-	font-family: var(--font-display);
-	font-size: 1rem;
-	font-weight: 600;
-	letter-spacing: 0.12em;
+	color: var(--ink-soft);
+	font-family: var(--font-mono);
+	font-size: 0.9375rem;
+	font-weight: 500;
+	letter-spacing: 0.06em;
 	text-transform: uppercase;
 }
 
+/* Sized to the copy column, not the viewport, so the wordmark never runs under the inventory. */
 .hero h1 {
-	font-size: clamp(3.25rem, 9vw, 5.5rem);
+	font-size: clamp(2.5rem, 15.5cqi, 6.75rem);
 	letter-spacing: -0.01em;
-	line-height: 0.95;
+	line-height: 0.9;
+	text-shadow: 0.06em 0.06em 0 rgb(255 255 255 / 0.5);
 }
 
 .lede {
-	max-width: 34rem;
-	color: var(--muted);
-	font-size: 1.15rem;
+	max-width: 32rem;
+	font-size: 1.2rem;
+	line-height: 1.5;
 }
 
+.lede code {
+	padding: 0.05em 0.3em;
+	background: rgb(255 255 255 / 0.55);
+}
+
+/* The install line is styled as the in-game chat box. */
 .install {
+	--focus: #fff;
 	display: flex;
 	align-items: center;
 	gap: 0.75rem;
 	max-width: 100%;
-	padding: 0.6rem 0.6rem 0.6rem 1rem;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	background: var(--surface);
+	padding: 0.5rem 0.5rem 0.5rem 0.9rem;
+	background: rgb(0 0 0 / 0.72);
 }
 
 .install code {
 	min-width: 0;
 	overflow-x: auto;
 	white-space: nowrap;
-	color: var(--code);
-	font-size: 0.95rem;
+	color: #fff;
+	font-size: 1rem;
 }
 
 .install code::before {
-	content: "$ ";
-	color: var(--faint);
+	content: "> ";
+	color: #c4c4c4;
 }
 
 .actions {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.75rem;
+	gap: 1rem;
+	padding: 3px;
 }
 
-/* Inventory panel */
+/* Inventory: the game's own grey window in a thin oak frame, standing on the grass. */
 .inventory {
+	position: relative;
+	z-index: 1;
 	margin: 0;
-	padding: 1rem;
-	border: 2px solid var(--line);
-	border-radius: var(--radius);
-	background: var(--surface);
-	box-shadow: 0 24px 60px -20px rgb(14 167 231 / 0.25);
+	padding: 8px;
+	background: url("/images/blocks/oak_planks.png") 0 0 / 32px 32px;
+	image-rendering: pixelated;
+	box-shadow: 0 0 0 3px #1c1209;
+}
+
+.inventory-panel {
+	padding: 14px 14px 12px;
+	background: var(--gui);
+	color: var(--gui-ink);
+	box-shadow: inset 3px 3px 0 #fff, inset -3px -3px 0 #555;
 }
 
 .inventory-head,
@@ -318,42 +405,36 @@ var {
 	align-items: baseline;
 	justify-content: space-between;
 	gap: 1rem;
-	font-family: var(--font-display);
 	font-weight: 700;
 }
 
 .inventory-head {
-	margin-bottom: 0.6rem;
-}
-
-.inventory-title {
-	font-size: 1.2rem;
+	margin-bottom: 0.55rem;
+	font-size: 1.1rem;
 }
 
 .chip {
-	padding: 0.1rem 0.5rem;
-	border: 1px solid var(--blue);
-	border-radius: 999px;
-	color: var(--blue-hi);
+	padding: 0.05rem 0.45rem;
+	background: var(--gui-dark);
+	color: #fff;
 	font-family: var(--font-mono);
-	font-size: 0.75rem;
+	font-size: 0.875rem;
 	font-weight: 500;
 }
 
 .hotbar-head {
-	margin: 1rem 0 0.6rem;
+	margin: 0.9rem 0 0.55rem;
 	font-size: 1.05rem;
 }
 
 .hotbar-meta {
-	color: var(--muted);
-	font-size: 0.9rem;
+	font-size: 0.9375rem;
 	font-weight: 600;
 }
 
 .slots {
 	display: grid;
-	grid-template-columns: repeat(9, var(--slot));
+	grid-template-columns: repeat(9, var(--slot-size));
 	gap: 3px;
 	margin: 0;
 	padding: 0;
@@ -365,26 +446,27 @@ var {
 	position: relative;
 	display: grid;
 	place-items: center;
-	width: var(--slot);
-	height: var(--slot);
-	background: var(--raised);
-	box-shadow: inset 2px 2px 0 var(--bg), inset -2px -2px 0 var(--line-strong);
-	cursor: default;
-	outline-offset: 0;
+	width: var(--slot-size);
+	height: var(--slot-size);
+	background: var(--slot);
+	box-shadow: inset 2px 2px 0 var(--gui-dark), inset -2px -2px 0 #fff;
+}
+
+.slot:focus-visible {
+	outline: 3px solid #fff;
+	outline-offset: -3px;
 }
 
 .slot::after {
 	content: "";
 	position: absolute;
 	inset: 2px;
-	background: rgb(255 255 255 / 0);
-	transition: background-color 0.08s;
 	pointer-events: none;
 }
 
 .slot:hover::after,
 .slot:focus-visible::after {
-	background: rgb(255 255 255 / 0.14);
+	background: rgb(255 255 255 / 0.3);
 }
 
 .slot .rc-item,
@@ -392,15 +474,15 @@ var {
 	display: block;
 	width: 78%;
 	height: 78%;
+	image-rendering: pixelated;
 }
 
 .count {
 	position: absolute;
-	right: 3px;
+	right: 2px;
 	bottom: 0;
 	color: #fff;
-	font-family: var(--font-display);
-	font-size: calc(var(--slot) * 0.36);
+	font-size: max(14px, calc(var(--slot-size) * 0.38));
 	font-weight: 700;
 	line-height: 1;
 	text-shadow: 2px 2px 0 #3f3f3f;
@@ -408,28 +490,38 @@ var {
 }
 
 .inventory figcaption {
-	margin-top: 0.9rem;
-	max-width: calc(var(--slot) * 9 + 24px);
-	color: var(--muted);
-	font-size: 0.8rem;
+	margin-top: 0.8rem;
+	max-width: calc(var(--slot-size) * 9 + 24px);
+	font-size: 0.875rem;
+	font-weight: 600;
 }
 
-/* Tooltip in the game's own style. */
+.inventory figcaption code {
+	padding: 0.05em 0.3em;
+	background: #aeaeae;
+}
+
+.ground {
+	height: 64px;
+	background: url("/images/blocks/grass_block_side.png") 0 0 / 64px 64px repeat-x;
+	image-rendering: pixelated;
+}
+
+/* Tooltip in the game's own colours, set in body type so it reads at a glance. */
 .tooltip {
 	position: fixed;
 	z-index: 20;
 	max-width: min(22rem, calc(100vw - 32px));
-	padding: 0.35rem 0.55rem 0.4rem;
+	padding: 0.35rem 0.6rem 0.45rem;
 	border: 2px solid transparent;
-	border-radius: 3px;
+	border-radius: 2px;
 	background:
 		linear-gradient(var(--mc-tooltip), var(--mc-tooltip)) padding-box,
 		linear-gradient(var(--mc-tooltip-edge), var(--mc-tooltip-edge-end)) border-box;
 	box-shadow: 0 0 0 1px var(--mc-tooltip);
-	font-family: var(--font-display);
-	font-size: 1.05rem;
+	font-size: 1rem;
 	font-weight: 600;
-	line-height: 1.3;
+	line-height: 1.35;
 	pointer-events: none;
 }
 
@@ -443,9 +535,7 @@ var {
 
 .tooltip-note {
 	color: var(--mc-grey);
-	font-family: var(--font-body);
-	font-size: 0.8rem;
-	font-weight: 400;
+	font-size: 0.9375rem;
 }
 
 .tooltip-mod {
@@ -454,64 +544,245 @@ var {
 }
 
 .tooltip-id {
-	color: var(--faint);
+	color: var(--mc-grey);
 	font-family: var(--font-mono);
-	font-size: 0.75rem;
+	font-size: 0.875rem;
 	font-weight: 400;
 }
 
-/* Sections */
-.band {
-	padding-block: 5rem;
+/* Seams: where two layers meet, the only place block textures show. */
+.seam {
+	position: relative;
+	height: 64px;
+	background: var(--above-tex) 0 0 / 64px 64px;
+	image-rendering: pixelated;
 }
 
-.band-alt {
-	background: var(--surface);
-	border-block: 1px solid var(--line);
+.seam::before,
+.seam::after,
+.seam i {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	mask: url("/images/seam-edge.svg") 0 0 / 128px 16px repeat-x;
 }
 
-.band h2 {
-	font-size: clamp(2rem, 5vw, 2.75rem);
+/* The solid room above hangs a ragged edge into the texture. */
+.seam::before {
+	top: 0;
+	height: 16px;
+	background: var(--above, transparent);
+	transform: scaleY(-1);
+}
+
+.seam i {
+	top: 24px;
+	bottom: 0;
+	background: var(--below-tex) 0 -24px / 64px 64px;
+	mask: url("/images/seam-edge.svg") 0 0 / 128px 16px repeat-x, linear-gradient(#000 0 0) 0 16px / 100% 100% no-repeat;
+}
+
+.seam::after {
+	bottom: 0;
+	height: 16px;
+	background: var(--below);
+	mask-position: 64px 0;
+}
+
+.from-dirt {
+	--above-tex: url("/images/blocks/dirt.png");
+}
+
+.from-stone {
+	--above-tex: url("/images/blocks/stone.png");
+	--above: var(--stone);
+}
+
+.from-tuff {
+	--above-tex: url("/images/blocks/tuff.png");
+	--above: var(--tuff);
+}
+
+.from-deepslate {
+	--above-tex: url("/images/blocks/deepslate.png");
+	--above: var(--deepslate);
+}
+
+.from-sculk {
+	--above-tex: url("/images/blocks/sculk.png");
+	--above: var(--deepdark);
+}
+
+.to-stone {
+	--below-tex: url("/images/blocks/stone.png");
+	--below: var(--stone);
+}
+
+.to-tuff {
+	--below-tex: url("/images/blocks/tuff.png");
+	--below: var(--tuff);
+}
+
+.to-deepslate {
+	--below-tex: url("/images/blocks/deepslate.png");
+	--below: var(--deepslate);
+}
+
+.to-sculk {
+	--below-tex: url("/images/blocks/sculk.png");
+	--below: var(--deepdark);
+}
+
+.to-bedrock {
+	--below-tex: url("/images/blocks/bedrock.png");
+	--below: var(--bedrock);
+}
+
+/* Layers */
+.layer {
+	padding-block: 4.5rem 5rem;
+}
+
+.layer-stone {
+	background: var(--stone);
+}
+
+.layer-tuff {
+	background: var(--tuff);
+}
+
+.layer-deepslate {
+	background: var(--deepslate);
+}
+
+.layer-deepdark {
+	background: var(--deepdark);
+}
+
+.layer-bedrock {
+	background: var(--bedrock);
+}
+
+.layer-head {
+	display: grid;
+	gap: 0.9rem;
+	margin-bottom: 1.25rem;
+}
+
+.layer-name {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.6rem;
+	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.layer-name .rc-item {
+	display: block;
+	width: 32px;
+	height: 32px;
+}
+
+.layer h2 {
+	color: #fff;
+	font-size: clamp(2.2rem, 6vw, 3.4rem);
 }
 
 .section-lede {
-	max-width: 42rem;
-	margin-top: 0.75rem;
+	max-width: 44rem;
 	color: var(--muted);
-	font-size: 1.1rem;
+	font-size: 1.125rem;
 }
 
+.section-lede code,
+.footnote code,
+.notice code,
+td code {
+	color: var(--text);
+}
+
+.section-lede code,
+.footnote code {
+	padding: 0.1em 0.35em;
+	background: rgb(0 0 0 / 0.4);
+	overflow-wrap: anywhere;
+}
+
+.footnote {
+	max-width: 48rem;
+	margin-top: 2rem;
+	color: var(--faint);
+	font-size: 0.875rem;
+}
+
+/* Features, each marked by a real ore render */
 .features {
 	display: grid;
 	grid-template-columns: repeat(3, minmax(0, 1fr));
-	gap: 2.5rem 2rem;
-	margin: 3rem 0 0;
+	gap: 2.25rem 2rem;
+	margin: 2.5rem 0 0;
 	padding: 0;
 	list-style: none;
 }
 
 .features li {
-	padding-top: 1rem;
-	border-top: 2px solid var(--line);
+	display: grid;
+	grid-template-columns: 56px minmax(0, 1fr);
+	align-content: start;
+	align-items: start;
+	gap: 0.35rem 1rem;
+}
+
+.ore {
+	display: block;
+	grid-row: span 2;
+	width: 56px;
+	height: 56px;
 }
 
 .features h3 {
-	margin-bottom: 0.5rem;
-	color: var(--blue-hi);
-	font-size: 1.4rem;
+	font-size: 1.3rem;
 }
 
 .features p {
 	color: var(--muted);
 }
 
+[data-ore="diamond"] h3 {
+	color: var(--diamond);
+}
+
+[data-ore="gold"] h3 {
+	color: var(--gold);
+}
+
+[data-ore="emerald"] h3 {
+	color: var(--emerald);
+}
+
+[data-ore="redstone"] h3 {
+	color: var(--redstone);
+}
+
+[data-ore="lapis"] h3 {
+	color: var(--lapis);
+}
+
+[data-ore="copper"] h3 {
+	color: var(--copper);
+}
+
 /* Performance */
 .perf {
 	display: grid;
-	grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+	grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
 	align-items: center;
 	gap: 3rem;
-	margin-top: 3rem;
+	margin-top: 2.5rem;
 }
 
 .perf-chart {
@@ -520,62 +791,109 @@ var {
 	min-width: 0;
 }
 
-.perf-axis {
+.perf-axis,
+.stats dt {
 	color: var(--faint);
-	font-family: var(--font-display);
-	font-size: 0.95rem;
-	font-weight: 600;
-	letter-spacing: 0.08em;
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
 	text-transform: uppercase;
+	letter-spacing: 0.08em;
 }
 
-.perf-row {
+.perf-row,
+.perf-scale {
 	display: grid;
-	grid-template-columns: 9.5rem minmax(0, 1fr) 4rem;
+	grid-template-columns: 10rem minmax(0, 1fr) 4.4rem;
 	align-items: center;
 	gap: 1rem;
 }
 
 .perf-label {
-	font-family: var(--font-mono);
-	font-size: 0.85rem;
 	color: var(--muted);
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
 }
 
 .perf-track {
-	height: 28px;
-	border-radius: 4px;
-	background: var(--bg);
-	overflow: hidden;
+	height: 30px;
+	background: #121310;
+	box-shadow: inset 2px 2px 0 #000;
 }
 
 .perf-bar {
 	height: 100%;
-	border-radius: 4px;
 }
 
 /* Widths are to scale: 186s fills the track, 12.1 / 186 = 6.5%. */
 .perf-bar-old {
 	width: 100%;
-	background: var(--line-strong);
+	background: repeating-linear-gradient(90deg, #8a8a8a 0 14px, #767676 14px 16px);
 }
 
 .perf-bar-new {
 	width: 6.5%;
-	background: linear-gradient(to right, #0e86c9, var(--blue-hi));
+	background: var(--diamond);
 }
 
 .perf-value {
-	font-family: var(--font-display);
-	font-size: 1.35rem;
+	color: var(--muted);
+	font-size: 1.4rem;
 	font-weight: 700;
 	font-variant-numeric: tabular-nums;
 	text-align: right;
-	color: var(--muted);
 }
 
 .perf-value-new {
-	color: var(--blue-hi);
+	color: var(--diamond);
+}
+
+.ticks {
+	position: relative;
+	grid-column: 2;
+	height: 1.4rem;
+	border-top: 2px solid var(--line);
+	color: var(--faint);
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
+	font-variant-numeric: tabular-nums;
+}
+
+.ticks span {
+	position: absolute;
+	top: 2px;
+	transform: translateX(-50%);
+}
+
+.ticks span::before {
+	content: "";
+	position: absolute;
+	top: -6px;
+	left: 50%;
+	width: 2px;
+	height: 6px;
+	background: var(--line);
+}
+
+.ticks span:first-child {
+	left: 0;
+	transform: none;
+}
+
+.ticks span:first-child::before {
+	left: 0;
+}
+
+/* Tick positions are seconds / 186 so they share the bars' scale. */
+.ticks span:nth-child(2) {
+	left: 32.26%;
+}
+
+.ticks span:nth-child(3) {
+	left: 64.52%;
+}
+
+.ticks span:nth-child(4) {
+	left: 96.77%;
 }
 
 .stats {
@@ -584,28 +902,14 @@ var {
 	margin: 0;
 }
 
-.stats div {
-	padding-left: 1rem;
-	border-left: 2px solid var(--line-strong);
-}
-
-.stats dt {
-	color: var(--faint);
-	font-family: var(--font-display);
-	font-size: 0.95rem;
-	font-weight: 600;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-}
-
 .stats dd {
 	margin: 0;
 	font-variant-numeric: tabular-nums;
 }
 
 .stat-new {
-	font-family: var(--font-display);
-	font-size: 2.5rem;
+	color: var(--text);
+	font-size: 2.6rem;
 	font-weight: 700;
 	line-height: 1.1;
 }
@@ -614,31 +918,34 @@ var {
 	color: var(--muted);
 }
 
-.footnote {
+/* Hosted */
+.notice {
+	display: grid;
+	gap: 0.6rem;
 	max-width: 48rem;
-	margin-top: 2.5rem;
-	color: var(--faint);
-	font-size: 0.85rem;
+	margin-top: 1.75rem;
+	padding: 1.1rem 1.25rem;
+	border: 2px solid var(--line);
+	color: var(--muted);
 }
 
-/* Code and lookup */
+.notice h3 {
+	color: var(--gold);
+	font-size: 1.2rem;
+}
+
 .split {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 1.5rem;
-	margin-top: 2.5rem;
+	margin-top: 2.25rem;
 }
 
 .code-card,
 .lookup {
 	min-width: 0;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
-	background: var(--surface);
-}
-
-.band-alt .code-card {
-	background: var(--bg);
+	background: var(--code-bg);
+	box-shadow: 0 0 0 2px var(--line);
 }
 
 .code-head {
@@ -647,10 +954,10 @@ var {
 	justify-content: space-between;
 	gap: 1rem;
 	padding: 0.5rem 0.6rem 0.5rem 1rem;
-	border-bottom: 1px solid var(--line);
+	border-bottom: 2px solid #26282b;
 	color: var(--faint);
 	font-family: var(--font-mono);
-	font-size: 0.8rem;
+	font-size: 0.875rem;
 }
 
 .code-card pre {
@@ -658,7 +965,7 @@ var {
 	padding: 1rem;
 	overflow-x: auto;
 	color: var(--code);
-	font-size: 0.85rem;
+	font-size: 0.9375rem;
 	line-height: 1.7;
 }
 
@@ -666,8 +973,8 @@ var {
 	display: flex;
 	gap: 1rem;
 	padding: 1rem;
-	border-top: 1px solid var(--line);
-	background: var(--raised);
+	border-top: 2px solid #26282b;
+	background: #1a1b1e;
 }
 
 .code-result .rc-item {
@@ -694,29 +1001,28 @@ var {
 
 .field label {
 	color: var(--muted);
-	font-family: var(--font-display);
-	font-size: 0.95rem;
-	font-weight: 600;
-	letter-spacing: 0.06em;
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
 	text-transform: uppercase;
+	letter-spacing: 0.08em;
 }
 
+/* Inputs copy the game's text field: black fill, light grey frame. */
 .field input,
 .field select {
 	width: 100%;
 	padding: 0.6rem 0.75rem;
-	border: 2px solid var(--line-strong);
-	border-radius: var(--radius);
-	background: var(--bg);
-	color: var(--text);
+	border: 2px solid #a0a0a0;
+	border-radius: 0;
+	background: #000;
+	color: #fff;
 	font-family: var(--font-mono);
-	font-size: 0.9rem;
+	font-size: 1rem;
 }
 
-.field input:focus,
-.field select:focus {
-	border-color: var(--blue);
-	outline: none;
+.field input:focus-visible,
+.field select:focus-visible {
+	border-color: #fff;
 }
 
 .lookup-result {
@@ -725,16 +1031,22 @@ var {
 	align-items: start;
 	gap: 1rem;
 	padding-top: 1rem;
-	border-top: 1px solid var(--line);
+	border-top: 2px solid #26282b;
 }
 
 .lookup-preview {
 	display: grid;
 	place-items: center;
-	width: 80px;
-	height: 80px;
-	background: var(--raised);
-	box-shadow: inset 2px 2px 0 var(--bg), inset -2px -2px 0 var(--line-strong);
+	width: 96px;
+	height: 96px;
+	background: #8b8b8b;
+	box-shadow: inset 3px 3px 0 var(--gui-dark), inset -3px -3px 0 #fff;
+}
+
+.lookup-preview img {
+	width: 64px;
+	height: 64px;
+	image-rendering: pixelated;
 }
 
 .lookup-preview img[data-state="missing"] {
@@ -744,87 +1056,80 @@ var {
 .lookup-url code {
 	display: block;
 	color: var(--code);
-	font-size: 0.8rem;
+	font-size: 0.875rem;
 	overflow-wrap: anywhere;
 }
 
 .lookup-status {
 	margin-top: 0.5rem;
 	color: var(--faint);
-	font-size: 0.8rem;
+	font-size: 0.875rem;
 }
 
 .lookup-status[data-state="error"] {
-	color: #ff8a80;
+	color: var(--error);
 }
 
 .table-title {
-	margin-top: 3.5rem;
-	font-size: 1.5rem;
+	margin-top: 3rem;
+	font-size: 1.4rem;
 }
 
 .table-scroll {
 	margin-top: 1rem;
 	overflow-x: auto;
-	border: 1px solid var(--line);
-	border-radius: var(--radius);
+	box-shadow: 0 0 0 2px var(--line);
 }
 
 .urls {
 	width: 100%;
 	min-width: 44rem;
 	border-collapse: collapse;
-	font-size: 0.9rem;
 }
 
 .urls th {
 	padding: 0.7rem 1rem;
-	background: var(--surface);
-	color: var(--muted);
-	font-family: var(--font-display);
-	font-size: 0.95rem;
-	letter-spacing: 0.06em;
+	background: #141416;
+	color: var(--faint);
+	font-family: var(--font-mono);
+	font-size: 0.875rem;
+	font-weight: 500;
+	letter-spacing: 0.08em;
 	text-align: left;
 	text-transform: uppercase;
 }
 
 .urls td {
 	padding: 0.7rem 1rem;
-	border-top: 1px solid var(--line);
+	border-top: 2px solid #34343a;
 	color: var(--muted);
 	vertical-align: top;
 }
 
-.urls td:first-child {
+.urls td:first-child,
+.urls td:last-child {
 	white-space: nowrap;
 }
 
 .urls td:last-child {
-	white-space: nowrap;
 	color: var(--text);
-}
-
-.urls td code {
-	background: none;
-	padding: 0;
+	font-variant-numeric: tabular-nums;
 }
 
 .docs {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 0.5rem 2rem;
-	margin: 2.5rem 0 0;
+	gap: 0.75rem 2.25rem;
+	margin: 2.25rem 0 0;
 	padding: 0;
 	list-style: none;
-	font-family: var(--font-display);
-	font-size: 1.15rem;
+	font-size: 1.125rem;
 	font-weight: 700;
 }
 
-/* Footer */
-.footer {
-	background: linear-gradient(0deg, var(--blue-ink) 80%, var(--blue-deep));
-	border-top: 2px solid var(--blue);
+/* Bedrock footer */
+.layer-bedrock {
+	padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .footer-inner {
@@ -832,7 +1137,6 @@ var {
 	grid-template-columns: auto 1fr;
 	align-items: center;
 	gap: 1.5rem 3rem;
-	padding-block: 3.5rem;
 }
 
 .footer-brand {
@@ -852,14 +1156,13 @@ var {
 }
 
 .footer-company {
-	font-family: var(--font-display);
 	font-size: 1.2rem;
 	font-weight: 700;
 }
 
 .footer-sub {
 	color: var(--faint);
-	font-size: 0.85rem;
+	font-size: 0.875rem;
 }
 
 .footer-links {
@@ -867,8 +1170,7 @@ var {
 	flex-wrap: wrap;
 	justify-content: flex-end;
 	gap: 0.5rem 1.75rem;
-	font-family: var(--font-display);
-	font-size: 1.1rem;
+	font-size: 1.05rem;
 	font-weight: 700;
 }
 
@@ -877,33 +1179,19 @@ var {
 	gap: 0.4rem;
 	grid-column: 1 / -1;
 	padding-top: 1.5rem;
-	border-top: 1px solid var(--line);
+	border-top: 2px solid #2c2c2c;
 	color: var(--faint);
-	font-size: 0.8rem;
-}
-
-.notice {
-	display: grid;
-	gap: 0.6rem;
-	max-width: 48rem;
-	margin-top: 2rem;
-	padding: 1rem 1.25rem;
-	border: 1px solid var(--line-strong);
-	border-radius: var(--radius);
-	background: var(--surface);
-	color: var(--muted);
-	font-size: 0.92rem;
-}
-
-.notice h3 {
-	color: var(--text);
-	font-size: 1.15rem;
+	font-size: 0.875rem;
 }
 
 @media (max-width: 1040px) {
 	.hero-inner {
 		grid-template-columns: minmax(0, 1fr);
-		padding-block: 3.5rem 4rem;
+		gap: 0;
+	}
+
+	.hero-copy {
+		padding-bottom: 2.5rem;
 	}
 
 	.inventory {
@@ -922,24 +1210,52 @@ var {
 }
 
 @media (max-width: 640px) {
-	.band {
-		padding-block: 3.5rem;
+	.layer {
+		padding-block: 3.5rem 4rem;
 	}
 
-	.inventory {
-		padding: 0.6rem;
+	.sky {
+		height: 5rem;
+	}
+
+	.sun {
+		top: 16px;
+		width: 40px;
+		height: 40px;
+	}
+
+	.cloud-b {
+		top: 54px;
+	}
+
+	.inventory-panel {
+		padding: 10px;
 	}
 
 	.features {
 		grid-template-columns: minmax(0, 1fr);
 	}
 
-	.perf-row {
+	.perf-row,
+	.perf-scale {
 		grid-template-columns: minmax(0, 1fr) auto;
 	}
 
 	.perf-label {
 		grid-column: 1 / -1;
+	}
+
+	.ticks {
+		grid-column: 1;
+	}
+
+	.lookup-result {
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+
+	.lookup-result .copy {
+		grid-column: 2;
+		justify-self: start;
 	}
 
 	.footer-inner {
@@ -954,6 +1270,10 @@ var {
 @media (prefers-reduced-motion: reduce) {
 	html {
 		scroll-behavior: auto;
+	}
+
+	.cloud {
+		animation: none;
 	}
 
 	.rc-item::after {
