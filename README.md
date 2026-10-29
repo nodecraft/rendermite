@@ -1,5 +1,9 @@
 # rendermite
 
+[![npm version](https://img.shields.io/npm/v/@nodecraft/rendermite)](https://www.npmjs.com/package/@nodecraft/rendermite)
+[![CI](https://github.com/nodecraft/rendermite/actions/workflows/workflow.yml/badge.svg?branch=main)](https://github.com/nodecraft/rendermite/actions/workflows/workflow.yml)
+[![license](https://img.shields.io/npm/l/@nodecraft/rendermite)](./LICENSE)
+
 Minecraft item icon renderer for Node.js. Point it at a game version or a pile of mod jars and it produces inventory-identical 3D item icons as optimized PNG and lossless WebP (plus optional GIF and AVIF), a ready-to-use CSS spritesheet, and a JSON item library.
 
 > [!NOTE]
