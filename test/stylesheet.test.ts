@@ -59,10 +59,17 @@ describe('generateStylesheet', () => {
 		expect(sheet).toContain('animation-duration: 32s;');
 	});
 
-	it('animates the glint with transform so it never repaints per frame', () => {
-		const keyframes = /@keyframes rc-enchanted \{[^}]*\}[^}]*\}/.exec(sheet)?.[0];
-		expect(keyframes).toContain('transform:');
-		expect(keyframes).not.toContain('background-position');
+	it('leaves the glint filter to the baked texture instead of running it every frame', () => {
+		expect(sheet).not.toContain('filter:');
+	});
+
+	it('caps glint repaints at 15 a second whatever the display refresh rate', () => {
+		// 480 steps over the 32s loop is one repaint every 67ms.
+		expect(sheet).toContain('animation-duration: 32s;\n    animation-timing-function: steps(480);');
+	});
+
+	it('clips glinting items so the oversized glint adds no scrollable overflow', () => {
+		expect(sheet).toContain('.rc-item.rc-minecraft_enchanted_book,\n.rc-enchanted {\n    overflow: hidden;\n}');
 	});
 
 	it('emits the webp upgrade block behind the resolution media query', () => {

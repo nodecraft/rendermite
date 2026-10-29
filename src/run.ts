@@ -17,6 +17,7 @@ import { hasArmorTrims } from './dynamic/generators.ts';
 import { discoverItems } from './items/discovery.ts';
 import { curatedModelOverrides } from './mods/models.ts';
 import { encodeRasterAsset } from './output/encode.ts';
+import { bakeGlint } from './output/glint.ts';
 import { classifyItemStyle } from './output/item-styles.ts';
 import { minifyStylesheet } from './output/minify.ts';
 import { generateStylesheet } from './output/stylesheet.ts';
@@ -159,7 +160,7 @@ export async function run(options: RunOptions): Promise<RunResult> {
 		options.onProgress?.(0, 0, 'enchantment glint', 'Missing enchantment glint texture (minecraft:misc/enchanted_glint_item or enchanted_item_glint); the stylesheet has no glint overlay');
 	}
 	const glintFormats = fallback ? ['png', format] as const : [format] as const;
-	const encodedGlint = glint ? await encodeRasterAsset(glint, glintFormats) : new Map<string, Buffer>();
+	const encodedGlint = glint ? await encodeRasterAsset(await bakeGlint(glint), glintFormats) : new Map<string, Buffer>();
 
 	const ids: string[] = [];
 	const seen = new Set<string>();
