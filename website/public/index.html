@@ -3,10 +3,10 @@
 
 <head>
 	<meta charset="utf-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<title>rendermite</title>
 	<meta name="description" content="rendermite renders inventory-identical Minecraft item icons for every version and thousands of mods, as optimized WebP, PNG, CSS and JSON. Open source, built by Nodecraft.">
-	<meta name="theme-color" content="#05080d">
+	<meta name="theme-color" content="#0d1219">
 	<link rel="canonical" href="https://rendermite.dev/">
 	<link rel="icon" href="/images/favicon.svg" type="image/svg+xml">
 
@@ -19,7 +19,7 @@
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link rel="preconnect" href="https://assets.rendermite.dev">
-	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Open+Sans:wght@400;600&family=Rajdhani:wght@600;700&display=swap">
+	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&family=Pixelify+Sans:wght@700&display=swap">
 	<link rel="stylesheet" href="https://assets.rendermite.dev/icons/26.3/rc-minecraft-64.css">
 	<link rel="stylesheet" href="/styles.css">
 	<script src="/main.js" type="module"></script>
@@ -31,15 +31,22 @@
 			<a class="nag-brand" href="https://nodecraft.com/r/rendermite">
 				<img src="/images/nodecraft-powered-vertical.svg" alt="Powered by Nodecraft" width="162" height="36">
 			</a>
-			<p class="nag-copy">rendermite draws every item icon in the Nodecraft game panel. We open sourced it.</p>
-			<a class="btn btn-green" href="https://nodecraft.com/r/rendermite">Host a Minecraft server</a>
+			<p class="nag-copy">Powers every icon in the Nodecraft game panel.</p>
+			<a class="btn btn-grass" href="https://nodecraft.com/r/rendermite">Host a Minecraft server</a>
 		</div>
 	</div>
 
-	<header class="hero">
+	<header class="hero surface">
+		<div class="sky" aria-hidden="true">
+			<div class="sun"></div>
+			<div class="cloud cloud-a"></div>
+			<div class="cloud cloud-b"></div>
+			<div class="cloud cloud-c"></div>
+		</div>
+
 		<div class="wrap hero-inner">
 			<div class="hero-copy">
-				<p class="eyebrow">Open source &middot; MIT &middot; Node.js 26+</p>
+				<p class="eyebrow">Open source &middot; MIT</p>
 				<h1>rendermite</h1>
 				<p class="lede">Minecraft item icons that match the inventory. Every version from 1.0 to 26.3, thousands of mods, rendered in seconds and served free from a CDN.</p>
 
@@ -49,99 +56,114 @@
 				</div>
 
 				<div class="actions">
-					<a class="btn btn-blue" href="#hosted">Use the hosted icons</a>
-					<a class="btn btn-ghost" href="https://github.com/nodecraft/rendermite">View on GitHub</a>
+					<a class="btn btn-grass" href="#hosted">Use the hosted icons</a>
+					<a class="btn btn-stone" href="https://github.com/nodecraft/rendermite">View on GitHub</a>
 				</div>
 			</div>
 
 			<figure class="inventory" aria-labelledby="inventory-caption">
-				<div class="inventory-head">
-					<span class="inventory-title">Inventory</span>
-					<span class="chip">26.3</span>
+				<div class="inventory-panel">
+					<div class="inventory-head">
+						<span>Inventory</span>
+						<span class="chip">26.3</span>
+					</div>
+
+					<ul class="slots" aria-label="Vanilla items">
+						<li class="slot" tabindex="0" data-name="Diamond Sword" data-id="minecraft:diamond_sword" data-rarity="rare"><span class="rc-item rc-minecraft_diamond_sword rc-enchanted"></span></li>
+						<li class="slot" tabindex="0" data-name="Netherite Pickaxe" data-id="minecraft:netherite_pickaxe" data-rarity="rare"><span class="rc-item rc-minecraft_netherite_pickaxe rc-enchanted"></span></li>
+						<li class="slot" tabindex="0" data-name="Mace" data-id="minecraft:mace"><span class="rc-item rc-minecraft_mace"></span></li>
+						<li class="slot" tabindex="0" data-name="Trident" data-id="minecraft:trident" data-rarity="rare"><span class="rc-item rc-minecraft_trident rc-enchanted"></span></li>
+						<li class="slot" tabindex="0" data-name="Crossbow" data-id="minecraft:crossbow" data-note="Loaded with a firework rocket"><span class="rc-item rc-minecraft_crossbow rc-projectile-minecraft_firework_rocket"></span></li>
+						<li class="slot" tabindex="0" data-name="Elytra" data-id="minecraft:elytra"><span class="rc-item rc-minecraft_elytra"></span></li>
+						<li class="slot" tabindex="0" data-name="Totem of Undying" data-id="minecraft:totem_of_undying"><span class="rc-item rc-minecraft_totem_of_undying"></span></li>
+						<li class="slot" tabindex="0" data-name="Enchanted Golden Apple" data-id="minecraft:enchanted_golden_apple"><span class="rc-item rc-minecraft_enchanted_golden_apple"></span></li>
+						<li class="slot" tabindex="0" data-name="Enchanted Book" data-id="minecraft:enchanted_book"><span class="rc-item rc-minecraft_enchanted_book"></span></li>
+
+						<li class="slot" tabindex="0" data-name="Grass Block" data-id="minecraft:grass_block"><span class="rc-item rc-minecraft_grass_block"></span><span class="count">64</span></li>
+						<li class="slot" tabindex="0" data-name="Chest" data-id="minecraft:chest"><span class="rc-item rc-minecraft_chest"></span></li>
+						<li class="slot" tabindex="0" data-name="Beacon" data-id="minecraft:beacon"><span class="rc-item rc-minecraft_beacon"></span></li>
+						<li class="slot" tabindex="0" data-name="Enchanting Table" data-id="minecraft:enchanting_table"><span class="rc-item rc-minecraft_enchanting_table"></span></li>
+						<li class="slot" tabindex="0" data-name="Conduit" data-id="minecraft:conduit"><span class="rc-item rc-minecraft_conduit"></span></li>
+						<li class="slot" tabindex="0" data-name="Respawn Anchor" data-id="minecraft:respawn_anchor"><span class="rc-item rc-minecraft_respawn_anchor"></span></li>
+						<li class="slot" tabindex="0" data-name="Sculk Shrieker" data-id="minecraft:sculk_shrieker"><span class="rc-item rc-minecraft_sculk_shrieker"></span></li>
+						<li class="slot" tabindex="0" data-name="Copper Bulb" data-id="minecraft:copper_bulb"><span class="rc-item rc-minecraft_copper_bulb"></span><span class="count">12</span></li>
+						<li class="slot" tabindex="0" data-name="Creeper Head" data-id="minecraft:creeper_head"><span class="rc-item rc-minecraft_creeper_head"></span></li>
+
+						<li class="slot" tabindex="0" data-name="Dragon Head" data-id="minecraft:dragon_head"><span class="rc-item rc-minecraft_dragon_head"></span></li>
+						<li class="slot" tabindex="0" data-name="Shulker Box" data-id="minecraft:shulker_box"><span class="rc-item rc-minecraft_shulker_box"></span></li>
+						<li class="slot" tabindex="0" data-name="Red Bed" data-id="minecraft:red_bed"><span class="rc-item rc-minecraft_red_bed"></span></li>
+						<li class="slot" tabindex="0" data-name="Spyglass" data-id="minecraft:spyglass"><span class="rc-item rc-minecraft_spyglass"></span></li>
+						<li class="slot" tabindex="0" data-name="Bundle" data-id="minecraft:bundle"><span class="rc-item rc-minecraft_bundle"></span></li>
+						<li class="slot" tabindex="0" data-name="Heart of the Sea" data-id="minecraft:heart_of_the_sea"><span class="rc-item rc-minecraft_heart_of_the_sea"></span></li>
+						<li class="slot" tabindex="0" data-name="Nether Star" data-id="minecraft:nether_star"><span class="rc-item rc-minecraft_nether_star"></span></li>
+						<li class="slot" tabindex="0" data-name="Clock" data-id="minecraft:clock" data-note="Animated WebP"><span class="rc-item rc-minecraft_clock"></span></li>
+						<li class="slot" tabindex="0" data-name="Recovery Compass" data-id="minecraft:recovery_compass" data-note="Animated WebP"><span class="rc-item rc-minecraft_recovery_compass"></span></li>
+					</ul>
+
+					<div class="hotbar-head">
+						<span>Modded</span>
+						<span class="hotbar-meta">4,200+ mods on the CDN</span>
+					</div>
+
+					<ul class="slots" aria-label="Modded items">
+						<li class="slot" tabindex="0" data-name="Precision Mechanism" data-id="create:precision_mechanism" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/precision_mechanism.webp" alt="" width="64" height="64"></li>
+						<li class="slot" tabindex="0" data-name="Wrench" data-id="create:wrench" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/wrench.webp" alt="" width="64" height="64"></li>
+						<li class="slot" tabindex="0" data-name="Brass Ingot" data-id="create:brass_ingot" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/brass_ingot.webp" alt="" width="64" height="64"><span class="count">48</span></li>
+						<li class="slot" tabindex="0" data-name="Atomic Disassembler" data-id="mekanism:atomic_disassembler" data-mod="Mekanism"><img src="https://assets.rendermite.dev/icons/modded/items/mekanism/atomic_disassembler.webp" alt="" width="64" height="64"></li>
+						<li class="slot" tabindex="0" data-name="Meka-Tool" data-id="mekanism:meka_tool" data-mod="Mekanism"><img src="https://assets.rendermite.dev/icons/modded/items/mekanism/meka_tool.webp" alt="" width="64" height="64"></li>
+						<li class="slot" tabindex="0" data-name="Fluix Crystal" data-id="ae2:fluix_crystal" data-mod="Applied Energistics 2"><img src="https://assets.rendermite.dev/icons/modded/items/ae2/fluix_crystal.webp" alt="" width="64" height="64"><span class="count">16</span></li>
+						<li class="slot" tabindex="0" data-name="Terrasteel Ingot" data-id="botania:terrasteel_ingot" data-mod="Botania"><img src="https://assets.rendermite.dev/icons/modded/items/botania/terrasteel_ingot.webp" alt="" width="64" height="64"><span class="count">3</span></li>
+						<li class="slot" tabindex="0" data-name="Wand of the Forest" data-id="botania:twig_wand" data-mod="Botania"><img src="https://assets.rendermite.dev/icons/modded/items/botania/twig_wand.webp" alt="" width="64" height="64"></li>
+						<li class="slot" tabindex="0" data-name="Engineer's Hammer" data-id="immersiveengineering:hammer" data-mod="Immersive Engineering"><img src="https://assets.rendermite.dev/icons/modded/items/immersiveengineering/hammer.webp" alt="" width="64" height="64"></li>
+					</ul>
+
+					<figcaption id="inventory-caption">Every icon here is live from <code>assets.rendermite.dev</code>. Hover or focus a slot.</figcaption>
 				</div>
-
-				<ul class="slots" aria-label="Vanilla items">
-					<li class="slot" tabindex="0" data-name="Diamond Sword" data-id="minecraft:diamond_sword" data-rarity="rare"><span class="rc-item rc-minecraft_diamond_sword rc-enchanted"></span></li>
-					<li class="slot" tabindex="0" data-name="Netherite Pickaxe" data-id="minecraft:netherite_pickaxe" data-rarity="rare"><span class="rc-item rc-minecraft_netherite_pickaxe rc-enchanted"></span></li>
-					<li class="slot" tabindex="0" data-name="Mace" data-id="minecraft:mace"><span class="rc-item rc-minecraft_mace"></span></li>
-					<li class="slot" tabindex="0" data-name="Trident" data-id="minecraft:trident" data-rarity="rare"><span class="rc-item rc-minecraft_trident rc-enchanted"></span></li>
-					<li class="slot" tabindex="0" data-name="Crossbow" data-id="minecraft:crossbow" data-note="Loaded with a firework rocket"><span class="rc-item rc-minecraft_crossbow rc-projectile-minecraft_firework_rocket"></span></li>
-					<li class="slot" tabindex="0" data-name="Elytra" data-id="minecraft:elytra"><span class="rc-item rc-minecraft_elytra"></span></li>
-					<li class="slot" tabindex="0" data-name="Totem of Undying" data-id="minecraft:totem_of_undying"><span class="rc-item rc-minecraft_totem_of_undying"></span></li>
-					<li class="slot" tabindex="0" data-name="Enchanted Golden Apple" data-id="minecraft:enchanted_golden_apple"><span class="rc-item rc-minecraft_enchanted_golden_apple"></span></li>
-					<li class="slot" tabindex="0" data-name="Enchanted Book" data-id="minecraft:enchanted_book"><span class="rc-item rc-minecraft_enchanted_book"></span></li>
-
-					<li class="slot" tabindex="0" data-name="Grass Block" data-id="minecraft:grass_block"><span class="rc-item rc-minecraft_grass_block"></span><span class="count">64</span></li>
-					<li class="slot" tabindex="0" data-name="Chest" data-id="minecraft:chest"><span class="rc-item rc-minecraft_chest"></span></li>
-					<li class="slot" tabindex="0" data-name="Beacon" data-id="minecraft:beacon"><span class="rc-item rc-minecraft_beacon"></span></li>
-					<li class="slot" tabindex="0" data-name="Enchanting Table" data-id="minecraft:enchanting_table"><span class="rc-item rc-minecraft_enchanting_table"></span></li>
-					<li class="slot" tabindex="0" data-name="Conduit" data-id="minecraft:conduit"><span class="rc-item rc-minecraft_conduit"></span></li>
-					<li class="slot" tabindex="0" data-name="Respawn Anchor" data-id="minecraft:respawn_anchor"><span class="rc-item rc-minecraft_respawn_anchor"></span></li>
-					<li class="slot" tabindex="0" data-name="Sculk Shrieker" data-id="minecraft:sculk_shrieker"><span class="rc-item rc-minecraft_sculk_shrieker"></span></li>
-					<li class="slot" tabindex="0" data-name="Copper Bulb" data-id="minecraft:copper_bulb"><span class="rc-item rc-minecraft_copper_bulb"></span><span class="count">12</span></li>
-					<li class="slot" tabindex="0" data-name="Creeper Head" data-id="minecraft:creeper_head"><span class="rc-item rc-minecraft_creeper_head"></span></li>
-
-					<li class="slot" tabindex="0" data-name="Dragon Head" data-id="minecraft:dragon_head"><span class="rc-item rc-minecraft_dragon_head"></span></li>
-					<li class="slot" tabindex="0" data-name="Shulker Box" data-id="minecraft:shulker_box"><span class="rc-item rc-minecraft_shulker_box"></span></li>
-					<li class="slot" tabindex="0" data-name="Red Bed" data-id="minecraft:red_bed"><span class="rc-item rc-minecraft_red_bed"></span></li>
-					<li class="slot" tabindex="0" data-name="Spyglass" data-id="minecraft:spyglass"><span class="rc-item rc-minecraft_spyglass"></span></li>
-					<li class="slot" tabindex="0" data-name="Bundle" data-id="minecraft:bundle"><span class="rc-item rc-minecraft_bundle"></span></li>
-					<li class="slot" tabindex="0" data-name="Heart of the Sea" data-id="minecraft:heart_of_the_sea"><span class="rc-item rc-minecraft_heart_of_the_sea"></span></li>
-					<li class="slot" tabindex="0" data-name="Nether Star" data-id="minecraft:nether_star"><span class="rc-item rc-minecraft_nether_star"></span></li>
-					<li class="slot" tabindex="0" data-name="Clock" data-id="minecraft:clock" data-note="Animated WebP"><span class="rc-item rc-minecraft_clock"></span></li>
-					<li class="slot" tabindex="0" data-name="Recovery Compass" data-id="minecraft:recovery_compass" data-note="Animated WebP"><span class="rc-item rc-minecraft_recovery_compass"></span></li>
-				</ul>
-
-				<div class="hotbar-head">
-					<span>Modded</span>
-					<span class="hotbar-meta">4,200+ mods on the CDN</span>
-				</div>
-
-				<ul class="slots hotbar" aria-label="Modded items">
-					<li class="slot" tabindex="0" data-name="Precision Mechanism" data-id="create:precision_mechanism" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/precision_mechanism.webp" alt="" width="64" height="64"></li>
-					<li class="slot" tabindex="0" data-name="Wrench" data-id="create:wrench" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/wrench.webp" alt="" width="64" height="64"></li>
-					<li class="slot" tabindex="0" data-name="Brass Ingot" data-id="create:brass_ingot" data-mod="Create"><img src="https://assets.rendermite.dev/icons/modded/items/create/brass_ingot.webp" alt="" width="64" height="64"><span class="count">48</span></li>
-					<li class="slot" tabindex="0" data-name="Atomic Disassembler" data-id="mekanism:atomic_disassembler" data-mod="Mekanism"><img src="https://assets.rendermite.dev/icons/modded/items/mekanism/atomic_disassembler.webp" alt="" width="64" height="64"></li>
-					<li class="slot" tabindex="0" data-name="Meka-Tool" data-id="mekanism:meka_tool" data-mod="Mekanism"><img src="https://assets.rendermite.dev/icons/modded/items/mekanism/meka_tool.webp" alt="" width="64" height="64"></li>
-					<li class="slot" tabindex="0" data-name="Fluix Crystal" data-id="ae2:fluix_crystal" data-mod="Applied Energistics 2"><img src="https://assets.rendermite.dev/icons/modded/items/ae2/fluix_crystal.webp" alt="" width="64" height="64"><span class="count">16</span></li>
-					<li class="slot" tabindex="0" data-name="Terrasteel Ingot" data-id="botania:terrasteel_ingot" data-mod="Botania"><img src="https://assets.rendermite.dev/icons/modded/items/botania/terrasteel_ingot.webp" alt="" width="64" height="64"><span class="count">3</span></li>
-					<li class="slot" tabindex="0" data-name="Wand of the Forest" data-id="botania:twig_wand" data-mod="Botania"><img src="https://assets.rendermite.dev/icons/modded/items/botania/twig_wand.webp" alt="" width="64" height="64"></li>
-					<li class="slot" tabindex="0" data-name="Engineer's Hammer" data-id="immersiveengineering:hammer" data-mod="Immersive Engineering"><img src="https://assets.rendermite.dev/icons/modded/items/immersiveengineering/hammer.webp" alt="" width="64" height="64"></li>
-				</ul>
-
-				<figcaption id="inventory-caption">Every icon here is live from <code>assets.rendermite.dev</code>. Hover or focus a slot.</figcaption>
 			</figure>
 		</div>
+
+		<div class="ground" aria-hidden="true"></div>
 	</header>
 
+	<div class="seam from-dirt to-stone" aria-hidden="true"><i></i></div>
+
 	<main>
-		<section class="band" aria-labelledby="why">
+		<section class="layer layer-stone" aria-labelledby="why">
 			<div class="wrap">
-				<h2 id="why">Built to match the game</h2>
+				<div class="layer-head">
+					<span class="layer-name"><span class="rc-item rc-minecraft_stone"></span>Stone</span>
+					<h2 id="why">Built to match the game</h2>
+				</div>
 				<p class="section-lede">rendermite reads the same models, textures and transforms the client does, then draws the icon the way the inventory draws it.</p>
 
 				<ul class="features">
-					<li>
+					<li data-ore="diamond">
+						<span class="ore rc-item rc-minecraft_diamond_ore"></span>
 						<h3>Inventory-identical</h3>
 						<p>Orthographic block projection, per-face GUI lighting, display transforms, tints, enchant glint, and animated textures as animated WebP.</p>
 					</li>
-					<li>
+					<li data-ore="gold">
+						<span class="ore rc-item rc-minecraft_gold_ore"></span>
 						<h3>Every version</h3>
 						<p>Era detection, donor geometry and legacy spritesheet slicing for old releases. Item definitions, atlases, armor trims and decorated pots for new ones.</p>
 					</li>
-					<li>
+					<li data-ore="emerald">
+						<span class="ore rc-item rc-minecraft_emerald_ore"></span>
 						<h3>Real mod support</h3>
 						<p>Forge, NeoForge and Fabric loader models, OBJ and MTL meshes, GeckoLib Bedrock geometry, cross-jar dependencies, and the malformed JSON mods ship anyway.</p>
 					</li>
-					<li>
+					<li data-ore="redstone">
+						<span class="ore rc-item rc-minecraft_redstone_ore"></span>
 						<h3>No black squares</h3>
 						<p>Items the game draws in code fall back through block models, builtin geometry and flat sprites. Anything still unrenderable is written to a failures file with a reason.</p>
 					</li>
-					<li>
+					<li data-ore="lapis">
+						<span class="ore rc-item rc-minecraft_lapis_ore"></span>
 						<h3>Small, drop-in output</h3>
 						<p>Palette PNG only when it is lossless, lossless WebP, and a minified stylesheet that follows renderchest's class names, so existing markup keeps working.</p>
 					</li>
-					<li>
+					<li data-ore="copper">
+						<span class="ore rc-item rc-minecraft_copper_ore"></span>
 						<h3>Block packs too</h3>
 						<p>Geometry, atlases, blockstates, tints, biomes and entity models exported as pre-resolved JSON, for renderers that draw the world themselves.</p>
 					</li>
@@ -149,9 +171,14 @@
 			</div>
 		</section>
 
-		<section class="band band-alt" aria-labelledby="speed">
+		<div class="seam from-stone to-tuff" aria-hidden="true"><i></i></div>
+
+		<section class="layer layer-tuff" aria-labelledby="speed">
 			<div class="wrap">
-				<h2 id="speed">15&times; faster than renderchest</h2>
+				<div class="layer-head">
+					<span class="layer-name"><span class="rc-item rc-minecraft_tuff"></span>Tuff</span>
+					<h2 id="speed">15&times; faster than renderchest</h2>
+				</div>
 				<p class="section-lede">Same machine, same extracted 1.21.8 assets, 64px icons in PNG and WebP. rendermite finishes the whole version before renderchest gets through a tenth of it, and draws more of the items.</p>
 
 				<div class="perf">
@@ -166,6 +193,14 @@
 							<span class="perf-label">rendermite</span>
 							<div class="perf-track"><div class="perf-bar perf-bar-new"></div></div>
 							<span class="perf-value perf-value-new">12.1s</span>
+						</div>
+						<div class="perf-scale" aria-hidden="true">
+							<div class="ticks">
+								<span>0s</span>
+								<span>60s</span>
+								<span>120s</span>
+								<span>180s</span>
+							</div>
 						</div>
 					</div>
 
@@ -185,9 +220,14 @@
 			</div>
 		</section>
 
-		<section class="band" id="hosted" aria-labelledby="hosted-title">
+		<div class="seam from-tuff to-deepslate" aria-hidden="true"><i></i></div>
+
+		<section class="layer layer-deepslate" id="hosted" aria-labelledby="hosted-title">
 			<div class="wrap">
-				<h2 id="hosted-title">Hosted icons, free of charge</h2>
+				<div class="layer-head">
+					<span class="layer-name"><span class="rc-item rc-minecraft_deepslate"></span>Deepslate</span>
+					<h2 id="hosted-title">Hosted icons, free of charge</h2>
+				</div>
 				<p class="section-lede">Nodecraft renders every release and thousands of mods with rendermite and publishes the output to <code>assets.rendermite.dev</code>. Link the stylesheet and use the classes, or point an <code>&lt;img&gt;</code> at a single icon.</p>
 
 				<aside class="notice" aria-labelledby="artwork-title">
@@ -327,9 +367,14 @@
 			</div>
 		</section>
 
-		<section class="band band-alt" aria-labelledby="run">
+		<div class="seam from-deepslate to-sculk" aria-hidden="true"><i></i></div>
+
+		<section class="layer layer-deepdark" aria-labelledby="run">
 			<div class="wrap">
-				<h2 id="run">Render your own</h2>
+				<div class="layer-head">
+					<span class="layer-name"><span class="rc-item rc-minecraft_sculk"></span>Deep dark</span>
+					<h2 id="run">Render your own</h2>
+				</div>
 				<p class="section-lede">Point rendermite at a version and it downloads and caches the client jar. Add mod jars, a resource pack, or an extracted asset tree.</p>
 
 				<div class="split">
@@ -371,9 +416,11 @@ console.log(`${result.rendered.length} rendered, ${result.failed.length} failed`
 				</ul>
 			</div>
 		</section>
+
+		<div class="seam from-sculk to-bedrock" aria-hidden="true"><i></i></div>
 	</main>
 
-	<footer class="footer">
+	<footer class="layer layer-bedrock">
 		<div class="wrap footer-inner">
 			<a class="footer-brand" href="https://nodecraft.com/r/rendermite">
 				<img src="/images/logogram.svg" alt="" width="48" height="48">
