@@ -59,6 +59,12 @@ describe('generateStylesheet', () => {
 		expect(sheet).toContain('animation-duration: 32s;');
 	});
 
+	it('animates the glint with transform so it never repaints per frame', () => {
+		const keyframes = /@keyframes rc-enchanted \{[^}]*\}[^}]*\}/.exec(sheet)?.[0];
+		expect(keyframes).toContain('transform:');
+		expect(keyframes).not.toContain('background-position');
+	});
+
 	it('emits the webp upgrade block behind the resolution media query', () => {
 		expect(sheet).toContain('@media (min-resolution: 1dpi)');
 		expect(sheet).toContain('background-image: url(\'items/minecraft/stone.webp\');');

@@ -71,7 +71,9 @@ points at a missing file.
 
 In source order:
 
-1. `@keyframes rc-enchanted`, which scrolls the glint background.
+1. `@keyframes rc-enchanted`, which slides the oversized glint layer. It animates `transform`
+   rather than `background-position` so browsers run it on the compositor instead of repainting
+   every frame.
 2. The base `.rc-item` rule: unknown placeholder image and mask, `--rc-layer-1-tint` multiply
    plumbing. A matching `.rc-item:before` rule carries the empty placeholder and
    `--rc-layer-2-tint`.
