@@ -111,6 +111,11 @@ export async function downloadClientMappings(version: string, cacheDir: string):
 	if (existsSync(target)) {
 		return target;
 	}
+	// Remembered so a 1.13-era export asks Mojang once ever, not on every lookup
+	const none = path.join(cacheDir, `${version}-client-mappings.none`);
+	if (existsSync(none)) {
+		throw new MappingsUnavailableError(`${version} publishes no client mappings; they start at 1.14.4`);
+	}
 	await mkdir(cacheDir, { recursive: true });
 
 	const manifestResponse = await fetch(VERSION_MANIFEST);
@@ -129,6 +134,7 @@ export async function downloadClientMappings(version: string, cacheDir: string):
 	const meta = await metaResponse.json() as { downloads?: Record<string, { url: string; }>; };
 	const mappings = meta.downloads?.client_mappings;
 	if (!mappings) {
+		await writeFile(none, '');
 		throw new MappingsUnavailableError(`${version} publishes no client mappings; they start at 1.14.4`);
 	}
 	const download = await fetch(mappings.url);
