@@ -3,8 +3,7 @@
 		"main"
 	],
 	"plugins": [
-		"@semantic-release/commit-analyzer",
-		"@semantic-release/release-notes-generator",
+		"./scripts/release-commits.js",
 		"@semantic-release/changelog",
 		"@semantic-release/npm",
 		"@semantic-release/github"

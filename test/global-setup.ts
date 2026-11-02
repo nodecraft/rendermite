@@ -5,8 +5,9 @@
  * machine; a fresh checkout only needs network access on the first run.
  */
 
-import { ensureVanillaJar } from './fixtures/index.ts';
+import { ensureVanillaJar, fixturesDir } from './fixtures/index.ts';
 import { buildFixtureModJars } from './fixtures/mods.ts';
+import { MappingsUnavailableError, downloadClientMappings } from '../src/entities/mappings.ts';
 
 /** Every version the suites exercise, donors and the pre-1.6 reference included. */
 const VERSIONS = [
@@ -38,9 +39,24 @@ const VERSIONS = [
 	'1.2.5',
 ];
 
+/**
+ * Mappings, or the record that a version has none, staged here so they land in CI's fixture cache
+ * instead of being fetched mid-suite where one dropped connection fails a test.
+ */
+async function stageMappings(version: string): Promise<void> {
+	try {
+		await downloadClientMappings(version, fixturesDir);
+	} catch (err) {
+		if (!(err instanceof MappingsUnavailableError)) {
+			throw err;
+		}
+	}
+}
+
 export default async function setup(): Promise<void> {
 	await Promise.all([
 		buildFixtureModJars(),
 		...VERSIONS.map(version => ensureVanillaJar(version)),
+		...VERSIONS.map(version => stageMappings(version)),
 	]);
 }
