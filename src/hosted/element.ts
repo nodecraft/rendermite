@@ -11,7 +11,7 @@ import { ENCHANTED_EFFECT_ITEMS } from '../output/css-contract.ts';
 import type { HostedClient } from './client.ts';
 
 export interface ItemElementOptions {
-	/** Defaults to `rc-item`. */
+	/** Defaults to `mc-item`. */
 	tagName?: string;
 	baseUrl?: string;
 	/** Resolves the latest version for elements without one; shared across every element. */
@@ -35,16 +35,27 @@ img{display:block;width:100%;height:100%;image-rendering:pixelated}
 @media (prefers-reduced-motion:reduce){.glint{animation:none}}
 `;
 
+/** A registry-wide symbol, so a second copy of this package on the page recognises the element as its own. */
+const ITEM_ELEMENT = Symbol.for('@nodecraft/rendermite/item-element');
+
 /**
- * Registers `<rc-item item="create:wrench">`, an icon from the hosted CDN that
+ * Registers `<mc-item item="create:wrench">`, an icon from the hosted CDN that
  * needs no stylesheet. Attributes: `item`, `version` (latest when omitted),
  * `enchanted`, and `label` for its accessible name. It reflects a `missing`
  * attribute when the image fails to load. Safe to call during server rendering,
  * where it does nothing.
  */
 export function defineItemElement(options: ItemElementOptions = {}): void {
-	const tagName = options.tagName ?? 'rc-item';
-	if (typeof customElements === 'undefined' || customElements.get(tagName)) {
+	if (typeof customElements === 'undefined') {
+		return;
+	}
+	const tagName = options.tagName ?? 'mc-item';
+	const existing = customElements.get(tagName);
+	if (existing) {
+		// Element names are page-global, so another library's mc-item would otherwise win silently.
+		if (!(ITEM_ELEMENT in existing)) {
+			console.warn(`<${tagName}> is already defined by another script; call defineItemElement({ tagName }) with a different name.`);
+		}
 		return;
 	}
 	const baseUrl = options.baseUrl ?? HOSTED_BASE_URL;
@@ -52,6 +63,7 @@ export function defineItemElement(options: ItemElementOptions = {}): void {
 
 	class ItemElement extends HTMLElement {
 		static observedAttributes = ['item', 'version', 'enchanted', 'label'];
+		static [ITEM_ELEMENT] = true;
 
 		#internals = this.attachInternals();
 		#icon = document.createElement('span');

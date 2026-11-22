@@ -15,7 +15,7 @@
  * const hosted = createHostedClient();
  * const wool = await hosted.item('minecraft:wool', { version: '1.12.2', damage: 1 });
  *
- * defineItemElement(); // <rc-item item="create:wrench" enchanted></rc-item>
+ * defineItemElement(); // <mc-item item="create:wrench" enchanted></mc-item>
  * ```
  */
 

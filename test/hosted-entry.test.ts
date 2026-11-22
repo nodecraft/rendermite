@@ -6,7 +6,13 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import {
+	afterEach,
+	describe,
+	expect,
+	it,
+	vi,
+} from 'vitest';
 
 import {
 	bareImports,
@@ -59,6 +65,36 @@ describe('the hosted entry', () => {
 
 	it('does nothing when defining the element outside a browser', () => {
 		expect(() => defineItemElement()).not.toThrow();
+	});
+});
+
+describe('defineItemElement on a page that already has the tag', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	function registryWith(element: object) {
+		const define = vi.fn();
+		vi.stubGlobal('customElements', { get: (name: string) => (name === 'mc-item' ? element : undefined), define });
+		return define;
+	}
+
+	it('warns when another library owns the name, instead of losing silently', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const define = registryWith(class {});
+		defineItemElement();
+		expect(define).not.toHaveBeenCalled();
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining('<mc-item> is already defined'));
+	});
+
+	it('stays quiet when a second copy of this package defined it', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		const ours = { [Symbol.for('@nodecraft/rendermite/item-element')]: true };
+		const define = registryWith(ours);
+		defineItemElement();
+		expect(define).not.toHaveBeenCalled();
+		expect(warn).not.toHaveBeenCalled();
 	});
 });
 

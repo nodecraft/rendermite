@@ -12,7 +12,7 @@ Like `/pack`, the entry is browser-safe: no `node:` builtin and no dependency, a
 npm install @nodecraft/rendermite
 ```
 
-## The `<rc-item>` element
+## The `<mc-item>` element
 
 The quickest way to put an icon on a page. It loads one image per icon, so a page showing a handful
 of items never downloads a whole stylesheet.
@@ -33,9 +33,9 @@ Without a bundler, import it from jsDelivr instead:
 ```
 
 ```html
-<rc-item item="minecraft:diamond_sword" enchanted></rc-item>
-<rc-item item="create:wrench" label="Wrench"></rc-item>
-<rc-item item="minecraft:elytra" version="1.12.2"></rc-item>
+<mc-item item="minecraft:diamond_sword" enchanted></mc-item>
+<mc-item item="create:wrench" label="Wrench"></mc-item>
+<mc-item item="minecraft:elytra" version="1.12.2"></mc-item>
 ```
 
 | Attribute | Meaning |
@@ -44,9 +44,9 @@ Without a bundler, import it from jsDelivr instead:
 | `version` | Game version for vanilla ids. Omitted, the element uses the latest published version. Modded icons are not versioned. |
 | `enchanted` | Draws the enchant glint. Items the game always draws with it (enchanted book, experience bottle and friends) get it without the attribute. |
 | `label` | Accessible name. Defaults to the item id. |
-| `missing` | Set by the element when the image fails to load, so you can style `rc-item[missing]`. |
+| `missing` | Set by the element when the image fails to load, so you can style `mc-item[missing]`. |
 
-It is 64px by default; size it with CSS (`rc-item { width: 32px; height: 32px; }`). The image,
+It is 64px by default; size it with CSS (`mc-item { width: 32px; height: 32px; }`). The image,
 icon box and glint are exposed as `::part(image)`, `::part(icon)` and `::part(glint)`. The glint
 stops animating under `prefers-reduced-motion`.
 
