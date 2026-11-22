@@ -247,12 +247,24 @@ export class TextureLoader {
 		if (raw === null) {
 			return null;
 		}
+		let meta: TextureMeta;
 		try {
-			return JSON.parse(raw.toString('utf8')) as TextureMeta;
+			meta = JSON.parse(raw.toString('utf8')) as TextureMeta;
 		} catch {
 			// A broken mcmeta shouldn't lose the texture; treat it as unanimated.
 			return null;
 		}
+		// Pre-1.21.2 serializers read -1 as "unset", and mods still ship it (Supplementaries 4.1.4).
+		const animation = meta.animation;
+		if (animation) {
+			for (const key of ['width', 'height'] as const) {
+				const value = animation[key];
+				if (value !== undefined && !(value > 0)) {
+					delete animation[key];
+				}
+			}
+		}
+		return meta;
 	}
 
 	/**

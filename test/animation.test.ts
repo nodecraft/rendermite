@@ -113,6 +113,25 @@ describe.skipIf(!hasFixture)('animation rendering', () => {
 	});
 });
 
+describe('unset animation frame size', () => {
+	it('reads a width and height of -1 as unset, like the game', async () => {
+		// Supplementaries 4.1.4's redstone lantern: taken literally, -1 made a zero-height frame and Infinity frames.
+		const strip = await sharp({ create: { width: 16, height: 48, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 1 } } })
+			.png()
+			.toBuffer();
+		const meta = { animation: { frametime: 8, interpolate: false, height: -1, width: -1, frames: [] } };
+		const resources = new MapResourceManager()
+			.set('texture', 'test:block/lantern', strip)
+			.set('textureMeta', 'test:block/lantern', Buffer.from(JSON.stringify(meta)));
+		const loader = new TextureLoader(resources);
+		const loaded = await loader.loadAnimated(ResourceLocator.parse('test:block/lantern'));
+		expect(loaded!.frameCount).toBe(3);
+		expect([loaded!.frame(0).width, loaded!.frame(0).height]).toEqual([16, 16]);
+		const decoded = await loader.load(ResourceLocator.parse('test:block/lantern'));
+		expect([decoded!.width, decoded!.height]).toEqual([16, 16]);
+	});
+});
+
 describe('undecodable textures', () => {
 	it('names the texture that failed rather than leaking sharp\'s message', async () => {
 		// frostiful publishes a jar whose every texture is a Git LFS pointer stub,
