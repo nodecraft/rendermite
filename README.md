@@ -121,6 +121,25 @@ import { evaluateBlockState } from '@nodecraft/rendermite/pack';
 import type { BlockPackModel } from '@nodecraft/rendermite/pack';
 ```
 
+### Hosted icons
+
+If you only need icons, you may not need to render anything. Nodecraft publishes every release and
+thousands of mods to `assets.rendermite.dev`, and `@nodecraft/rendermite/hosted` (browser-safe, no
+dependencies) wraps it with a web component, URL helpers and a small client:
+
+```ts
+import { createHostedClient, defineItemElement, iconUrl } from '@nodecraft/rendermite/hosted';
+
+defineItemElement(); // <rc-item item="create:wrench" enchanted></rc-item>
+
+iconUrl('minecraft:diamond_sword', { version: '1.21.8' });
+
+const wool = await createHostedClient().item('minecraft:wool', { version: '1.12.2', damage: 14 });
+// wool.url → .../icons/1.12.2/items/minecraft/red_wool.webp, wool.displayName → 'Red Wool'
+```
+
+See [docs/hosted-icons.md](docs/hosted-icons.md).
+
 ## Performance
 
 Compared with PHP renderchest v5.1.0 on the same machine, rendering the same extracted 1.21.8 assets at 64px (PNG + WebP):
@@ -137,6 +156,7 @@ Both run with `--size 64 --format webp --fallback --item-list`, median of warm r
 - [DESIGN.md](DESIGN.md): architecture, version support matrix, mod support, output contract, performance notes
 - [docs/block-pack-export.md](docs/block-pack-export.md): the block pack format, with [block light](docs/block-light.md) and [entity geometry](docs/entity-geometry.md)
 - [docs/css-output.md](docs/css-output.md): the generated stylesheet
+- [docs/hosted-icons.md](docs/hosted-icons.md): the `<rc-item>` element, URL helpers and client for the hosted icons
 - [docs/renderchest-compat.md](docs/renderchest-compat.md) and [docs/renderchest-spec.md](docs/renderchest-spec.md): parity with renderchest
 - [docs/mod-coverage.md](docs/mod-coverage.md): how mod coverage is measured
 

@@ -5,6 +5,8 @@
  * is configurable so published sheets need no downstream rebasing.
  */
 
+import { itemClassName } from './css-contract.ts';
+
 export interface StylesheetOptions {
 	/** CSS class prefix, default `rc-`. */
 	prefix?: string;
@@ -46,7 +48,7 @@ export interface ItemStyle {
 
 /** Class-name sanitization is a security/robustness boundary: ids come from mod jars. */
 export function itemClass(id: string, prefix = 'rc-'): string {
-	return prefix + id.replaceAll(':', '_').replaceAll(/[^\w.-]/g, '_').replaceAll('.', String.raw`\.`);
+	return itemClassName(id, prefix).replaceAll('.', String.raw`\.`);
 }
 
 function url(path: string, urlPrefix: string): string {
