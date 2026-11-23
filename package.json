@@ -32,6 +32,10 @@
 		"./pack": {
 			"types": "./dist/pack.d.ts",
 			"import": "./dist/pack.js"
+		},
+		"./hosted": {
+			"types": "./dist/hosted.d.ts",
+			"import": "./dist/hosted.js"
 		}
 	},
 	"files": [

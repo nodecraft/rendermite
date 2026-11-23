@@ -8,15 +8,19 @@
  * was meant, or one convenience re-export from the exporter — would otherwise
  * pull the toolchain in silently, and the failure lands on whoever ships it.
  */
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { rolldown } from 'rolldown';
 import { describe, expect, it } from 'vitest';
 
-import type { BlockPackBlockState } from '../src/blocks/pack-format.ts';
+import {
+	bareImports,
+	bundleEntry,
+	root,
+	walkBuilt,
+} from './entry-bundle.ts';
 
-const root = path.join(import.meta.dirname, '..');
+import type { BlockPackBlockState } from '../src/blocks/pack-format.ts';
 
 /**
  * Modules the entry may reach at runtime; types are erased and do not count.
@@ -33,23 +37,7 @@ const ALLOWED = new Set([
 /** Bigger than the graph needs, small enough that pulling anything real fails it. */
 const SIZE_BUDGET = 32 * 1024;
 
-async function bundlePackEntry(): Promise<{ code: string; modules: string[]; }> {
-	const build = await rolldown({
-		input: path.join(root, 'src/pack.ts'),
-		platform: 'browser',
-		// Nothing is external: a dependency that sneaks in has to show up in the
-		// output rather than being quietly left for the consumer to install.
-		external: [],
-	});
-	const { output } = await build.generate({ format: 'esm' });
-	await build.close();
-	const chunks = output.filter(part => part.type === 'chunk');
-	const modules = chunks
-		.flatMap(chunk => Object.keys(chunk.modules))
-		.map(id => path.relative(root, id).replaceAll('\\', '/'))
-		.filter(id => !id.startsWith('\0') && id.endsWith('.ts'));
-	return { code: chunks.map(chunk => chunk.code).join('\n'), modules };
-}
+const bundlePackEntry = () => bundleEntry('src/pack.ts');
 
 describe('the pack entry', () => {
 	it('reaches only the evaluation and its locator', async () => {
@@ -60,9 +48,7 @@ describe('the pack entry', () => {
 
 	it('pulls in no dependency and no node builtin', async () => {
 		const { code } = await bundlePackEntry();
-		// Bare specifiers survive bundling as imports, so any left are real
-		const bare = code.matchAll(/(?:^|\n)\s*import\s[^;]*?from\s*["']([^"'.][^"']*)["']/g).map(match => match[1]).toArray();
-		expect(bare).toStrictEqual([]);
+		expect(bareImports(code)).toStrictEqual([]);
 		expect(code).not.toMatch(/require\(|node:|from ['"]sharp|from ['"]lightningcss|from ['"]yauzl/);
 	});
 
@@ -104,26 +90,9 @@ describe('the pack entry', () => {
 	 * artifact is walked too. CI builds before it tests; locally this needs a build.
 	 */
 	it.runIf(existsSync(path.join(root, 'dist/pack.js')))('ships a built entry that reaches nothing else', () => {
-		const seen = new Set<string>();
-		const bare: string[] = [];
-		const walk = (file: string): void => {
-			const resolved = path.normalize(file);
-			if (seen.has(resolved)) {
-				return;
-			}
-			seen.add(resolved);
-			const code = readFileSync(resolved, 'utf8');
-			for (const match of code.matchAll(/(?:from|import)\s*["']([^"']+)["']/g)) {
-				if (match[1].startsWith('.')) {
-					walk(path.join(path.dirname(resolved), match[1]));
-				} else {
-					bare.push(match[1]);
-				}
-			}
-		};
-		walk(path.join(root, 'dist/pack.js'));
+		const { bare, bytes } = walkBuilt('dist/pack.js');
 		expect(bare).toStrictEqual([]);
-		expect([...seen].reduce((total, file) => total + statSync(file).size, 0)).toBeLessThan(SIZE_BUDGET);
+		expect(bytes).toBeLessThan(SIZE_BUDGET);
 	});
 	/**
 	 * The whole point of the entry: a state read straight out of `blockstates.json`

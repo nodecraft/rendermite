@@ -310,6 +310,45 @@
 					</form>
 				</div>
 
+				<h3 class="table-title">From JavaScript</h3>
+				<p class="footnote">The npm package's <code>/hosted</code> entry wraps the URL layout below: a web component, URL helpers and a small client. It runs in the browser with no dependencies. <a href="https://github.com/nodecraft/rendermite/blob/main/docs/hosted-icons.md">Full reference</a>.</p>
+				<div class="split">
+					<div class="code-card">
+						<div class="code-head">
+							<span>icons.html</span>
+							<button class="copy" type="button" data-copy="#snippet-element">Copy</button>
+						</div>
+						<pre><code id="snippet-element">&lt;script type="module"&gt;
+  import { defineItemElement }
+    from 'https://cdn.jsdelivr.net/npm/@nodecraft/rendermite@1/dist/hosted.js';
+  defineItemElement();
+&lt;/script&gt;
+
+&lt;!-- latest version unless you pass one --&gt;
+&lt;mc-item item="minecraft:diamond_sword" enchanted&gt;&lt;/mc-item&gt;
+&lt;mc-item item="create:wrench"&gt;&lt;/mc-item&gt;
+&lt;mc-item item="minecraft:elytra" version="1.12.2"&gt;&lt;/mc-item&gt;</code></pre>
+					</div>
+
+					<div class="code-card">
+						<div class="code-head">
+							<span>icons.ts</span>
+							<button class="copy" type="button" data-copy="#snippet-hosted">Copy</button>
+						</div>
+						<pre><code id="snippet-hosted">import { createHostedClient, iconUrl } from '@nodecraft/rendermite/hosted';
+
+iconUrl('minecraft:diamond_sword', { version: '1.21.8' });
+iconUrl('create:wrench');
+
+const hosted = createHostedClient();
+const wool = await hosted.item('minecraft:wool', {
+  version: '1.12.2',
+  damage: 14,
+});
+// wool.displayName → 'Red Wool', wool.url → …/red_wool.webp</code></pre>
+					</div>
+				</div>
+
 				<h3 class="table-title">URL layout</h3>
 				<div class="table-scroll">
 					<table class="urls">
@@ -353,7 +392,7 @@
 							</tr>
 							<tr>
 								<td><code>/icons/modded/css/<var>namespace</var>.css</code></td>
-								<td>Stylesheet for one mod</td>
+								<td>Stylesheet for one mod. Load it after a vanilla stylesheet, which carries the base <code>.rc-item</code> and glint rules.</td>
 								<td>1 hour</td>
 							</tr>
 							<tr>
@@ -417,6 +456,7 @@ console.log(`${result.rendered.length} rendered, ${result.failed.length} failed`
 				<ul class="docs">
 					<li><a href="https://github.com/nodecraft/rendermite#readme">README and CLI flags</a></li>
 					<li><a href="https://github.com/nodecraft/rendermite/blob/main/docs/css-output.md">Stylesheet reference</a></li>
+					<li><a href="https://github.com/nodecraft/rendermite/blob/main/docs/hosted-icons.md">Hosted icons from JavaScript</a></li>
 					<li><a href="https://github.com/nodecraft/rendermite/blob/main/docs/block-pack-export.md">Block pack format</a></li>
 					<li><a href="https://github.com/nodecraft/rendermite/blob/main/DESIGN.md">Architecture and version matrix</a></li>
 				</ul>

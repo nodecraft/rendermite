@@ -6,6 +6,7 @@
  * emits rules pointing at missing files.
  */
 
+import { ENCHANTED_EFFECT_ITEMS } from './css-contract.ts';
 import {
 	ARMOR_ITEM_TYPES,
 	POTTERY_SHERDS,
@@ -16,14 +17,6 @@ import {
 import type { ItemStyle } from './stylesheet.ts';
 
 const ARMOR_MATERIALS = ['leather', 'copper', 'chainmail', 'iron', 'golden', 'diamond', 'netherite'] as const;
-
-/** Items that always show the enchant glint. */
-const ENCHANTED_EFFECT_ITEMS = new Set([
-	'minecraft:experience_bottle',
-	'minecraft:enchanted_golden_apple',
-	'minecraft:enchanted_book',
-	'minecraft:written_book',
-]);
 
 const POTIONS: Record<string, { content: string; bottle: string; }> = {
 	'minecraft:potion': { content: 'rc_potion_content', bottle: 'rc_potion_bottle' },
