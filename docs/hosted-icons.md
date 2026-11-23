@@ -41,7 +41,7 @@ Without a bundler, import it from jsDelivr instead:
 | Attribute | Meaning |
 |---|---|
 | `item` | Item id. The namespace defaults to `minecraft`. |
-| `version` | Game version for vanilla ids. Omitted, the element uses the latest published version. Modded icons are not versioned. |
+| `version` | Game version for vanilla ids. Omitted, the element uses the latest published version. On 1.12.2 and earlier it looks the id up in the version's registry, so `minecraft:deadbush` finds `dead_bush`. Modded icons are not versioned. |
 | `enchanted` | Draws the enchant glint. Items the game always draws with it (enchanted book, experience bottle and friends) get it without the attribute. |
 | `label` | Accessible name. Defaults to the item id. |
 | `missing` | Set by the element when the image fails to load, so you can style `mc-item[missing]`. |
@@ -115,7 +115,8 @@ await hosted.item('minecraft:wool', { version: '1.12.2', damage: 14 });
 `item()` returns `undefined` when the version's registry does not list the id, or for a modded id,
 when the namespace is not on the CDN. It resolves pre-1.13 damage values to the variant they draw
 as, and follows ids whose icon is published under another name (`minecraft:deadbush` draws as
-`dead_bush`). On items without variants, `damage` is durability and is ignored.
+`dead_bush`). A damage value the item's variants don't list draws as the base item. On items without
+variants, `damage` is durability and is ignored.
 
 A registry entry is not a guarantee the image exists: a few code-drawn items have no icon. `failure`
 carries the reason when the version publishes a failures file that lists the item, and the element's

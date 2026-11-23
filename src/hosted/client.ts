@@ -181,12 +181,10 @@ export function createHostedClient(options: HostedClientOptions = {}): HostedCli
 			}
 			let displayName = entry.displayName;
 			let iconId = entry.iconId ?? path;
-			if (entry.variants) {
-				const damage = lookup.damage ?? 0;
-				const variant = entry.variants.find(candidate => candidate.damage === damage);
-				if (!variant) {
-					return;
-				}
+			// Variants only override the damage values they list, e.g. chest lists only 2 and stonebrick only 1-3.
+			const damage = lookup.damage ?? 0;
+			const variant = entry.variants?.find(candidate => candidate.damage === damage);
+			if (variant) {
 				displayName = variant.displayName;
 				iconId = variant.iconId;
 			}

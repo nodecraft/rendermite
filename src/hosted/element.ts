@@ -4,6 +4,7 @@ import {
 	HOSTED_BASE_URL,
 	glintUrl,
 	iconUrl,
+	parseItemId,
 	qualify,
 } from './urls.ts';
 import { ENCHANTED_EFFECT_ITEMS } from '../output/css-contract.ts';
@@ -34,6 +35,12 @@ img{display:block;width:100%;height:100%;image-rendering:pixelated}
 @keyframes rc-enchanted{0%{background-position:-256px 1024px}to{background-position:256px -1024px}}
 @media (prefers-reduced-motion:reduce){.glint{animation:none}}
 `;
+
+/** `1.12.2` and earlier, where ids can map to differently named icons. */
+function isLegacyVersion(version: string): boolean {
+	const match = /^1\.(\d+)(?:\.|$)/.exec(version);
+	return match !== null && Number(match[1]) < 13;
+}
 
 /** A registry-wide symbol, so a second copy of this package on the page recognises the element as its own. */
 const ITEM_ELEMENT = Symbol.for('@nodecraft/rendermite/item-element');
@@ -93,18 +100,23 @@ export function defineItemElement(options: ItemElementOptions = {}): void {
 			const item = this.getAttribute('item');
 			this.#internals.ariaLabel = this.getAttribute('label') ?? item;
 			if (!item) {
+				// Otherwise the previous icon keeps showing.
+				this.#image.removeAttribute('src');
+				this.#icon.classList.remove('enchanted');
+				this.removeAttribute('missing');
 				return;
 			}
-			this.#version().then((version) => {
+			const enchanted = this.hasAttribute('enchanted') || ENCHANTED_EFFECT_ITEMS.has(qualify(item));
+			this.#resolve(item, enchanted).then(({ url, glint }) => {
 				// Attributes may have changed while the version was loading.
 				if (render !== this.#renders) {
 					return;
 				}
-				const url = iconUrl(item, { version, baseUrl });
-				const enchanted = this.hasAttribute('enchanted') || ENCHANTED_EFFECT_ITEMS.has(qualify(item));
 				this.#icon.classList.toggle('enchanted', enchanted);
 				this.#icon.style.setProperty('--rc-mask', `url("${url}")`);
-				this.#icon.style.setProperty('--rc-glint', `url("${glintUrl(version, baseUrl)}")`);
+				if (glint) {
+					this.#icon.style.setProperty('--rc-glint', `url("${glint}")`);
+				}
 				this.#image.src = url;
 			}).catch(() => {
 				if (render === this.#renders) {
@@ -113,13 +125,32 @@ export function defineItemElement(options: ItemElementOptions = {}): void {
 			});
 		}
 
-		async #version(): Promise<string> {
-			const version = this.getAttribute('version');
-			if (version) {
-				return version;
+		async #resolve(item: string, enchanted: boolean): Promise<{ url: string; glint?: string; }> {
+			// Modded icons are not versioned, so only the glint needs a version and a plain icon never waits on versions.json.
+			if (parseItemId(item).namespace !== 'minecraft') {
+				const url = iconUrl(item, { baseUrl });
+				if (!enchanted) {
+					return { url };
+				}
+				return { url, glint: glintUrl(await this.#version(), baseUrl) };
 			}
+			const version = await this.#version();
+			let url = iconUrl(item, { version, baseUrl });
+			// Only pre-1.13 ids can draw under another name, so later versions skip the registry download.
+			if (isLegacyVersion(version)) {
+				const resolved = await this.#client().item(item, { version });
+				url = resolved?.url ?? url;
+			}
+			return { url, glint: glintUrl(version, baseUrl) };
+		}
+
+		async #version(): Promise<string> {
+			return this.getAttribute('version') ?? this.#client().latestVersion();
+		}
+
+		#client(): HostedClient {
 			client ??= createHostedClient({ baseUrl });
-			return client.latestVersion();
+			return client;
 		}
 
 		connectedCallback(): void {

@@ -162,6 +162,17 @@ const LEGACY_REGISTRY: HostedItemRegistry = {
 			],
 		},
 		{ id: 'minecraft:diamond_sword', displayName: 'Diamond Sword', stackSize: 1 },
+		{
+			id: 'minecraft:tallgrass',
+			displayName: 'Grass',
+			stackSize: 64,
+			numericId: 31,
+			iconId: 'grass',
+			variants: [
+				{ damage: 1, displayName: 'Grass', iconId: 'tall_grass' },
+				{ damage: 2, displayName: 'Fern', iconId: 'fern' },
+			],
+		},
 	],
 };
 
@@ -211,7 +222,15 @@ describe('createHostedClient', () => {
 		});
 		const white = await client.item('minecraft:wool', { version: '1.12.2' });
 		expect(white?.displayName).toBe('White Wool');
-		expect(await client.item('minecraft:wool', { version: '1.12.2', damage: 99 })).toBeUndefined();
+	});
+
+	it('falls back to the base item for a damage value its variants do not list', async () => {
+		const client = createHostedClient(fakeCdn(CDN_FILES));
+		const grass = await client.item('minecraft:tallgrass', { version: '1.12.2' });
+		expect(grass?.url).toBe('https://assets.rendermite.dev/icons/1.12.2/items/minecraft/grass.webp');
+		expect(grass?.displayName).toBe('Grass');
+		const fern = await client.item('minecraft:tallgrass', { version: '1.12.2', damage: 2 });
+		expect(fern?.displayName).toBe('Fern');
 	});
 
 	it('ignores damage on items without variants, where it is durability', async () => {
